@@ -2,11 +2,11 @@ import { Pool } from 'pg';
 import { Job, mapContainerType, Product, JobFilters } from "./types";
 
 export const pool = new Pool({
-    user: 'u0_a286',
-    host: 'maizen.iptime.org',
-    database: 'u0_a286',
-    password: 'z456qwe12!@',
-    port: 5432,
+    user: process.env.DB_USER || 'u0_a286',
+    host: process.env.DB_HOST || 'maizen.iptime.org',
+    database: process.env.DB_NAME || 'u0_a286',
+    password: process.env.DB_PASSWORD || 'z456qwe12!@',
+    port: parseInt(process.env.DB_PORT || '5432'),
     ssl: false,
     connectionTimeoutMillis: 5000,
 });
