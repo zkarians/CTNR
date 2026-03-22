@@ -1,0 +1,98 @@
+﻿
+> ctnr-optimizer@0.1.0 build
+> next build
+
+??Next.js 16.2.1 (Turbopack)
+
+  Creating an optimized production build ...
+node.exe : Error: Cannot apply unknown utility 
+class `shadow-[0_8px_32px_0_rgba(0,`
+위치 줄:1 문자:1
++ & "C:\Program Files\nodejs/node.exe" "C:\Prog
+ram Files\nodejs/node_mo ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (E 
+   rror: Cannot a...32px_0_rgba(0,`:String) [  
+  ], RemoteException
+    + FullyQualifiedErrorId : NativeCommandErr 
+   or
+ 
+    [2m[at onInvalidCandidate (D:\.gemini\anti
+gravity\scratch\CTNR\node_modules\tailwindcss\d
+ist\lib.js:21:1511)][0m
+    [2m[at Ee (D:\.gemini\antigravity\scratch\
+CTNR\node_modules\tailwindcss\dist\lib.js:16:36
+740)][0m
+    [2m[at D:\.gemini\antigravity\scratch\CTNR
+\node_modules\tailwindcss\dist\lib.js:21:355][
+0m
+    [2m[at _r (D:\.gemini\antigravity\scratch\
+CTNR\node_modules\tailwindcss\dist\lib.js:3:173
+3)][0m
+    [2m[at I (D:\.gemini\antigravity\scratch\C
+TNR\node_modules\tailwindcss\dist\lib.js:3:1377
+)][0m
+    [2m[at Te (D:\.gemini\antigravity\scratch\
+CTNR\node_modules\tailwindcss\dist\lib.js:21:17
+2)][0m
+    [2m[at mn (D:\.gemini\antigravity\scratch\
+CTNR\node_modules\tailwindcss\dist\lib.js:38:29
+4)][0m
+    [2m[at async gn (D:\.gemini\antigravity\sc
+ratch\CTNR\node_modules\tailwindcss\dist\lib.js
+:38:631)][0m
+    [2m[at async Xr (D:\.gemini\antigravity\sc
+ratch\CTNR\node_modules\@tailwindcss\node\dist\
+index.js:10:3416)][0m
+    [2m[at async N (D:\.gemini\antigravity\scr
+atch\CTNR\node_modules\@tailwindcss\postcss\dis
+t\index.js:10:3979)][0m
+
+> Build error occurred
+Error: Turbopack build failed with 1 errors:
+./src/app/globals.css
+Error evaluating Node.js code
+CssSyntaxError: tailwindcss: D:\.gemini\antigra
+vity\scratch\CTNR\src\app\globals.css:1:1: Cann
+ot apply unknown utility class `shadow-[0_8px_3
+2px_0_rgba(0,`
+    at Input.error (node_modules/postcss/lib/in
+put.js:135:16) [D:\.gemini\antigravity\scratch\
+CTNR\.next\build\chunks\node_modules_13sb.px._.
+js:4651:22]
+    at error (node_modules/postcss/lib/node.js:
+146:32) [D:\.gemini\antigravity\scratch\CTNR\.n
+ext\build\chunks\node_modules_13sb.px._.js:928:
+38]
+    [at Object.Once (D:\.gemini\antigravity\scr
+atch\CTNR\node_modules\@tailwindcss\postcss\dis
+t\index.js:10:6913)]
+    at async LazyResult.runAsync (node_modules/
+postcss/lib/lazy-result.js:293:11) [D:\.gemini\
+antigravity\scratch\CTNR\.next\build\chunks\nod
+e_modules_13sb.px._.js:6214:21]
+    at async transform (turbopack:///[turbopack
+-node]/transforms/postcss.ts:70:34) [D:\.gemini
+\antigravity\scratch\CTNR\.next\build\chunks\[r
+oot-of-the-server]__0iv9ksq._.js:172:36]
+    at async run (turbopack:///[turbopack-node]
+/child_process/evaluate.ts:89:23) [D:\.gemini\a
+ntigravity\scratch\CTNR\.next\build\chunks\[roo
+t-of-the-server]__0rua-~2._.js:443:31]
+
+Import trace:
+  Client Component Browser:
+    ./src/app/globals.css [Client Component Bro
+wser]
+    ./src/app/layout.tsx [Server Component]
+
+
+    at async transform (turbopack:///[turbopack
+-node]/transforms/postcss.ts:70:34) [D:\.gemini
+\antigravity\scratch\CTNR\.next\build\chunks\[r
+oot-of-the-server]__0iv9ksq._.js:172:36])
+    at async run (turbopack:///[turbopack-node]
+/child_process/evaluate.ts:89:23) [D:\.gemini\a
+ntigravity\scratch\CTNR\.next\build\chunks\[roo
+t-of-the-server]__0rua-~2._.js:443:31])
