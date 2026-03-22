@@ -68,6 +68,7 @@ export interface Job {
     etd?: string;
     cntr_no?: string;
     transporter?: string;
+    work_date?: string;
 }
 
 export interface JobFilters {

@@ -47,6 +47,7 @@ export async function getJobsFromDB(filters?: JobFilters): Promise<Job[]> {
                     j.id, 
                     j.job_name, 
                     j.etd,
+                    j.saved_at,
                     r.cntr_no,
                     r.transporter,
                     r.cntr_type
@@ -57,7 +58,7 @@ export async function getJobsFromDB(filters?: JobFilters): Promise<Job[]> {
                 ) r ON r.job_id = j.id
                 ${whereSql}
                 ORDER BY j.saved_at DESC 
-                LIMIT 100
+                ${whereClauses.length > 0 ? 'LIMIT 500' : ''}
             `;
             const res = await client.query(query, params);
             return res.rows.map(row => ({
@@ -67,7 +68,8 @@ export async function getJobsFromDB(filters?: JobFilters): Promise<Job[]> {
                 container_type: mapContainerType(row.cntr_type || row.job_name || ''),
                 etd: row.etd,
                 cntr_no: row.cntr_no,
-                transporter: row.transporter
+                transporter: row.transporter,
+                work_date: row.saved_at ? new Date(row.saved_at).toLocaleDateString('ko-KR', { month: '2-digit', day: '2-digit' }).replace(' ', '') : ''
             }));
         } finally {
             client.release();

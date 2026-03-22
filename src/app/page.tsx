@@ -107,6 +107,16 @@ export default function Home() {
 
     const [numPasses, setNumPasses] = useState(10);
 
+    const handlePassesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        let val = parseInt(e.target.value);
+        if (isNaN(val)) val = 1;
+        if (val > 50) {
+            val = 50;
+            alert("최대 50회까지 입력 가능합니다.");
+        }
+        setNumPasses(val);
+    };
+
     const runSimulation = () => {
         if (products.length === 0) return;
         setIsLoading(true);
@@ -168,10 +178,12 @@ export default function Home() {
 
     const [activeProduct, setActiveProduct] = useState<string | null>(null);
 
+    const [isManualAddOpen, setIsManualAddOpen] = useState(false);
+
     return (
         <main className="flex h-screen bg-[#030712] text-slate-100 overflow-hidden">
             {/* Sidebar */}
-            <aside className="w-[420px] h-full flex flex-col border-r border-white/5 bg-[#0a0a0f] p-6 gap-6 z-20 overflow-hidden">
+            <aside className="w-[460px] h-full flex flex-col border-r border-white/5 bg-[#0a0a0f] px-5 py-6 gap-6 z-20 overflow-hidden">
                 <div className="flex items-center gap-3 mb-2 shrink-0">
                     <Package className="w-8 h-8 text-sky-500" />
                     <h1 className="text-xl font-black tracking-tight uppercase">CTNR <span className="text-sky-500">Optimizer</span></h1>
@@ -272,27 +284,21 @@ export default function Home() {
                                 <button
                                     key={job.id}
                                     onClick={() => handleJobSelect(job.id)}
-                                    className={`w-full p-3 rounded-2xl text-left border transition-all duration-300 group ${selectedJobId === job.id
+                                    className={`w-full px-4 py-3 rounded-2xl text-left border transition-all duration-300 flex items-center justify-between group ${selectedJobId === job.id
                                         ? "bg-sky-500/10 border-sky-500 shadow-[0_0_20px_rgba(56,189,248,0.1)]"
                                         : "bg-white/5 border-white/5 text-slate-400 hover:border-white/10 hover:bg-white/[0.07]"
                                         }`}
                                 >
-                                    <div className="flex justify-between items-start mb-2">
-                                        <div className="bg-sky-500/10 px-2 py-0.5 rounded-lg text-[9px] font-black text-sky-400 border border-sky-500/20">
-                                            {CONTAINER_DATA[job.container_type]?.name || "40ft High Cube"}
+                                    <div className="flex items-center gap-3 min-w-0">
+                                        <div className={`text-sm font-black truncate ${getCarrierColor(job.transporter)}`}>
+                                            {job.cntr_no || "번호없음"}
                                         </div>
-                                        <span className={`text-[9px] font-bold ${selectedJobId === job.id ? "text-sky-400" : "text-slate-600"}`}>
-                                            [{job.transporter?.split('(')[0] || "미정"}]
+                                        <span className={`text-[10px] font-bold shrink-0 opacity-40 group-hover:opacity-60 transition-opacity`}>
+                                            [{job.transporter ? (job.transporter.includes("천마") ? "천마" : (job.transporter.includes("BNI") || job.transporter.includes("비엔아이") ? "BNI" : job.transporter.split('(')[0])) : "미정"}]
                                         </span>
                                     </div>
-                                    <h4 className={`text-sm mb-1 truncate ${getCarrierColor(job.transporter)}`}>
-                                        {job.cntr_no || "컨테이너 번호 없음"}
-                                    </h4>
-                                    <div className="flex items-center gap-2 text-[10px] font-medium opacity-60">
-                                        <span className="truncate">{job.job_name}</span>
-                                        {job.etd && (
-                                            <span className="border-l border-white/10 pl-2 shrink-0">{job.etd}</span>
-                                        )}
+                                    <div className="text-[10px] font-bold text-slate-600 shrink-0 tabular-nums">
+                                        {job.work_date}
                                     </div>
                                 </button>
                             ))
@@ -307,6 +313,13 @@ export default function Home() {
                             <Settings2 className="w-4 h-4" />
                             컨테이너 및 제품 등록
                         </div>
+                        <button
+                            onClick={() => setIsManualAddOpen(!isManualAddOpen)}
+                            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-sky-500/10 border border-sky-500/20 text-sky-400 text-[10px] font-black hover:bg-sky-500 hover:text-white transition-all"
+                        >
+                            <Plus className={`w-3 h-3 transition-transform duration-300 ${isManualAddOpen ? "rotate-45" : ""}`} />
+                            제품추가
+                        </button>
                     </div>
 
                     <div className="grid grid-cols-2 gap-2">
@@ -324,96 +337,107 @@ export default function Home() {
                         ))}
                     </div>
 
-                    <div className="p-3 rounded-2xl bg-white/5 border border-white/5 space-y-2 relative">
-                        <div className="flex justify-between items-center">
-                            <p className="text-[10px] font-bold text-slate-500 uppercase">개별 제품 추가</p>
-                            <div className="flex gap-3">
-                                <button
-                                    onClick={() => setManualProduct({ ...manualProduct, allow_rotate: !manualProduct.allow_rotate })}
-                                    className={`flex items-center gap-1 text-[9px] font-bold transition-colors ${manualProduct.allow_rotate ? "text-sky-400" : "text-slate-600"}`}
-                                    title="가로/세로 회전 허용"
-                                >
-                                    <RotateCw className="w-3 h-3" /> 돌리기
-                                </button>
-                                <button
-                                    onClick={() => setManualProduct({ ...manualProduct, allow_lay_down: !manualProduct.allow_lay_down })}
-                                    className={`flex items-center gap-1 text-[9px] font-bold transition-colors ${manualProduct.allow_lay_down ? "text-indigo-400" : "text-slate-600"}`}
-                                    title="눕히기 (가로x높이 등) 허용"
-                                >
-                                    <Move3d className="w-3 h-3" /> 눕히기
-                                </button>
-                            </div>
-                        </div>
-                        <div className="space-y-2">
-                            <div className="relative">
-                                <label className="text-[9px] text-slate-500 font-bold ml-1">모델명 검색</label>
-                                <input
-                                    className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-1.5 text-[11px] outline-none focus:border-sky-500"
-                                    placeholder="모델명 입력 (예: sk)"
-                                    value={manualProduct.model_name}
-                                    onChange={e => handleSearch(e.target.value)}
-                                />
-                                {searchResults.length > 0 && (
-                                    <div className="absolute z-30 bottom-full left-0 w-full mb-1 bg-[#1a1a24] border border-white/10 rounded-xl shadow-2xl overflow-hidden max-h-40 overflow-y-auto custom-scrollbar">
-                                        {searchResults.map((p, i) => (
+                    <AnimatePresence>
+                        {isManualAddOpen && (
+                            <motion.div
+                                initial={{ height: 0, opacity: 0 }}
+                                animate={{ height: "auto", opacity: 1 }}
+                                exit={{ height: 0, opacity: 0 }}
+                                className="overflow-hidden"
+                            >
+                                <div className="p-3 rounded-2xl bg-white/5 border border-white/5 space-y-2 relative">
+                                    <div className="flex justify-between items-center">
+                                        <p className="text-[10px] font-bold text-slate-500 uppercase">개별 제품 추가</p>
+                                        <div className="flex gap-3">
                                             <button
-                                                key={i}
-                                                onClick={() => selectSearchResult(p)}
-                                                className="w-full px-4 py-2.5 text-left text-[11px] hover:bg-sky-500/20 border-b border-white/5 last:border-0 transition-colors"
+                                                onClick={() => setManualProduct({ ...manualProduct, allow_rotate: !manualProduct.allow_rotate })}
+                                                className={`flex items-center gap-1 text-[9px] font-bold transition-colors ${manualProduct.allow_rotate ? "text-sky-400" : "text-slate-600"}`}
+                                                title="가로/세로 회전 허용"
                                             >
-                                                <div className="font-bold text-slate-200">{p.model_name}</div>
-                                                <div className="text-[10px] text-slate-500">{p.width}x{p.length}x{p.height}</div>
+                                                <RotateCw className="w-3 h-3" /> 돌리기
                                             </button>
-                                        ))}
+                                            <button
+                                                onClick={() => setManualProduct({ ...manualProduct, allow_lay_down: !manualProduct.allow_lay_down })}
+                                                className={`flex items-center gap-1 text-[9px] font-bold transition-colors ${manualProduct.allow_lay_down ? "text-indigo-400" : "text-slate-600"}`}
+                                                title="눕히기 (가로x높이 등) 허용"
+                                            >
+                                                <Move3d className="w-3 h-3" /> 눕히기
+                                            </button>
+                                        </div>
                                     </div>
-                                )}
-                            </div>
-                            <div className="grid grid-cols-4 gap-2">
-                                <div className="space-y-1">
-                                    <label className="text-[9px] text-slate-500 font-bold ml-1 text-center block">가로(W)</label>
-                                    <input
-                                        className="w-full bg-black/40 border border-white/10 rounded-lg px-2 py-1.5 text-[11px] outline-none focus:border-sky-500 text-center"
-                                        type="number"
-                                        value={manualProduct.width}
-                                        onChange={e => setManualProduct({ ...manualProduct, width: parseInt(e.target.value) })}
-                                    />
+                                    <div className="space-y-2">
+                                        <div className="relative">
+                                            <label className="text-[9px] text-slate-500 font-bold ml-1">모델명 검색</label>
+                                            <input
+                                                className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-1.5 text-[11px] outline-none focus:border-sky-500"
+                                                placeholder="모델명 입력 (예: sk)"
+                                                value={manualProduct.model_name}
+                                                onChange={e => handleSearch(e.target.value)}
+                                            />
+                                            {searchResults.length > 0 && (
+                                                <div className="absolute z-30 bottom-full left-0 w-full mb-1 bg-[#1a1a24] border border-white/10 rounded-xl shadow-2xl overflow-hidden max-h-40 overflow-y-auto custom-scrollbar">
+                                                    {searchResults.map((p, i) => (
+                                                        <button
+                                                            key={i}
+                                                            onClick={() => selectSearchResult(p)}
+                                                            className="w-full px-4 py-2.5 text-left text-[11px] hover:bg-sky-500/20 border-b border-white/5 last:border-0 transition-colors"
+                                                        >
+                                                            <div className="font-bold text-slate-200">{p.model_name}</div>
+                                                            <div className="text-[10px] text-slate-500">{p.width}x{p.length}x{p.height}</div>
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                        <div className="grid grid-cols-4 gap-2">
+                                            <div className="space-y-1">
+                                                <label className="text-[9px] text-slate-500 font-bold ml-1 text-center block">가로(W)</label>
+                                                <input
+                                                    className="w-full bg-black/40 border border-white/10 rounded-lg px-2 py-1.5 text-[11px] outline-none focus:border-sky-500 text-center"
+                                                    type="number"
+                                                    value={manualProduct.width}
+                                                    onChange={e => setManualProduct({ ...manualProduct, width: parseInt(e.target.value) })}
+                                                />
+                                            </div>
+                                            <div className="space-y-1">
+                                                <label className="text-[9px] text-slate-500 font-bold ml-1 text-center block">세로(L)</label>
+                                                <input
+                                                    className="w-full bg-black/40 border border-white/10 rounded-lg px-2 py-1.5 text-[11px] outline-none focus:border-sky-500 text-center"
+                                                    type="number"
+                                                    value={manualProduct.length}
+                                                    onChange={e => setManualProduct({ ...manualProduct, length: parseInt(e.target.value) })}
+                                                />
+                                            </div>
+                                            <div className="space-y-1">
+                                                <label className="text-[9px] text-slate-500 font-bold ml-1 text-center block">높이(H)</label>
+                                                <input
+                                                    className="w-full bg-black/40 border border-white/10 rounded-lg px-2 py-1.5 text-[11px] outline-none focus:border-sky-500 text-center"
+                                                    type="number"
+                                                    value={manualProduct.height}
+                                                    onChange={e => setManualProduct({ ...manualProduct, height: parseInt(e.target.value) })}
+                                                />
+                                            </div>
+                                            <div className="space-y-1">
+                                                <label className="text-[9px] text-slate-500 font-bold ml-1 text-center block">수량</label>
+                                                <input
+                                                    className="w-full bg-black/40 border border-white/10 rounded-lg px-2 py-1.5 text-[11px] outline-none focus:border-sky-500 text-center font-bold text-sky-400"
+                                                    type="number"
+                                                    value={manualProduct.quantity}
+                                                    onChange={e => setManualProduct({ ...manualProduct, quantity: parseInt(e.target.value) })}
+                                                />
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <button
+                                        onClick={addManualProduct}
+                                        className="w-full py-2 rounded-xl bg-sky-500/10 hover:bg-sky-500 text-white text-[11px] font-black transition-all border border-sky-500/20 shadow-lg mt-1"
+                                    >
+                                        리스트에 아이템 추가
+                                    </button>
                                 </div>
-                                <div className="space-y-1">
-                                    <label className="text-[9px] text-slate-500 font-bold ml-1 text-center block">세로(L)</label>
-                                    <input
-                                        className="w-full bg-black/40 border border-white/10 rounded-lg px-2 py-1.5 text-[11px] outline-none focus:border-sky-500 text-center"
-                                        type="number"
-                                        value={manualProduct.length}
-                                        onChange={e => setManualProduct({ ...manualProduct, length: parseInt(e.target.value) })}
-                                    />
-                                </div>
-                                <div className="space-y-1">
-                                    <label className="text-[9px] text-slate-500 font-bold ml-1 text-center block">높이(H)</label>
-                                    <input
-                                        className="w-full bg-black/40 border border-white/10 rounded-lg px-2 py-1.5 text-[11px] outline-none focus:border-sky-500 text-center"
-                                        type="number"
-                                        value={manualProduct.height}
-                                        onChange={e => setManualProduct({ ...manualProduct, height: parseInt(e.target.value) })}
-                                    />
-                                </div>
-                                <div className="space-y-1">
-                                    <label className="text-[9px] text-slate-500 font-bold ml-1 text-center block">수량</label>
-                                    <input
-                                        className="w-full bg-black/40 border border-white/10 rounded-lg px-2 py-1.5 text-[11px] outline-none focus:border-sky-500 text-center font-bold text-sky-400"
-                                        type="number"
-                                        value={manualProduct.quantity}
-                                        onChange={e => setManualProduct({ ...manualProduct, quantity: parseInt(e.target.value) })}
-                                    />
-                                </div>
-                            </div>
-                        </div>
-                        <button
-                            onClick={addManualProduct}
-                            className="w-full py-2 rounded-xl bg-sky-500/10 hover:bg-sky-500 text-white text-[11px] font-black transition-all border border-sky-500/20 shadow-lg mt-1"
-                        >
-                            리스트에 아이템 추가
-                        </button>
-                    </div>
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
                 </section>
 
                 <section className="flex-1 flex flex-col min-h-0">
@@ -445,63 +469,59 @@ export default function Home() {
                                     key={p.id}
                                     onMouseEnter={() => setActiveProduct(p.model_name)}
                                     onMouseLeave={() => setActiveProduct(null)}
-                                    className={`group relative p-3 rounded-2xl border transition-all duration-300 ${activeProduct === p.model_name
-                                        ? "bg-sky-500/10 border-sky-500 shadow-lg shadow-sky-500/5 scale-[1.02]"
+                                    className={`group relative px-3 py-2 rounded-2xl border transition-all duration-300 ${activeProduct === p.model_name
+                                        ? "bg-sky-500/10 border-sky-500 shadow-lg shadow-sky-500/5 scale-[1.01]"
                                         : (result?.unpacked.some(u => u.id === p.id)
                                             ? "bg-rose-500/5 border-rose-500/30"
                                             : "bg-white/5 border-white/5 hover:border-white/20")
                                         }`}
                                 >
-                                    <div className="flex justify-between items-start mb-2">
-                                        <div className="flex-1 min-w-0">
-                                            <h5 className={`text-xs font-bold truncate pr-4 ${activeProduct === p.model_name ? "text-sky-400" : (result?.unpacked.some(u => u.id === p.id) ? "text-rose-400" : "text-slate-200")
-                                                }`}>
-                                                {p.model_name}
-                                            </h5>
-                                            <div className="flex gap-2 mt-1">
+                                    <div className="flex justify-between items-center mb-1">
+                                        <h5 className={`text-[11px] font-bold truncate flex-1 min-w-0 pr-2 ${activeProduct === p.model_name ? "text-sky-400" : (result?.unpacked.some(u => u.id === p.id) ? "text-rose-400" : "text-slate-200")}`}>
+                                            {p.model_name}
+                                        </h5>
+                                        <div className="flex items-center gap-2 shrink-0">
+                                            {result && (
+                                                <div className="text-[9px] font-bold uppercase tracking-tighter text-right">
+                                                    <span className="text-sky-500">OK {p.quantity - (result.unpacked.find(u => u.id === p.id)?.quantity || 0)}</span>
+                                                    {result.unpacked.find(u => u.id === p.id) && (
+                                                        <span className="text-rose-500 ml-1.5">FAIL {result.unpacked.find(u => u.id === p.id)?.quantity}</span>
+                                                    )}
+                                                </div>
+                                            )}
+                                            <span className={`px-1.5 py-0.5 rounded-lg text-[10px] font-black border ${result?.unpacked.some(u => u.id === p.id) ? "bg-rose-500/10 text-rose-400 border-rose-500/20" : "bg-sky-500/10 text-sky-400 border-sky-500/20"}`}>
+                                                x{p.quantity}
+                                            </span>
+                                        </div>
+                                    </div>
+
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-3">
+                                            <span className="text-[10px] text-slate-500 font-bold whitespace-nowrap">{p.width}x{p.length}x{p.height}</span>
+                                            <div className="flex gap-1 border-l border-white/10 pl-3">
                                                 <button
                                                     onClick={() => toggleProductFlag(p.id, 'allow_rotate')}
-                                                    className={`p-1 rounded bg-white/5 hover:bg-white/10 transition-colors ${p.allow_rotate ? "text-sky-400" : "text-slate-600"}`}
+                                                    className={`p-1 rounded hover:bg-white/10 transition-colors ${p.allow_rotate ? "text-sky-400" : "text-slate-600"}`}
                                                     title="회전 허용"
                                                 >
-                                                    <RotateCw className="w-3 h-3" />
+                                                    <RotateCw className="w-2.5 h-2.5" />
                                                 </button>
                                                 <button
                                                     onClick={() => toggleProductFlag(p.id, 'allow_lay_down')}
-                                                    className={`p-1 rounded bg-white/5 hover:bg-white/10 transition-colors ${p.allow_lay_down ? "text-indigo-400" : "text-slate-600"}`}
+                                                    className={`p-1 rounded hover:bg-white/10 transition-colors ${p.allow_lay_down ? "text-indigo-400" : "text-slate-600"}`}
                                                     title="눕히기 허용"
                                                 >
-                                                    <Move3d className="w-3 h-3" />
+                                                    <Move3d className="w-2.5 h-2.5" />
                                                 </button>
                                             </div>
                                         </div>
-                                        <div className="flex flex-col items-end gap-1.5">
-                                            <div className="flex flex-col items-end">
-                                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-black border ${result?.unpacked.some(u => u.id === p.id)
-                                                    ? "bg-rose-500/10 text-rose-400 border-rose-500/20"
-                                                    : "bg-sky-500/10 text-sky-400 border-sky-500/20"
-                                                    }`}>
-                                                    x{p.quantity}
-                                                </span>
-                                                {result && (
-                                                    <div className="text-[8px] font-bold mt-1 uppercase tracking-tighter">
-                                                        <span className="text-sky-500">완료 {p.quantity - (result.unpacked.find(u => u.id === p.id)?.quantity || 0)}</span>
-                                                        {result.unpacked.find(u => u.id === p.id) && (
-                                                            <span className="text-rose-500 ml-1.5">미적재 {result.unpacked.find(u => u.id === p.id)?.quantity}</span>
-                                                        )}
-                                                    </div>
-                                                )}
-                                            </div>
-                                            <button
-                                                onClick={() => removeProduct(p.id)}
-                                                className="p-1.5 text-slate-600 hover:text-rose-500 hover:bg-rose-500/10 rounded-lg transition-all opacity-0 group-hover:opacity-100"
-                                            >
-                                                <Trash2 className="w-3.5 h-3.5" />
-                                            </button>
-                                        </div>
-                                    </div>
-                                    <div className="flex items-center gap-3 text-[10px] text-slate-500 font-bold">
-                                        <span>{p.width}x{p.length}x{p.height} mm</span>
+
+                                        <button
+                                            onClick={() => removeProduct(p.id)}
+                                            className="p-1 text-slate-600 hover:text-rose-500 hover:bg-rose-500/10 rounded transition-all opacity-0 group-hover:opacity-100"
+                                        >
+                                            <Trash2 className="w-3 h-3" />
+                                        </button>
                                     </div>
                                 </motion.div>
                             ))
@@ -510,30 +530,22 @@ export default function Home() {
                 </section>
 
                 {/* Simulation Control */}
-                <div className="space-y-3 shrink-0">
-                    <div className="bg-white/5 rounded-2xl p-4 border border-white/5 space-y-3">
-                        <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2 text-[10px] font-black text-slate-500 uppercase tracking-widest">
-                                <Zap className="w-3.5 h-3.5 text-amber-500" />
-                                시뮬레이션 정밀도
-                            </div>
-                            <span className="text-xs font-black text-sky-400">{numPasses}회 시도</span>
-                        </div>
+                <div className="flex gap-2 shrink-0">
+                    <div className="flex flex-col items-center justify-center bg-white/5 border border-white/5 rounded-2xl px-3 min-w-[100px] group hover:border-sky-500/50 transition-colors">
+                        <span className="text-[9px] font-black text-slate-500 uppercase tracking-tighter mb-1 select-none">시도횟수(MAX 50)</span>
                         <input
-                            type="range"
+                            type="number"
                             min="1"
                             max="50"
                             value={numPasses}
-                            onChange={(e) => setNumPasses(parseInt(e.target.value))}
-                            className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-sky-500"
+                            onChange={handlePassesChange}
+                            className="bg-transparent text-sky-400 font-bold text-center w-full outline-none text-base [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                         />
-                        <p className="text-[9px] text-slate-500 leading-tight">횟수가 높을수록 최적의 공간을 찾지만 계산 시간이 길어집니다.</p>
                     </div>
-
                     <button
                         disabled={products.length === 0 || isLoading}
                         onClick={runSimulation}
-                        className="w-full py-4 rounded-2xl bg-sky-500 hover:bg-sky-400 disabled:opacity-50 disabled:hover:bg-sky-500 text-white font-black transition-all flex items-center justify-center gap-3 shadow-[0_10px_30px_rgba(56,189,248,0.2)] group"
+                        className="flex-1 py-4 rounded-2xl bg-sky-500 hover:bg-sky-400 disabled:opacity-50 disabled:hover:bg-sky-500 text-white font-black transition-all flex items-center justify-center gap-3 shadow-[0_10px_30px_rgba(56,189,248,0.2)] group"
                     >
                         {isLoading ? (
                             <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />

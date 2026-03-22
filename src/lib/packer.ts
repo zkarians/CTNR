@@ -101,12 +101,13 @@ function doPackRun(
         add(product.width, product.length, product.height, 'std');
         if (product.allow_rotate) add(product.length, product.width, product.height, 'rotated');
         if (product.allow_lay_down) {
-            add(product.width, product.height, product.length, 'lay_side');
-            add(product.height, product.length, product.width, 'lay_front');
+            add(product.width, product.height, product.length, 'lay_side');  // 893×1909×768
+            add(product.height, product.width, product.length, 'lay_front'); // 1909×893×768 (90° rotated)
         }
         if (candidates.length === 0) continue;
 
-        // Sort orientations: most units across container width first
+        // Sort: most units fitting across container width first
+        // → rotated (768mm: 3 across) wins over std (893mm: 2 across) on the floor
         candidates.sort((a, b) => Math.floor(container.width / b.w) - Math.floor(container.width / a.w));
 
         let bestScore = Infinity;
@@ -135,10 +136,12 @@ function doPackRun(
                     if (gZ + cand.h > container.height) continue;
                     if (!isStable(x, y, cand.w, cand.l, gZ, cand.h, placed)) continue;
 
-                    // Score: LOWEST Z first → items prefer floor level over stacking
-                    // Then LOWEST Y → fill from front of container
+                    // Score: LOWEST Z first → floor strongly preferred (gZ*1e10)
+                    // Then LOWEST Y → fill from front
                     // Then LOWEST X → fill left to right
-                    const score = gZ * 1e10 + y * 1e5 + x;
+                    // When elevated (gZ>0): prefer lay_front (90° rotated) over lay_side
+                    const laySidePenalty = (cand.type === 'lay_side' && gZ > 0) ? 1 : 0;
+                    const score = gZ * 1e10 + y * 1e5 + x + laySidePenalty;
                     if (score < bestScore) {
                         bestScore = score;
                         bestX = x; bestY = y; bestZ = gZ;
