@@ -116,144 +116,143 @@ function doPackRun(
     products.forEach(p => unpackedMap.set(p.id, p.quantity));
 
     const validProducts = products.filter(p => p.width > 0 && p.length > 0 && p.height > 0 && p.quantity > 0);
+    let remainingTotal = validProducts.reduce((sum, p) => sum + p.quantity, 0);
 
-    // Sort: primary = user strategy (volume desc etc), secondary = group same product together
-    const queue = validProducts.flatMap(p =>
-        Array.from({ length: p.quantity }, () => ({ ...p }))
-    ).sort((a, b) => {
-        const primary = sortFn(a, b);
-        if (primary !== 0) return primary;
-        return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
-    });
+    let loopCount = 0;
+    while (remainingTotal > 0 && loopCount < 10000) {
+        loopCount++;
+        let globalBestScore = Infinity;
+        let globalBestPlace: { product: Product, cand: any, x: number, y: number, z: number } | null = null;
 
-    for (const product of queue) {
-        const candidates: Array<{ w: number; l: number; h: number; type: PackedItem['orientation'] }> = [];
-        const add = (w: number, l: number, h: number, type: PackedItem['orientation']) => {
-            if (w > 0 && l > 0 && h > 0 && w <= container.width && l <= container.length && h <= container.height) {
-                candidates.push({ w, l, h, type });
+        const uniqueRemaining = validProducts.filter(p => (unpackedMap.get(p.id) || 0) > 0);
+        if (uniqueRemaining.length === 0) break;
+
+        for (const product of uniqueRemaining) {
+            const candidates: Array<{ w: number; l: number; h: number; type: PackedItem['orientation'] }> = [];
+            const add = (w: number, l: number, h: number, type: PackedItem['orientation']) => {
+                if (w > 0 && l > 0 && h > 0 && w <= container.width && l <= container.length && h <= container.height) {
+                    candidates.push({ w, l, h, type });
+                }
+            };
+            add(product.width, product.length, product.height, 'std');
+            if (product.allow_rotate) add(product.length, product.width, product.height, 'rotated');
+            if (product.allow_lay_down) {
+                add(product.width, product.height, product.length, 'lay_side');
+                add(product.height, product.width, product.length, 'lay_front');
             }
-        };
-        add(product.width, product.length, product.height, 'std');
-        if (product.allow_rotate) add(product.length, product.width, product.height, 'rotated');
-        if (product.allow_lay_down) {
-            add(product.width, product.height, product.length, 'lay_side');  // 893×1909×768
-            add(product.height, product.width, product.length, 'lay_front'); // 1909×893×768 (90° rotated)
-        }
-        if (candidates.length === 0) continue;
+            if (candidates.length === 0) continue;
 
-        if (product.height > 300) {
-            // Fridge/Large items: Standard legacy width-first sort
-            candidates.sort((a, b) => Math.floor(container.width / b.w) - Math.floor(container.width / a.w));
-        } else {
-            // Small items (h<=300): Strategy variation over multiple passes
-            if (passIdx % 4 === 0) {
-                // Style A: Width-first (Current style)
-                candidates.sort((a, b) => Math.floor(container.width / b.w) - Math.floor(container.width / a.w));
-            } else if (passIdx % 4 === 1) {
-                // Style B: Height-first (Standing tall)
-                candidates.sort((a, b) => b.h - a.h);
-            } else if (passIdx % 4 === 2) {
-                // Style C: Flat-first (Lying down)
-                candidates.sort((a, b) => a.h - b.h);
+            if (product.height > 300) {
+                candidates.sort((a, b) => {
+                    const cmp = Math.floor(container.width / b.w) - Math.floor(container.width / a.w);
+                    return cmp !== 0 ? cmp : a.l - b.l;
+                });
             } else {
-                // Style D: Strategic Cycling / Mixing (Discovery of 1+2, 2+1 patterns)
-                // Cycle through standard and rotated orientations to create mixed rows
-                const cycle = [0, 1, 1]; // 1 std, 2 rotated cycle
-                const orientIdx = cycle[passIdx % cycle.length];
-                if (orientIdx === 0) {
-                    // Try to put std first
-                    candidates.sort((a, b) => (a.type === 'std' ? -1 : 1));
+                if (passIdx % 4 === 0) {
+                    candidates.sort((a, b) => {
+                        const cmp = Math.floor(container.width / b.w) - Math.floor(container.width / a.w);
+                        return cmp !== 0 ? cmp : a.l - b.l;
+                    });
+                } else if (passIdx % 4 === 1) {
+                    candidates.sort((a, b) => b.h - a.h);
+                } else if (passIdx % 4 === 2) {
+                    candidates.sort((a, b) => a.h - b.h);
                 } else {
-                    // Try to put rotated first
-                    candidates.sort((a, b) => (a.type === 'rotated' ? -1 : 1));
+                    if (Math.random() > 0.5) candidates.reverse();
                 }
+            }
 
-                // Then add a bit of randomness to other candidates
-                if (Math.random() > 0.5) candidates.reverse();
+            for (const cand of candidates) {
+                const xSet = new Set<number>([0]);
+                const ySet = new Set<number>([0]);
+                for (const r of placed) {
+                    if (r.x2 + cand.w <= container.width) xSet.add(r.x2);
+                    if (r.y2 + cand.l <= container.length) ySet.add(r.y2);
+                }
+                for (let x = cand.w; x + cand.w <= container.width; x += cand.w) xSet.add(x);
+
+                const sortedY = Array.from(ySet).sort((a, b) => a - b);
+                const sortedX = Array.from(xSet).sort((a, b) => a - b);
+
+                for (const y of sortedY) {
+                    if (y + cand.l > container.length) continue;
+                    for (const x of sortedX) {
+                        if (x + cand.w > container.width) continue;
+                        const gZ = getGroundZ(x, y, cand.w, cand.l, placed);
+                        if (gZ + cand.h > container.height) continue;
+                        if (!isStable(x, y, cand.w, cand.l, gZ, cand.h, placed)) continue;
+
+                        let stackBonus = 0;
+                        if (gZ > 0) {
+                            const itemBelow = placedItems.find(it =>
+                                Math.abs((it.z + it.h) - gZ) < 1 &&
+                                Math.abs(it.x - x) < 5 &&
+                                Math.abs(it.y - y) < 5 &&
+                                Math.abs(it.w - cand.w) < 5 &&
+                                Math.abs(it.l - cand.l) < 5
+                            );
+                            if (itemBelow) {
+                                if (itemBelow.product.id === product.id) {
+                                    stackBonus = 4e13;
+                                } else if (Math.abs(itemBelow.h - cand.h) < 10) {
+                                    stackBonus = 3.5e13;
+                                }
+                            }
+                        }
+
+                        if (gZ > 0 && cand.h < product.height && cand.h <= 300) {
+                            stackBonus += 3e13;
+                        }
+
+                        let tightFitBonus = 0;
+                        if (product.height <= 300) {
+                            const remainingWidth = container.width - (x + cand.w);
+                            if (remainingWidth >= 0 && remainingWidth < 200) {
+                                tightFitBonus = 0.5e10;
+                            }
+                        }
+
+                        const remW = container.width - (x + cand.w);
+                        let deadSpacePenalty = 0;
+                        if (remW > 0 && gZ === 0) {
+                            const canFill = uniqueRemaining.some(u => {
+                                if (u.id === product.id && unpackedMap.get(product.id) === 1) return false;
+                                const minDim = Math.min(u.width, u.allow_rotate ? u.length : u.width);
+                                return minDim <= remW;
+                            });
+                            if (!canFill) deadSpacePenalty = remW * 1e6;
+                        }
+
+                        const volBonus = (cand.w * cand.l * cand.h) / 1000;
+                        const laySidePenalty = (cand.type === 'lay_side' && gZ > 0) ? 1 : 0;
+
+                        const score = (gZ * 1e11) + (y * 1e8) + (x * 1e4) + deadSpacePenalty + laySidePenalty - stackBonus - tightFitBonus - volBonus;
+
+                        if (score < globalBestScore) {
+                            globalBestScore = score;
+                            globalBestPlace = { product, cand, x, y, z: gZ };
+                        }
+                    }
+                }
             }
         }
 
-        let bestScore = Infinity;
-        let bestX = 0, bestY = 0, bestZ = 0;
-        let bestCand: { w: number; l: number; h: number; type: PackedItem['orientation'] } | null = null;
-
-        for (const cand of candidates) {
-            // Collect extreme point candidates
-            const xSet = new Set<number>([0]);
-            const ySet = new Set<number>([0]);
-            for (const r of placed) {
-                if (r.x2 + cand.w <= container.width) xSet.add(r.x2);
-                if (r.y2 + cand.l <= container.length) ySet.add(r.y2);
-            }
-            // Also add width-aligned positions (for optimal row fill)
-            for (let x = cand.w; x + cand.w <= container.width; x += cand.w) xSet.add(x);
-
-            const sortedY = Array.from(ySet).sort((a, b) => a - b);
-            const sortedX = Array.from(xSet).sort((a, b) => a - b);
-
-            for (const y of sortedY) {
-                if (y + cand.l > container.length) continue;
-                for (const x of sortedX) {
-                    if (x + cand.w > container.width) continue;
-                    const gZ = getGroundZ(x, y, cand.w, cand.l, placed);
-                    if (gZ + cand.h > container.height) continue;
-                    if (!isStable(x, y, cand.w, cand.l, gZ, cand.h, placed)) continue;
-
-                    // Same-stack bonus: Prefer stacking on items of the same product ID
-                    // Only apply if the footprint (x, y, w, l) matches almost exactly.
-                    let stackBonus = 0;
-                    if (gZ > 0) {
-                        const itemBelow = placedItems.find(it =>
-                            Math.abs((it.z + it.h) - gZ) < 1 &&
-                            Math.abs(it.x - x) < 5 && // Allow 5mm tolerance
-                            Math.abs(it.y - y) < 5 &&
-                            Math.abs(it.w - cand.w) < 5 &&
-                            Math.abs(it.l - cand.l) < 5
-                        );
-                        if (itemBelow && itemBelow.product.id === product.id) {
-                            stackBonus = 2.5e10; // High enough to beat one layer of height cost
-                        }
-                    }
-                    // Tight-fit bonus: Reward orientations that fill the width perfectly
-                    // Only for small items (h<=300) to help find patterns like 1+2=2198mm (vs 2352)
-                    let tightFitBonus = 0;
-                    if (product.height <= 300) {
-                        const remainingWidth = container.width - (x + cand.w);
-                        if (remainingWidth >= 0 && remainingWidth < 200) {
-                            tightFitBonus = 0.5e10; // Encourages filling the row end tightly
-                        }
-                    }
-
-                    // Score: LOWEST Z first, then Y, then X
-                    const laySidePenalty = (cand.type === 'lay_side' && gZ > 0) ? 1 : 0;
-                    const score = (gZ * 1e10) + (y * 1e5) + x + laySidePenalty - stackBonus - tightFitBonus;
-                    if (score < bestScore) {
-                        bestScore = score;
-                        bestX = x; bestY = y; bestZ = gZ;
-                        bestCand = cand;
-                    }
-                }
-            }
-            if (bestCand && bestZ === 0 && bestY === 0) break;
-        }
-
-        if (bestCand !== null) {
-            const bc = bestCand as { w: number; l: number; h: number; type: PackedItem['orientation'] };
+        if (globalBestPlace !== null) {
+            const { product, cand, x, y, z } = globalBestPlace;
             placedItems.push({
                 product: { ...product, quantity: 1 },
-                x: bestX, y: bestY, z: bestZ,
-                w: bc.w, l: bc.l, h: bc.h,
-                orientation: bc.type
+                x, y, z,
+                w: cand.w, l: cand.l, h: cand.h,
+                orientation: cand.type
             });
             placed.push({
-                x: bestX, y: bestY,
-                x2: bestX + bc.w,
-                y2: bestY + bc.l,
-                topZ: bestZ + bc.h,
-                itemH: bc.h
+                x, y, x2: x + cand.w, y2: y + cand.l, topZ: z + cand.h, itemH: cand.h
             });
             const cur = unpackedMap.get(product.id) ?? 0;
-            if (cur > 0) unpackedMap.set(product.id, cur - 1);
+            unpackedMap.set(product.id, cur - 1);
+            remainingTotal--;
+        } else {
+            break;
         }
     }
 

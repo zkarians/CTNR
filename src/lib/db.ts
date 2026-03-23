@@ -2,9 +2,9 @@ import { Pool } from 'pg';
 import { Job, mapContainerType, Product, JobFilters } from "./types";
 
 export const pool = new Pool({
-    user: process.env.DB_USER || 'u0_a286',
+    user: process.env.DB_USER || 'u0_a354',
     host: process.env.DB_HOST || 'maizen.iptime.org',
-    database: process.env.DB_NAME || 'u0_a286',
+    database: process.env.DB_NAME || 'u0_a354',
     password: process.env.DB_PASSWORD || 'z456qwe12!@',
     port: parseInt(process.env.DB_PORT || '5432'),
     ssl: false,
@@ -111,7 +111,7 @@ export async function getProductsForJob(jobId: number): Promise<Product[]> {
                 height: row.height || 0,
                 quantity: row.quantity,
                 allow_rotate: true,
-                allow_lay_down: (row.model_name && (row.model_name.includes('PSM') || row.model_name.includes('LT'))) || row.prod_type === 'CDZ'
+                allow_lay_down: (row.model_name && (row.model_name.includes('PSM') || row.model_name.includes('LT'))) || row.prod_type === 'CDZ' || (row.width <= 150 || row.length <= 150 || row.height <= 150)
             }));
         } finally {
             client.release();
@@ -149,7 +149,7 @@ export async function getProductsFromA23DB(): Promise<Product[]> {
                 height: row.height || 0,
                 quantity: row.quantity,
                 allow_rotate: true,
-                allow_lay_down: (row.model_name && (row.model_name.includes('PSM') || row.model_name.includes('LT'))) || row.prod_type === 'CDZ'
+                allow_lay_down: (row.model_name && (row.model_name.includes('PSM') || row.model_name.includes('LT'))) || row.prod_type === 'CDZ' || (row.width <= 150 || row.length <= 150 || row.height <= 150)
             }));
         } finally {
             client.release();

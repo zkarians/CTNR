@@ -494,9 +494,29 @@ export default function Home() {
                                                     )}
                                                 </div>
                                             )}
-                                            <span className={`px-1.5 py-0.5 rounded-lg text-[10px] font-black border ${result?.unpacked.some(u => u.id === p.id) ? "bg-rose-500/10 text-rose-400 border-rose-500/20" : "bg-sky-500/10 text-sky-400 border-sky-500/20"}`}>
-                                                x{p.quantity}
-                                            </span>
+                                            <div className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded-lg text-[10px] font-black border focus-within:ring-1 transition-all ${result?.unpacked.some(u => u.id === p.id) ? "bg-rose-500/10 text-rose-400 border-rose-500/20 focus-within:ring-rose-500" : "bg-sky-500/10 text-sky-400 border-sky-500/20 focus-within:ring-sky-500"}`}>
+                                                <span className="opacity-70">x</span>
+                                                <input
+                                                    type="number"
+                                                    min="1"
+                                                    value={p.quantity || ''}
+                                                    onChange={(e) => {
+                                                        const val = parseInt(e.target.value);
+                                                        setProducts(prev => prev.map(prod =>
+                                                            prod.id === p.id ? { ...prod, quantity: isNaN(val) ? 0 : val } : prod
+                                                        ));
+                                                        setResult(null);
+                                                    }}
+                                                    onBlur={(e) => {
+                                                        if (!p.quantity || p.quantity < 1) {
+                                                            setProducts(prev => prev.map(prod =>
+                                                                prod.id === p.id ? { ...prod, quantity: 1 } : prod
+                                                            ));
+                                                        }
+                                                    }}
+                                                    className="w-6 bg-transparent border-none outline-none p-0 m-0 text-center font-black [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                                />
+                                            </div>
                                         </div>
                                     </div>
 

@@ -45,7 +45,7 @@ export async function searchProducts(query: string): Promise<Product[]> {
             height: row.height,
             quantity: 1,
             allow_rotate: true,
-            allow_lay_down: (row.model_name && (row.model_name.includes('PSM') || row.model_name.includes('LT'))) || row.prod_type === 'CDZ'
+            allow_lay_down: (row.model_name && (row.model_name.includes('PSM') || row.model_name.includes('LT'))) || row.prod_type === 'CDZ' || (row.width <= 150 || row.length <= 150 || row.height <= 150)
         }));
     } catch (e) {
         console.error(e);

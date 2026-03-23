@@ -1,9 +1,9 @@
 const { Pool } = require('pg');
 
 const pool = new Pool({
-    user: 'u0_a286',
+    user: 'u0_a354',
     host: 'maizen.iptime.org',
-    database: 'u0_a286',
+    database: 'u0_a354',
     password: 'z456qwe12!@',
     port: 5432,
     ssl: false,
