@@ -30,27 +30,9 @@ export function packContainer(
     let bestResult: PackingResult | null = null;
 
     for (let p = 0; p < passes; p++) {
-        const result = doPackRun(container, products, strategies[p % strategies.length], p);
-
-        const getOccupiedFloorArea = (res: PackingResult) =>
-            res.items.filter(i => i.z === 0).reduce((sum, i) => sum + (i.w * i.l), 0);
-
-        if (!bestResult) {
+        const result = doPackRun(container, products, strategies[p % strategies.length]);
+        if (!bestResult || result.efficiency > bestResult.efficiency) {
             bestResult = result;
-        } else {
-            // Priority 1: Total items packed (Efficiency) - Most items wins
-            if (result.items.length > bestResult.items.length) {
-                bestResult = result;
-            } else if (result.items.length === bestResult.items.length) {
-                // Priority 2: Floor efficiency - Less floor area occupied is better
-                // (Saves more floor space for the remaining unpacking products)
-                const currentFloor = getOccupiedFloorArea(result);
-                const bestFloor = getOccupiedFloorArea(bestResult);
-
-                if (currentFloor < bestFloor) {
-                    bestResult = result;
-                }
-            }
         }
     }
     return bestResult!;
@@ -77,38 +59,21 @@ function isStable(
     groundZ: number, newItemH: number,
     placed: PlacedRect[]
 ): boolean {
+    if (newItemH < 500) return true;
     if (groundZ === 0) return true;
     const px2 = px + pw, py2 = py + pl;
-
-    // Check support area
-    let supportedArea = 0;
-    const totalArea = pw * pl;
-
     for (const r of placed) {
-        if (Math.abs(r.topZ - groundZ) < 1) { // touching at this level
-            // Calculate intersection area
-            const ix = Math.max(px, r.x);
-            const iy = Math.max(py, r.y);
-            const ix2 = Math.min(px2, r.x2);
-            const iy2 = Math.min(py2, r.y2);
-
-            if (ix2 > ix && iy2 > iy) {
-                // If the item below is too thin for a heavy object, reject
-                if (newItemH >= 500 && r.itemH < 300) return false;
-                supportedArea += (ix2 - ix) * (iy2 - iy);
-            }
+        if (r.topZ === groundZ && r.x < px2 && r.x2 > px && r.y < py2 && r.y2 > py) {
+            if (r.itemH < 300) return false;
         }
     }
-
-    // Require at least 50% support area to prevent floating or precarious tipping
-    return (supportedArea / totalArea) >= 0.5;
+    return true;
 }
 
 function doPackRun(
     container: ContainerDimensions,
     products: Product[],
-    sortFn: (a: Product, b: Product) => number,
-    passIdx: number
+    sortFn: (a: Product, b: Product) => number
 ): PackingResult {
     const placed: PlacedRect[] = [];
     const placedItems: PackedItem[] = [];
@@ -141,37 +106,9 @@ function doPackRun(
         }
         if (candidates.length === 0) continue;
 
-        if (product.height > 300) {
-            // Fridge/Large items: Standard legacy width-first sort
-            candidates.sort((a, b) => Math.floor(container.width / b.w) - Math.floor(container.width / a.w));
-        } else {
-            // Small items (h<=300): Strategy variation over multiple passes
-            if (passIdx % 4 === 0) {
-                // Style A: Width-first (Current style)
-                candidates.sort((a, b) => Math.floor(container.width / b.w) - Math.floor(container.width / a.w));
-            } else if (passIdx % 4 === 1) {
-                // Style B: Height-first (Standing tall)
-                candidates.sort((a, b) => b.h - a.h);
-            } else if (passIdx % 4 === 2) {
-                // Style C: Flat-first (Lying down)
-                candidates.sort((a, b) => a.h - b.h);
-            } else {
-                // Style D: Strategic Cycling / Mixing (Discovery of 1+2, 2+1 patterns)
-                // Cycle through standard and rotated orientations to create mixed rows
-                const cycle = [0, 1, 1]; // 1 std, 2 rotated cycle
-                const orientIdx = cycle[passIdx % cycle.length];
-                if (orientIdx === 0) {
-                    // Try to put std first
-                    candidates.sort((a, b) => (a.type === 'std' ? -1 : 1));
-                } else {
-                    // Try to put rotated first
-                    candidates.sort((a, b) => (a.type === 'rotated' ? -1 : 1));
-                }
-
-                // Then add a bit of randomness to other candidates
-                if (Math.random() > 0.5) candidates.reverse();
-            }
-        }
+        // Sort: most units fitting across container width first
+        // → rotated (768mm: 3 across) wins over std (893mm: 2 across) on the floor
+        candidates.sort((a, b) => Math.floor(container.width / b.w) - Math.floor(container.width / a.w));
 
         let bestScore = Infinity;
         let bestX = 0, bestY = 0, bestZ = 0;
@@ -199,34 +136,12 @@ function doPackRun(
                     if (gZ + cand.h > container.height) continue;
                     if (!isStable(x, y, cand.w, cand.l, gZ, cand.h, placed)) continue;
 
-                    // Same-stack bonus: Prefer stacking on items of the same product ID
-                    // Only apply if the footprint (x, y, w, l) matches almost exactly.
-                    let stackBonus = 0;
-                    if (gZ > 0) {
-                        const itemBelow = placedItems.find(it =>
-                            Math.abs((it.z + it.h) - gZ) < 1 &&
-                            Math.abs(it.x - x) < 5 && // Allow 5mm tolerance
-                            Math.abs(it.y - y) < 5 &&
-                            Math.abs(it.w - cand.w) < 5 &&
-                            Math.abs(it.l - cand.l) < 5
-                        );
-                        if (itemBelow && itemBelow.product.id === product.id) {
-                            stackBonus = 2.5e10; // High enough to beat one layer of height cost
-                        }
-                    }
-                    // Tight-fit bonus: Reward orientations that fill the width perfectly
-                    // Only for small items (h<=300) to help find patterns like 1+2=2198mm (vs 2352)
-                    let tightFitBonus = 0;
-                    if (product.height <= 300) {
-                        const remainingWidth = container.width - (x + cand.w);
-                        if (remainingWidth >= 0 && remainingWidth < 200) {
-                            tightFitBonus = 0.5e10; // Encourages filling the row end tightly
-                        }
-                    }
-
-                    // Score: LOWEST Z first, then Y, then X
+                    // Score: LOWEST Z first → floor strongly preferred (gZ*1e10)
+                    // Then LOWEST Y → fill from front
+                    // Then LOWEST X → fill left to right
+                    // When elevated (gZ>0): prefer lay_front (90° rotated) over lay_side
                     const laySidePenalty = (cand.type === 'lay_side' && gZ > 0) ? 1 : 0;
-                    const score = (gZ * 1e10) + (y * 1e5) + x + laySidePenalty - stackBonus - tightFitBonus;
+                    const score = gZ * 1e10 + y * 1e5 + x + laySidePenalty;
                     if (score < bestScore) {
                         bestScore = score;
                         bestX = x; bestY = y; bestZ = gZ;

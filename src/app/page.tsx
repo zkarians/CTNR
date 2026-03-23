@@ -445,6 +445,11 @@ export default function Home() {
                         <div className="flex items-center gap-2 text-xs font-bold text-slate-500 uppercase tracking-widest">
                             <Box className="w-4 h-4" />
                             적재 리스트
+                            {products.length > 0 && (
+                                <span className="ml-1 text-sky-500/80 font-black tracking-normal normal-case animate-in fade-in slide-in-from-left-1 duration-500">
+                                    총 {products.reduce((acc, p) => acc + p.quantity, 0).toLocaleString()} pkgs
+                                </span>
+                            )}
                         </div>
                         <button
                             onClick={() => { setProducts([]); setResult(null); }}
