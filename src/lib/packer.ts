@@ -127,7 +127,14 @@ function doPackRun(
         const uniqueRemaining = validProducts.filter(p => (unpackedMap.get(p.id) || 0) > 0);
         if (uniqueRemaining.length === 0) break;
 
-        for (const product of uniqueRemaining) {
+        // Priority: tall items (h>=300) must be placed before flat items (h<300)
+        // This prevents flat items from occupying floor spots that tall items need
+        const hasTallRemaining = uniqueRemaining.some(p => p.height >= 300);
+        const activeProducts = (hasTallRemaining)
+            ? uniqueRemaining.filter(p => p.height >= 300)
+            : uniqueRemaining;
+
+        for (const product of activeProducts) {
             const candidates: Array<{ w: number; l: number; h: number; type: PackedItem['orientation'] }> = [];
             const add = (w: number, l: number, h: number, type: PackedItem['orientation']) => {
                 if (w > 0 && l > 0 && h > 0 && w <= container.width && l <= container.length && h <= container.height) {
@@ -170,6 +177,7 @@ function doPackRun(
                     if (r.y2 + cand.l <= container.length) ySet.add(r.y2);
                 }
                 for (let x = cand.w; x + cand.w <= container.width; x += cand.w) xSet.add(x);
+                for (let y = cand.l; y + cand.l <= container.length; y += cand.l) ySet.add(y);
 
                 const sortedY = Array.from(ySet).sort((a, b) => a - b);
                 const sortedX = Array.from(xSet).sort((a, b) => a - b);
@@ -252,6 +260,29 @@ function doPackRun(
             unpackedMap.set(product.id, cur - 1);
             remainingTotal--;
         } else {
+            // Log which items failed and why (first failed item only)
+            const stillRemaining = validProducts.filter(p => (unpackedMap.get(p.id) || 0) > 0);
+            for (const product of stillRemaining) {
+                const candidates: Array<{ w: number; l: number; h: number }> = [
+                    { w: product.width, l: product.length, h: product.height },
+                    ...(product.allow_rotate ? [{ w: product.length, l: product.width, h: product.height }] : []),
+                ];
+                for (const cand of candidates) {
+                    // Sample check at 5 y-positions
+                    for (let testY = 0; testY < container.length; testY += Math.floor(container.length / 5)) {
+                        if (testY + cand.l > container.length) continue;
+                        for (let testX = 0; testX < container.width; testX += cand.w) {
+                            if (testX + cand.w > container.width) continue;
+                            const gZ = getGroundZ(testX, testY, cand.w, cand.l, placed);
+                            const fits = gZ + cand.h <= container.height;
+                            const stable = isStable(testX, testY, cand.w, cand.l, gZ, cand.h, placed);
+                            if (!fits || !stable) {
+                                console.log(`[PACKER FAIL] ${product.model_name} (${cand.w}x${cand.l}x${cand.h}) @ x=${testX},y=${testY},gZ=${gZ}: fits=${fits}(${gZ}+${cand.h}=${gZ+cand.h}/${container.height}), stable=${stable}`);
+                            }
+                        }
+                    }
+                }
+            }
             break;
         }
     }

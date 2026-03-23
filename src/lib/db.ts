@@ -44,7 +44,7 @@ export async function getJobsFromDB(filters?: JobFilters): Promise<Job[]> {
             const whereSql = whereClauses.length > 0 ? "WHERE " + whereClauses.join(" AND ") : "";
             const query = `
                 SELECT 
-                    j.id, 
+                    MIN(j.id) as id, 
                     j.job_name, 
                     j.etd,
                     j.saved_at,
@@ -52,13 +52,11 @@ export async function getJobsFromDB(filters?: JobFilters): Promise<Job[]> {
                     r.transporter,
                     r.cntr_type
                 FROM container_jobs j
-                LEFT JOIN (
-                    SELECT DISTINCT ON (job_id) job_id, cntr_no, transporter, cntr_type
-                    FROM container_results
-                ) r ON r.job_id = j.id
+                LEFT JOIN container_results r ON r.job_id = j.id
                 ${whereSql}
+                GROUP BY j.job_name, j.etd, j.saved_at, r.cntr_no, r.transporter, r.cntr_type
                 ORDER BY j.saved_at DESC 
-                ${whereClauses.length > 0 ? 'LIMIT 500' : ''}
+                LIMIT 500
             `;
             const res = await client.query(query, params);
             return res.rows.map(row => ({
@@ -98,7 +96,10 @@ export async function getProductsForJob(jobId: number): Promise<Product[]> {
                     m.prod_type
                 FROM container_results r
                 JOIN product_master_sync m ON r.prod_name = m.prod_name
-                WHERE r.job_id = $1
+                WHERE r.job_id IN (
+                    SELECT id FROM container_jobs 
+                    WHERE job_name = (SELECT job_name FROM container_jobs WHERE id = $1)
+                )
                 AND r.qty_plan > 0
             `;
             const res = await client.query(query, [jobId]);
@@ -122,40 +123,3 @@ export async function getProductsForJob(jobId: number): Promise<Product[]> {
     }
 }
 
-/** @deprecated Use getProductsForJob instead */
-export async function getProductsFromA23DB(): Promise<Product[]> {
-    try {
-        const client = await pool.connect();
-        try {
-            const query = `
-                SELECT 
-                    m.prod_name as id,
-                    m.prod_name as model_name,
-                    CAST(m.width AS INTEGER) as width,
-                    CAST(m.depth AS INTEGER) as length,
-                    CAST(m.height AS INTEGER) as height,
-                    10 as quantity,
-                    m.prod_type
-                FROM product_master_sync m
-                ORDER BY m.last_used_at DESC NULLS LAST
-                LIMIT 50
-            `;
-            const res = await client.query(query);
-            return res.rows.map(row => ({
-                id: row.id,
-                model_name: row.model_name,
-                width: row.width || 0,
-                length: row.length || 0,
-                height: row.height || 0,
-                quantity: row.quantity,
-                allow_rotate: true,
-                allow_lay_down: (row.model_name && (row.model_name.includes('PSM') || row.model_name.includes('LT'))) || row.prod_type === 'CDZ' || (row.width <= 150 || row.length <= 150 || row.height <= 150)
-            }));
-        } finally {
-            client.release();
-        }
-    } catch (error) {
-        console.error('getProductsFromA23DB Error:', error);
-        return [];
-    }
-}

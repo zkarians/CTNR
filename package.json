@@ -12,6 +12,7 @@
     "@react-three/drei": "latest",
     "@react-three/fiber": "latest",
     "clsx": "latest",
+    "dotenv": "^17.3.1",
     "framer-motion": "latest",
     "lucide-react": "latest",
     "next": "latest",

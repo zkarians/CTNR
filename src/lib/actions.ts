@@ -1,22 +1,12 @@
 "use server";
 
 import {
-    getProductsFromA23DB as getDBData,
     getJobsFromDB,
     getProductsForJob,
     pool
 } from "./db";
 import { Product, Job, JobFilters } from "./types";
 
-export async function fetchProducts(): Promise<Product[]> {
-    try {
-        const data = await getDBData();
-        return data;
-    } catch (error) {
-        console.error("Failed to fetch products:", error);
-        return [];
-    }
-}
 
 export async function fetchJobs(filters?: JobFilters): Promise<Job[]> {
     try {
