@@ -1,12 +1,19 @@
+import path from 'path';
+import dotenv from 'dotenv';
 import { Pool } from 'pg';
 import { Job, mapContainerType, Product, JobFilters } from "./types";
 
+// Force load .env from the root directory for reliability
+dotenv.config({ path: path.resolve(process.cwd(), '.env') });
+
+console.log("DB Pool: Loading with host", process.env.DB_HOST);
+
 export const pool = new Pool({
-    user: process.env.DB_USER || 'u0_a354',
-    host: process.env.DB_HOST || 'maizen.iptime.org',
-    database: process.env.DB_NAME || 'u0_a354',
-    password: process.env.DB_PASSWORD || 'z456qwe12!@',
-    port: parseInt(process.env.DB_PORT || '5432'),
+    user: process.env.DB_USER || 'root',
+    host: process.env.DB_HOST || 'svc.sel3.cloudtype.app',
+    database: process.env.DB_NAME || 'excel_compare',
+    password: process.env.DB_PASSWORD || 'z456qwe12!@#',
+    port: parseInt(process.env.DB_PORT || '30554'),
     ssl: false,
     connectionTimeoutMillis: 5000,
 });
@@ -24,19 +31,19 @@ export async function getJobsFromDB(filters?: JobFilters): Promise<Job[]> {
 
             if (filters) {
                 if (filters.startDate) {
-                    whereClauses.push(`saved_at >= $${paramIdx++}`);
+                    whereClauses.push(`j.saved_at >= $${paramIdx++}`);
                     params.push(filters.startDate);
                 }
                 if (filters.endDate) {
-                    whereClauses.push(`saved_at <= $${paramIdx++}::timestamp + interval '1 day'`);
+                    whereClauses.push(`j.saved_at < ($${paramIdx++}::date + 1)`);
                     params.push(filters.endDate);
                 }
                 if (filters.productName) {
-                    whereClauses.push(`id IN (SELECT job_id FROM container_results WHERE prod_name ILIKE $${paramIdx++})`);
+                    whereClauses.push(`j.id IN (SELECT job_id FROM container_results WHERE prod_name ILIKE $${paramIdx++})`);
                     params.push(`%${filters.productName}%`);
                 }
                 if (filters.containerNo) {
-                    whereClauses.push(`id IN (SELECT job_id FROM container_results WHERE cntr_no ILIKE $${paramIdx++})`);
+                    whereClauses.push(`j.id IN (SELECT job_id FROM container_results WHERE cntr_no ILIKE $${paramIdx++})`);
                     params.push(`%${filters.containerNo}%`);
                 }
             }
@@ -55,7 +62,7 @@ export async function getJobsFromDB(filters?: JobFilters): Promise<Job[]> {
                 LEFT JOIN container_results r ON r.job_id = j.id
                 ${whereSql}
                 GROUP BY j.job_name, j.etd, j.saved_at, r.cntr_no, r.transporter, r.cntr_type
-                ORDER BY j.saved_at DESC 
+                ORDER BY j.saved_at DESC, id DESC 
                 LIMIT 500
             `;
             const res = await client.query(query, params);

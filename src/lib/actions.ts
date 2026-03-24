@@ -10,9 +10,13 @@ import { Product, Job, JobFilters } from "./types";
 
 export async function fetchJobs(filters?: JobFilters): Promise<Job[]> {
     try {
-        return await getJobsFromDB(filters);
+        const jobs = await getJobsFromDB(filters);
+        if (jobs.length === 0) {
+            console.log("fetchJobs: No jobs returned from DB.");
+        }
+        return jobs;
     } catch (error) {
-        console.error("Failed to fetch jobs:", error);
+        console.error("fetchJobs Server Action Error:", error);
         return [];
     }
 }

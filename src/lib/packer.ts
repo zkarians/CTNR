@@ -130,119 +130,107 @@ function doPackRun(
         // Priority: tall items (h>=300) must be placed before flat items (h<300)
         // This prevents flat items from occupying floor spots that tall items need
         const hasTallRemaining = uniqueRemaining.some(p => p.height >= 300);
-        const activeProducts = (hasTallRemaining)
-            ? uniqueRemaining.filter(p => p.height >= 300)
-            : uniqueRemaining;
+        const productBuckets = (hasTallRemaining)
+            ? [uniqueRemaining.filter(p => p.height >= 300), uniqueRemaining.filter(p => p.height < 300)]
+            : [uniqueRemaining];
 
-        for (const product of activeProducts) {
-            const candidates: Array<{ w: number; l: number; h: number; type: PackedItem['orientation'] }> = [];
-            const add = (w: number, l: number, h: number, type: PackedItem['orientation']) => {
-                if (w > 0 && l > 0 && h > 0 && w <= container.width && l <= container.length && h <= container.height) {
-                    candidates.push({ w, l, h, type });
+        for (const bucket of productBuckets) {
+            for (const product of bucket) {
+                const candidates: Array<{ w: number; l: number; h: number; type: PackedItem['orientation'] }> = [];
+                const add = (w: number, l: number, h: number, type: PackedItem['orientation']) => {
+                    if (w > 0 && l > 0 && h > 0 && w <= container.width && l <= container.length && h <= container.height) {
+                        candidates.push({ w, l, h, type });
+                    }
+                };
+                add(product.width, product.length, product.height, 'std');
+                if (product.allow_rotate) add(product.length, product.width, product.height, 'rotated');
+                if (product.allow_lay_down) {
+                    add(product.width, product.height, product.length, 'lay_side');
+                    add(product.height, product.width, product.length, 'lay_front');
                 }
-            };
-            add(product.width, product.length, product.height, 'std');
-            if (product.allow_rotate) add(product.length, product.width, product.height, 'rotated');
-            if (product.allow_lay_down) {
-                add(product.width, product.height, product.length, 'lay_side');
-                add(product.height, product.width, product.length, 'lay_front');
-            }
-            if (candidates.length === 0) continue;
+                if (candidates.length === 0) continue;
 
-            if (product.height > 300) {
                 candidates.sort((a, b) => {
                     const cmp = Math.floor(container.width / b.w) - Math.floor(container.width / a.w);
                     return cmp !== 0 ? cmp : a.l - b.l;
                 });
-            } else {
-                if (passIdx % 4 === 0) {
-                    candidates.sort((a, b) => {
-                        const cmp = Math.floor(container.width / b.w) - Math.floor(container.width / a.w);
-                        return cmp !== 0 ? cmp : a.l - b.l;
-                    });
-                } else if (passIdx % 4 === 1) {
-                    candidates.sort((a, b) => b.h - a.h);
-                } else if (passIdx % 4 === 2) {
-                    candidates.sort((a, b) => a.h - b.h);
-                } else {
-                    if (Math.random() > 0.5) candidates.reverse();
-                }
-            }
 
-            for (const cand of candidates) {
-                const xSet = new Set<number>([0]);
-                const ySet = new Set<number>([0]);
-                for (const r of placed) {
-                    if (r.x2 + cand.w <= container.width) xSet.add(r.x2);
-                    if (r.y2 + cand.l <= container.length) ySet.add(r.y2);
-                }
-                for (let x = cand.w; x + cand.w <= container.width; x += cand.w) xSet.add(x);
-                for (let y = cand.l; y + cand.l <= container.length; y += cand.l) ySet.add(y);
+                for (const cand of candidates) {
+                    const xSet = new Set<number>([0]);
+                    const ySet = new Set<number>([0]);
+                    for (const r of placed) {
+                        if (r.x2 + cand.w <= container.width) xSet.add(r.x2);
+                        if (r.y2 + cand.l <= container.length) ySet.add(r.y2);
+                    }
+                    for (let x = cand.w; x + cand.w <= container.width; x += cand.w) xSet.add(x);
+                    for (let y = cand.l; y + cand.l <= container.length; y += cand.l) ySet.add(y);
 
-                const sortedY = Array.from(ySet).sort((a, b) => a - b);
-                const sortedX = Array.from(xSet).sort((a, b) => a - b);
+                    const sortedY = Array.from(ySet).sort((a, b) => a - b);
+                    const sortedX = Array.from(xSet).sort((a, b) => a - b);
 
-                for (const y of sortedY) {
-                    if (y + cand.l > container.length) continue;
-                    for (const x of sortedX) {
-                        if (x + cand.w > container.width) continue;
-                        const gZ = getGroundZ(x, y, cand.w, cand.l, placed);
-                        if (gZ + cand.h > container.height) continue;
-                        if (!isStable(x, y, cand.w, cand.l, gZ, cand.h, placed)) continue;
+                    for (const y of sortedY) {
+                        if (y + cand.l > container.length) continue;
+                        for (const x of sortedX) {
+                            if (x + cand.w > container.width) continue;
+                            const gZ = getGroundZ(x, y, cand.w, cand.l, placed);
+                            if (gZ + cand.h > container.height) continue;
+                            if (!isStable(x, y, cand.w, cand.l, gZ, cand.h, placed)) continue;
 
-                        let stackBonus = 0;
-                        if (gZ > 0) {
-                            const itemBelow = placedItems.find(it =>
-                                Math.abs((it.z + it.h) - gZ) < 1 &&
-                                Math.abs(it.x - x) < 5 &&
-                                Math.abs(it.y - y) < 5 &&
-                                Math.abs(it.w - cand.w) < 5 &&
-                                Math.abs(it.l - cand.l) < 5
-                            );
-                            if (itemBelow) {
-                                if (itemBelow.product.id === product.id) {
-                                    stackBonus = 4e13;
-                                } else if (Math.abs(itemBelow.h - cand.h) < 10) {
-                                    stackBonus = 3.5e13;
+                            let stackBonus = 0;
+                            if (gZ > 0) {
+                                const itemBelow = placedItems.find(it =>
+                                    Math.abs((it.z + it.h) - gZ) < 1 &&
+                                    Math.abs(it.x - x) < 5 &&
+                                    Math.abs(it.y - y) < 5 &&
+                                    Math.abs(it.w - cand.w) < 5 &&
+                                    Math.abs(it.l - cand.l) < 5
+                                );
+                                if (itemBelow) {
+                                    if (itemBelow.product.id === product.id) {
+                                        stackBonus = 1e15;
+                                    } else if (Math.abs(itemBelow.h - cand.h) < 10) {
+                                        stackBonus = 0.8e15;
+                                    }
                                 }
                             }
-                        }
 
-                        if (gZ > 0 && cand.h < product.height && cand.h <= 300) {
-                            stackBonus += 3e13;
-                        }
-
-                        let tightFitBonus = 0;
-                        if (product.height <= 300) {
-                            const remainingWidth = container.width - (x + cand.w);
-                            if (remainingWidth >= 0 && remainingWidth < 200) {
-                                tightFitBonus = 0.5e10;
+                            if (gZ > 0 && cand.h < product.height && cand.h <= 300) {
+                                stackBonus += 0.5e15;
                             }
-                        }
 
-                        const remW = container.width - (x + cand.w);
-                        let deadSpacePenalty = 0;
-                        if (remW > 0 && gZ === 0) {
-                            const canFill = uniqueRemaining.some(u => {
-                                if (u.id === product.id && unpackedMap.get(product.id) === 1) return false;
-                                const minDim = Math.min(u.width, u.allow_rotate ? u.length : u.width);
-                                return minDim <= remW;
-                            });
-                            if (!canFill) deadSpacePenalty = remW * 1e6;
-                        }
+                            let tightFitBonus = 0;
+                            if (product.height <= 300) {
+                                const remainingWidth = container.width - (x + cand.w);
+                                if (remainingWidth >= 0 && remainingWidth < 200) {
+                                    tightFitBonus = 0.5e10;
+                                }
+                            }
 
-                        const volBonus = (cand.w * cand.l * cand.h) / 1000;
-                        const laySidePenalty = (cand.type === 'lay_side' && gZ > 0) ? 1 : 0;
+                            const remW = container.width - (x + cand.w);
+                            let deadSpacePenalty = 0;
+                            if (remW > 0 && gZ === 0) {
+                                const canFill = uniqueRemaining.some(u => {
+                                    if (u.id === product.id && unpackedMap.get(product.id) === 1) return false;
+                                    const minDim = Math.min(u.width, u.allow_rotate ? u.length : u.width);
+                                    return minDim <= remW;
+                                });
+                                if (!canFill) deadSpacePenalty = remW * 1e6;
+                            }
 
-                        const score = (gZ * 1e11) + (y * 1e8) + (x * 1e4) + deadSpacePenalty + laySidePenalty - stackBonus - tightFitBonus - volBonus;
+                            const volBonus = (cand.w * cand.l * cand.h) / 1000;
+                            const laySidePenalty = (cand.type === 'lay_side' && gZ > 0) ? 1 : 0;
 
-                        if (score < globalBestScore) {
-                            globalBestScore = score;
-                            globalBestPlace = { product, cand, x, y, z: gZ };
+                            const score = (gZ * 1e11) + (y * 1e8) + (x * 1e4) + deadSpacePenalty + laySidePenalty - stackBonus - tightFitBonus - volBonus;
+
+                            if (score < globalBestScore) {
+                                globalBestScore = score;
+                                globalBestPlace = { product, cand, x, y, z: gZ };
+                            }
                         }
                     }
                 }
             }
+            if (globalBestPlace !== null) break;
         }
 
         if (globalBestPlace !== null) {

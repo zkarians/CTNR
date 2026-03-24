@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev -p 3000 -H 0.0.0.0",
+    "dev": "next dev -H 127.0.0.1",
     "build": "next build",
     "start": "next start",
     "lint": "next lint"
@@ -11,6 +11,8 @@
   "dependencies": {
     "@react-three/drei": "latest",
     "@react-three/fiber": "latest",
+    "@types/bcryptjs": "^2.4.6",
+    "bcryptjs": "^3.0.3",
     "clsx": "latest",
     "dotenv": "^17.3.1",
     "framer-motion": "latest",

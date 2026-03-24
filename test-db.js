@@ -1,11 +1,12 @@
+require('dotenv').config();
 const { Pool } = require('pg');
 
 const pool = new Pool({
-    user: 'u0_a354',
-    host: 'maizen.iptime.org',
-    database: 'u0_a354',
-    password: 'z456qwe12!@',
-    port: 5432,
+    user: process.env.DB_USER,
+    host: process.env.DB_HOST,
+    database: process.env.DB_NAME,
+    password: process.env.DB_PASSWORD,
+    port: parseInt(process.env.DB_PORT),
     ssl: false,
     connectionTimeoutMillis: 5000,
 });

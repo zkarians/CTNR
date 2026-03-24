@@ -1,8 +1,14 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"] });
+
+export const viewport: Viewport = {
+    width: 'device-width',
+    initialScale: 1,
+    maximumScale: 1,
+};
 
 export const metadata: Metadata = {
     title: "CTNR Optimizer | 컨테이너 적재 최적화",
@@ -16,9 +22,10 @@ export default function RootLayout({
 }>) {
     return (
         <html lang="ko" className="dark">
-            <body className={`${inter.className} min-h-screen bg-[#030712] overflow-hidden`}>
+            <body className={`${inter.className} min-h-screen bg-[#030712] md:overflow-hidden`}>
                 {children}
             </body>
         </html>
     );
 }
+
