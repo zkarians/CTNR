@@ -137,80 +137,23 @@ export default function ContainerViewer({ result, highlightedProduct }: Containe
             </Canvas>
 
             {/* Overlay Info Panels */}
-            <div className="absolute top-6 left-6 flex flex-col gap-4 pointer-events-none">
-                <div className=" glass-card p-5 !bg-black/40 backdrop-blur-xl border-white/20 min-w-[240px]">
-                    <div className="flex items-center gap-2 mb-4 text-sky-400">
-                        <Maximize className="w-4 h-4" />
-                        <h3 className="text-xs font-black uppercase tracking-widest">{container.name}</h3>
+            <div className="absolute top-2 left-2 md:top-6 md:left-6 flex flex-col gap-2 md:gap-4 pointer-events-none transition-all duration-300">
+                <div className="glass p-2 md:p-3 px-3 md:px-4 flex items-center gap-2 md:gap-4 text-[8px] md:text-[10px] font-bold text-slate-400">
+                    <div className="flex items-center gap-1 md:gap-1.5 font-black text-sky-500/80">
+                        <Ruler className="w-2.5 h-2.5 md:w-3 md:h-3" />
+                        <span>{container.width}×{container.length}</span>
                     </div>
-
-                    <div className="space-y-4">
-                        <div>
-                            <p className="text-[10px] text-slate-500 font-bold uppercase mb-1">적재 효율성</p>
-                            <div className="flex items-end gap-2">
-                                <span className="text-4xl font-black text-white leading-none">{result.efficiency.toFixed(1)}%</span>
-                                <div className="h-1.5 flex-1 bg-white/10 rounded-full overflow-hidden mb-1">
-                                    <div className="h-full bg-sky-500" style={{ width: `${result.efficiency}%` }} />
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-4 pt-4 border-t border-white/10">
-                            <div>
-                                <p className="text-[9px] text-slate-500 font-bold uppercase">적재 완료</p>
-                                <p className="text-lg font-bold text-white">{items.length} <span className="text-[10px] font-normal text-slate-400 italic">PKGS</span></p>
-                            </div>
-                            <div>
-                                <p className="text-[9px] text-slate-500 font-bold uppercase">미적재</p>
-                                <p className={`text-lg font-bold ${result.unpacked.length > 0 ? "text-red-400" : "text-emerald-400"}`}>
-                                    {result.unpacked.reduce((s, u) => s + u.quantity, 0)} <span className="text-[10px] font-normal text-slate-400 italic">PKGS</span>
-                                </p>
-                            </div>
-                        </div>
-
-                        {/* Unpacked Detail List */}
-                        {result.unpacked.length > 0 ? (
-                            <div className="pt-3 border-t border-red-500/20">
-                                <p className="text-[9px] font-black uppercase text-red-400 mb-2 flex items-center gap-1">
-                                    <span className="w-1.5 h-1.5 rounded-full bg-red-500 inline-block animate-pulse"></span>
-                                    미적재 목록
-                                </p>
-                                <div className="space-y-1.5 max-h-32 overflow-y-auto custom-scrollbar">
-                                    {result.unpacked.map((u, i) => (
-                                        <div key={i} className="flex justify-between items-center bg-red-500/10 rounded-lg px-2.5 py-1.5 border border-red-500/20">
-                                            <span className="text-[10px] text-red-300 font-bold truncate mr-2">{u.model_name}</span>
-                                            <span className="text-[10px] font-black text-red-400 shrink-0">×{u.quantity}</span>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        ) : (
-                            <div className="pt-3 border-t border-emerald-500/20">
-                                <div className="flex items-center gap-2 bg-emerald-500/10 rounded-xl px-3 py-2 border border-emerald-500/20">
-                                    <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block"></span>
-                                    <p className="text-[10px] font-black text-emerald-400">전량 적재 완료</p>
-                                </div>
-                            </div>
-                        )}
-                    </div>
-                </div>
-
-                <div className="glass p-3 px-4 flex items-center gap-4 text-[10px] font-bold text-slate-400">
-                    <div className="flex items-center gap-1.5">
-                        <Ruler className="w-3 h-3 text-sky-500" />
-                        <span>DIM: {container.width}x{container.length}</span>
-                    </div>
-                    <div className="w-px h-3 bg-white/10" />
-                    <div className="flex items-center gap-1.5 uppercase">
-                        <span>Max Height: {container.height}mm</span>
+                    <div className="w-px h-2 md:h-3 bg-white/10" />
+                    <div className="flex items-center gap-1 md:gap-1.5 uppercase">
+                        <span>H: {container.height}mm</span>
                     </div>
                 </div>
             </div>
 
             {/* Instruction Help */}
-            <div className="absolute bottom-6 right-6 glass p-2 px-3 text-[10px] text-slate-500 flex items-center gap-2">
-                <Info className="w-3 h-3 text-sky-500" />
-                마우스로 회전/확대하고 박스에 마우스를 올려 상세 정보를 확인하세요.
+            <div className="absolute bottom-2 right-2 md:bottom-6 md:right-6 glass p-1.5 md:p-2 px-2 md:px-3 text-[8px] md:text-[10px] text-slate-500 flex items-center gap-1.5 md:gap-2 max-w-[150px] md:max-w-none">
+                <Info className="w-2.5 h-2.5 md:w-3 md:h-3 text-sky-500 shrink-0" />
+                <span className="truncate md:whitespace-normal">마우스로 회전/확대하고 박스를 클릭하세요.</span>
             </div>
         </div>
     );

@@ -9,11 +9,11 @@ dotenv.config({ path: path.resolve(process.cwd(), '.env') });
 console.log("DB Pool: Loading with host", process.env.DB_HOST);
 
 export const pool = new Pool({
-    user: process.env.DB_USER || 'root',
-    host: process.env.DB_HOST || 'svc.sel3.cloudtype.app',
-    database: process.env.DB_NAME || 'excel_compare',
-    password: process.env.DB_PASSWORD || 'z456qwe12!@#',
-    port: parseInt(process.env.DB_PORT || '30554'),
+    user: process.env.DB_USER || 'postgres',
+    host: process.env.DB_HOST || 'work',
+    database: process.env.DB_NAME || 'u0_a286',
+    password: process.env.DB_PASSWORD || 'z456qwe12!@',
+    port: parseInt(process.env.DB_PORT || '5432'),
     ssl: false,
     connectionTimeoutMillis: 5000,
 });
@@ -96,11 +96,11 @@ export async function getProductsForJob(jobId: number): Promise<Product[]> {
                 SELECT 
                     r.prod_name as id,
                     r.prod_name as model_name,
-                    CAST(m.width AS INTEGER) as width,
-                    CAST(m.depth AS INTEGER) as length,
-                    CAST(m.height AS INTEGER) as height,
-                    CAST(r.qty_plan AS INTEGER) as quantity,
-                    m.prod_type
+                    MAX(CAST(m.width AS INTEGER)) as width,
+                    MAX(CAST(m.depth AS INTEGER)) as length,
+                    MAX(CAST(m.height AS INTEGER)) as height,
+                    SUM(CAST(r.qty_plan AS INTEGER)) as quantity,
+                    MAX(m.prod_type) as prod_type
                 FROM container_results r
                 JOIN product_master_sync m ON r.prod_name = m.prod_name
                 WHERE r.job_id IN (
@@ -108,6 +108,7 @@ export async function getProductsForJob(jobId: number): Promise<Product[]> {
                     WHERE job_name = (SELECT job_name FROM container_jobs WHERE id = $1)
                 )
                 AND r.qty_plan > 0
+                GROUP BY r.prod_name
             `;
             const res = await client.query(query, [jobId]);
 

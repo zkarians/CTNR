@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import ContainerViewer from '@/components/ContainerViewer';
+import PackingStatsCard from '@/components/PackingStatsCard';
 import LogoutButton from '@/components/LogoutButton';
 import {
     Product, PackingResult, ContainerType, CONTAINER_DATA, Job, JobFilters
@@ -23,7 +24,13 @@ export default function Home({ user }: { user: SessionUser }) {
     const [jobs, setJobs] = useState<Job[]>([]);
     const [selectedJobId, setSelectedJobId] = useState<number | null>(null);
     const [isFilterOpen, setIsFilterOpen] = useState(true);
-    const [filters, setFilters] = useState<JobFilters>({ startDate: '', endDate: '', productName: '', containerNo: '' });
+    
+    // Default dates to today
+    const [filters, setFilters] = useState<JobFilters>(() => {
+        const today = new Date().toISOString().split('T')[0];
+        return { startDate: today, endDate: today, productName: '', containerNo: '' };
+    });
+
     const [manualProduct, setManualProduct] = useState({ model_name: '', width: 1000, length: 800, height: 1200, quantity: 10, allow_rotate: true, allow_lay_down: false });
     const [searchResults, setSearchResults] = useState<Product[]>([]);
     const [numPasses, setNumPasses] = useState(10);
@@ -130,6 +137,13 @@ export default function Home({ user }: { user: SessionUser }) {
                 <LogoutButton username={user.username} name={user.name} role={user.role} />
             </div>
 
+            {/* Packing Result Card (Dynamic) - New Location */}
+            {result && (
+                <div className="mb-2 shrink-0">
+                    <PackingStatsCard result={result} />
+                </div>
+            )}
+
             {/* Job Selection */}
             <section className="space-y-4 shrink-0">
                 <div className="flex items-center justify-between px-1">
@@ -149,40 +163,40 @@ export default function Home({ user }: { user: SessionUser }) {
                                 <div className="space-y-1.5">
                                     <label className="text-[11px] md:text-[10px] text-slate-500 font-bold ml-1">시작일</label>
                                     <div className="relative">
-                                        <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 md:w-3.5 md:h-3.5 text-slate-500" />
+                                        <Calendar className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500" />
                                         <input type="date" name="startDate" value={filters.startDate} onChange={handleFilterChange}
-                                            className="w-full bg-[#11111a] border border-white/5 rounded-2xl py-3 md:py-2 pl-10 md:pl-9 pr-3 text-sm md:text-xs focus:ring-1 focus:ring-sky-500 outline-none transition-all" />
+                                            className="w-full bg-[#11111a] border border-white/5 rounded-xl py-2 md:py-1.5 pl-8 md:pl-7 pr-2 text-xs md:text-[10px] focus:ring-1 focus:ring-sky-500 outline-none transition-all" />
                                     </div>
                                 </div>
                                 <div className="space-y-1.5">
                                     <label className="text-[11px] md:text-[10px] text-slate-500 font-bold ml-1">종료일</label>
                                     <div className="relative">
-                                        <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 md:w-3.5 md:h-3.5 text-slate-500" />
+                                        <Calendar className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500" />
                                         <input type="date" name="endDate" value={filters.endDate} onChange={handleFilterChange}
-                                            className="w-full bg-[#11111a] border border-white/5 rounded-2xl py-3 md:py-2 pl-10 md:pl-9 pr-3 text-sm md:text-xs focus:ring-1 focus:ring-sky-500 outline-none transition-all" />
+                                            className="w-full bg-[#11111a] border border-white/5 rounded-xl py-2 md:py-1.5 pl-8 md:pl-7 pr-2 text-xs md:text-[10px] focus:ring-1 focus:ring-sky-500 outline-none transition-all" />
                                     </div>
                                 </div>
                             </div>
                             <div className="space-y-3">
                                 <div className="relative">
-                                    <Package className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                                    <Package className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500" />
                                     <input placeholder="제품명 검색..." name="productName" value={filters.productName} onChange={handleFilterChange}
-                                        className="w-full bg-[#11111a] border border-white/5 rounded-2xl py-3.5 md:py-2.5 pl-10 pr-4 text-sm md:text-xs focus:ring-1 focus:ring-sky-500 outline-none transition-all placeholder:text-slate-600" />
+                                        className="w-full bg-[#11111a] border border-white/5 rounded-xl py-2.5 md:py-2 pl-8 pr-3 text-xs md:text-[10px] focus:ring-1 focus:ring-sky-500 outline-none transition-all placeholder:text-slate-600" />
                                 </div>
                                 <div className="relative">
-                                    <Truck className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                                    <Truck className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500" />
                                     <input placeholder="컨테이너 번호 검색..." name="containerNo" value={filters.containerNo} onChange={handleFilterChange}
-                                        className="w-full bg-[#11111a] border border-white/5 rounded-2xl py-3.5 md:py-2.5 pl-10 pr-4 text-sm md:text-xs focus:ring-1 focus:ring-sky-500 outline-none transition-all placeholder:text-slate-600" />
+                                        className="w-full bg-[#11111a] border border-white/5 rounded-xl py-2.5 md:py-2 pl-8 pr-3 text-xs md:text-[10px] focus:ring-1 focus:ring-sky-500 outline-none transition-all placeholder:text-slate-600" />
                                 </div>
-                                <button onClick={loadJobs} className="w-full py-3 md:py-2.5 rounded-2xl md:rounded-xl bg-sky-500/10 border border-sky-500/20 text-sky-400 text-sm md:text-xs font-bold hover:bg-sky-400 hover:text-white transition-all flex items-center justify-center gap-2 mt-2">
-                                    <Search className="w-4 h-4 md:w-3.5 md:h-3.5" />조회하기
+                                <button onClick={loadJobs} className="w-full py-2.5 md:py-2 rounded-xl bg-sky-500/10 border border-sky-500/20 text-sky-400 text-xs md:text-[10px] font-black hover:bg-sky-500 hover:text-white transition-all flex items-center justify-center gap-2 mt-1">
+                                    <Search className="w-3.5 h-3.5 md:w-3 md:h-3" />조회하기
                                 </button>
                             </div>
                         </motion.div>
                     )}
                 </AnimatePresence>
 
-                <div className="space-y-2 overflow-y-auto max-h-[220px] md:max-h-[160px] custom-scrollbar pr-1 pb-2">
+                <div className="space-y-2 overflow-y-auto max-h-[155px] md:max-h-[125px] custom-scrollbar pr-1 pb-2">
                     {jobs.length === 0 && !isLoading ? (
                         <div className="flex flex-col items-center justify-center p-8 md:p-6 bg-white/5 border border-white/5 rounded-3xl opacity-40">
                             <Search className="w-6 h-6 mb-2" />
@@ -191,19 +205,19 @@ export default function Home({ user }: { user: SessionUser }) {
                     ) : (
                         jobs.map((job, idx) => (
                             <button key={idx} onClick={() => handleJobSelect(job.id)}
-                                className={`w-full px-5 py-4 md:px-4 md:py-3 rounded-2xl text-left border transition-all duration-300 flex items-center justify-between group ${selectedJobId === job.id
-                                    ? "bg-sky-500/10 border-sky-500 shadow-[0_0_25px_rgba(56,189,248,0.15)] ring-1 ring-sky-500/30"
+                                className={`w-full px-3 py-2.5 md:px-3 md:py-2 rounded-xl text-left border transition-all duration-300 flex items-center justify-between group ${selectedJobId === job.id
+                                    ? "bg-sky-500/10 border-sky-500 shadow-[0_4px_15px_rgba(56,189,248,0.1)] ring-1 ring-sky-500/30"
                                     : "bg-[#11111a] border-white/5 text-slate-400 hover:border-white/10 hover:bg-white/[0.07]"}`}
                             >
-                                <div className="flex items-center gap-3 min-w-0">
-                                    <div className={`text-[15px] md:text-sm font-black truncate uppercase tracking-tight ${getCarrierColor(job.transporter)}`}>
+                                <div className="flex items-center gap-2 min-w-0">
+                                    <div className={`text-[13px] md:text-xs font-black truncate uppercase tracking-tight ${getCarrierColor(job.transporter)}`}>
                                         {job.cntr_no || "번호없음"}
-                                        <span className="ml-2 text-[10px] font-bold text-slate-600 normal-case tracking-normal">
+                                        <span className="ml-1.5 text-[9px] font-bold text-slate-600 normal-case tracking-normal opacity-70">
                                             [{job.transporter ? (job.transporter.includes("천마") ? "천마" : (job.transporter.includes("BNI") || job.transporter.includes("비엔아이") ? "BNI" : job.transporter.split('(')[0])) : "미정"}]
                                         </span>
                                     </div>
                                 </div>
-                                <div className="text-[11px] md:text-[10px] font-bold text-slate-600 shrink-0 tabular-nums">{job.work_date}</div>
+                                <div className="text-[10px] md:text-[9px] font-bold text-slate-600 shrink-0 tabular-nums">{job.work_date}</div>
                             </button>
                         ))
                     )}
@@ -222,13 +236,13 @@ export default function Home({ user }: { user: SessionUser }) {
                     </button>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2.5">
+                <div className="grid grid-cols-2 gap-2">
                     {(Object.keys(CONTAINER_DATA) as ContainerType[]).map((key) => (
                         <button key={key} onClick={() => setSelectedContainer(key)}
-                            className={`p-3 md:p-2 rounded-2xl md:rounded-xl text-left border transition-all duration-300 ${selectedContainer === key
-                                ? "bg-sky-500/10 border-sky-500 text-sky-400 shadow-lg shadow-sky-500/5 ring-1 ring-sky-500/20"
+                            className={`p-2.5 md:p-2 rounded-xl md:rounded-lg text-left border transition-all duration-300 ${selectedContainer === key
+                                ? "bg-sky-500/10 border-sky-500 text-sky-400 shadow-md shadow-sky-500/5 ring-1 ring-sky-500/20"
                                 : "bg-[#11111a] border-white/5 text-slate-400 hover:border-white/10"}`}>
-                            <p className="text-[11px] md:text-[10px] font-black truncate">{CONTAINER_DATA[key].name}</p>
+                            <p className="text-[10px] md:text-[9px] font-black truncate">{CONTAINER_DATA[key].name}</p>
                         </button>
                     ))}
                 </div>
