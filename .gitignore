@@ -33,3 +33,30 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# desktop build
+/dist
+/win-unpacked
+
+# backup and logs
+*.zip
+*.sql
+*.dump
+*.log
+*.txt
+*.json
+!package.json
+!package-lock.json
+!tsconfig.json
+!next-env.d.ts
+!postcss.config.js
+!tailwind.config.ts
+
+# debug scripts (optional: you might want to keep some, but usually they are for local testing)
+debug*.ts
+check*.js
+find*.js
+inspect*.js
+test*.js
+verify*.js
+get*.js

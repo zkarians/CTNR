@@ -21,8 +21,8 @@ export default function RootLayout({
     children: React.ReactNode;
 }>) {
     return (
-        <html lang="ko" className="dark">
-            <body className={`${inter.className} min-h-screen bg-[#030712] md:overflow-hidden`}>
+        <html lang="ko" className="dark" suppressHydrationWarning>
+            <body className={`${inter.className} min-h-screen bg-[#030712] md:overflow-hidden`} suppressHydrationWarning>
                 {children}
             </body>
         </html>

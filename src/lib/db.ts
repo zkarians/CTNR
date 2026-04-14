@@ -6,16 +6,41 @@ import { Job, mapContainerType, Product, JobFilters } from "./types";
 // Force load .env from the root directory for reliability
 dotenv.config({ path: path.resolve(process.cwd(), '.env') });
 
-console.log("DB Pool: Loading with host", process.env.DB_HOST);
+let _pool: Pool | null = null;
 
-export const pool = new Pool({
-    user: process.env.DB_USER || 'postgres',
-    host: process.env.DB_HOST || 'work',
-    database: process.env.DB_NAME || 'u0_a286',
-    password: process.env.DB_PASSWORD || 'z456qwe12!@',
-    port: parseInt(process.env.DB_PORT || '5432'),
-    ssl: false,
-    connectionTimeoutMillis: 5000,
+export function getPool(): Pool {
+    if (!_pool) {
+        dotenv.config({ path: path.resolve(process.cwd(), '.env'), override: true });
+        console.log("DB Pool: Initializing with host", process.env.DB_HOST);
+        _pool = new Pool({
+            user: process.env.DB_USER || 'postgres',
+            host: process.env.DB_HOST || 'localhost',
+            database: process.env.DB_NAME || 'excel',
+            password: process.env.DB_PASSWORD || 'z456qwe12!@',
+            port: parseInt(process.env.DB_PORT || '5432'),
+            ssl: false,
+            connectionTimeoutMillis: 5000,
+        });
+    }
+    return _pool;
+}
+
+export async function resetPool() {
+    if (_pool) {
+        await _pool.end();
+        _pool = null;
+    }
+}
+
+export const pool = new Proxy({} as Pool, {
+    get: (target, prop) => {
+        const p = getPool();
+        const val = (p as any)[prop];
+        if (typeof val === 'function') {
+            return val.bind(p);
+        }
+        return val;
+    }
 });
 
 /**
@@ -43,7 +68,7 @@ export async function getJobsFromDB(filters?: JobFilters): Promise<Job[]> {
                     params.push(`%${filters.productName}%`);
                 }
                 if (filters.containerNo) {
-                    whereClauses.push(`j.id IN (SELECT job_id FROM container_results WHERE cntr_no ILIKE $${paramIdx++})`);
+                    whereClauses.push(`r.cntr_no ILIKE $${paramIdx++}`);
                     params.push(`%${filters.containerNo}%`);
                 }
             }
@@ -63,7 +88,7 @@ export async function getJobsFromDB(filters?: JobFilters): Promise<Job[]> {
                 ${whereSql}
                 GROUP BY j.job_name, j.etd, j.saved_at, r.cntr_no, r.transporter, r.cntr_type
                 ORDER BY j.saved_at DESC, id DESC 
-                LIMIT 500
+                LIMIT 100
             `;
             const res = await client.query(query, params);
             return res.rows.map(row => ({
@@ -74,7 +99,20 @@ export async function getJobsFromDB(filters?: JobFilters): Promise<Job[]> {
                 etd: row.etd,
                 cntr_no: row.cntr_no,
                 transporter: row.transporter,
-                work_date: row.saved_at ? new Date(row.saved_at).toLocaleDateString('ko-KR', { month: '2-digit', day: '2-digit' }).replace(' ', '') : ''
+                work_date: (() => {
+                    const savedAt = row.saved_at ? new Date(row.saved_at) : null;
+                    if (savedAt && !isNaN(savedAt.getTime())) {
+                        return savedAt.toLocaleDateString('ko-KR', { month: '2-digit', day: '2-digit' }).replace(' ', '');
+                    }
+                    // Fallback to ETD if saved_at is missing/invalid (e.g., "04월 21일" -> "04.21.")
+                    if (row.etd && typeof row.etd === 'string') {
+                        const etdMatch = row.etd.match(/(\d{1,2})월\s*(\d{1,2})일/);
+                        if (etdMatch) {
+                            return `${etdMatch[1].padStart(2, '0')}.${etdMatch[2].padStart(2, '0')}.`;
+                        }
+                    }
+                    return '';
+                })()
             }));
         } finally {
             client.release();
@@ -96,11 +134,11 @@ export async function getProductsForJob(jobId: number): Promise<Product[]> {
                 SELECT 
                     r.prod_name as id,
                     r.prod_name as model_name,
-                    MAX(CAST(m.width AS INTEGER)) as width,
-                    MAX(CAST(m.depth AS INTEGER)) as length,
-                    MAX(CAST(m.height AS INTEGER)) as height,
-                    SUM(CAST(r.qty_plan AS INTEGER)) as quantity,
-                    MAX(m.prod_type) as prod_type
+                    CAST(m.width AS INTEGER) as width,
+                    CAST(m.depth AS INTEGER) as length,
+                    CAST(m.height AS INTEGER) as height,
+                    CAST(r.qty_plan AS INTEGER) as quantity,
+                    m.prod_type
                 FROM container_results r
                 JOIN product_master_sync m ON r.prod_name = m.prod_name
                 WHERE r.job_id IN (
@@ -108,7 +146,6 @@ export async function getProductsForJob(jobId: number): Promise<Product[]> {
                     WHERE job_name = (SELECT job_name FROM container_jobs WHERE id = $1)
                 )
                 AND r.qty_plan > 0
-                GROUP BY r.prod_name
             `;
             const res = await client.query(query, [jobId]);
 

@@ -2,11 +2,17 @@
   "name": "ctnr-optimizer",
   "version": "0.1.0",
   "private": true,
+  "main": "main.js",
   "scripts": {
     "dev": "next dev -H 127.0.0.1",
+    "clean": "powershell -Command \"Remove-Item -Path .next -Recurse -Force -ErrorAction SilentlyContinue\"",
+    "dev:clean": "npm run clean && npm run dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "electron": "electron .",
+    "electron-dev": "concurrently \"npm run dev\" \"wait-on http://127.0.0.1:3000 && electron .\"",
+    "electron-pack": "electron-builder build --win --publish never"
   },
   "dependencies": {
     "@react-three/drei": "latest",
@@ -33,10 +39,31 @@
     "@types/react-dom": "latest",
     "@types/three": "latest",
     "autoprefixer": "latest",
+    "concurrently": "^9.2.1",
+    "electron": "^41.1.1",
+    "electron-builder": "^26.8.1",
+    "electron-is-dev": "^3.0.1",
     "eslint": "latest",
     "eslint-config-next": "latest",
     "postcss": "latest",
     "tailwindcss": "latest",
-    "typescript": "latest"
+    "typescript": "latest",
+    "wait-on": "^9.0.4"
+  },
+  "build": {
+    "appId": "com.ctnr.optimizer",
+    "productName": "CTNR Optimizer",
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
   }
 }

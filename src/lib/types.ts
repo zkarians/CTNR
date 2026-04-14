@@ -17,15 +17,15 @@ export const CONTAINER_DATA: Record<ContainerType, ContainerDimensions> = {
 
 export function mapContainerType(input: string): ContainerType {
     const uc = (input || '').toUpperCase();
-    if (uc.includes('40HC') || uc.includes('40FT HIGH')) return '40hc';
-    if (uc.includes('20DV') || uc.includes('20FT STANDARD')) return '20std';
-    if (uc.includes('40RF') || uc.includes('40FT REEFER')) return '40rf';
-    if (uc.includes('40DV') || uc.includes('40FT STANDARD')) return '40std';
+    if (uc.includes('40HC') || uc.includes('40FT HIGH') || uc === 'HC') return '40hc';
+    if (uc.includes('20DV') || uc.includes('20FT') || uc.includes('20STD')) return '20std';
+    if (uc.includes('40RF') || uc.includes('40FT REEFER') || uc.includes('40RH')) return '40rf';
+    if (uc.includes('40DV') || uc.includes('40FT STANDARD') || uc === '40FT') return '40std';
 
     // Fallbacks
     if (uc.includes('40')) {
         if (uc.includes('HIGH')) return '40hc';
-        if (uc.includes('REEFER')) return '40rf';
+        if (uc.includes('RH')) return '40rf';
         return '40std';
     }
     if (uc.includes('20')) return '20std';
@@ -76,4 +76,12 @@ export interface JobFilters {
     endDate: string;
     productName: string;
     containerNo: string;
+}
+
+export interface DbConfig {
+    user: string;
+    host: string;
+    database: string;
+    password?: string;
+    port: number;
 }

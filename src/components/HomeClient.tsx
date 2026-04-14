@@ -7,14 +7,14 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import ContainerViewer from '@/components/ContainerViewer';
-import PackingStatsCard from '@/components/PackingStatsCard';
 import LogoutButton from '@/components/LogoutButton';
 import {
     Product, PackingResult, ContainerType, CONTAINER_DATA, Job, JobFilters
 } from '@/lib/types';
 import { packContainer } from '@/lib/packer';
-import { fetchJobs, fetchProductsByJob, searchProducts } from '@/lib/actions';
+import { fetchJobs, fetchProductsByJob, searchProducts, getDbConfig, updateDbConfig } from '@/lib/actions';
 import { SessionUser } from '@/lib/auth';
+import { DbConfig } from '@/lib/types';
 
 export default function Home({ user }: { user: SessionUser }) {
     const [selectedContainer, setSelectedContainer] = useState<ContainerType>('40hc');
@@ -24,27 +24,50 @@ export default function Home({ user }: { user: SessionUser }) {
     const [jobs, setJobs] = useState<Job[]>([]);
     const [selectedJobId, setSelectedJobId] = useState<number | null>(null);
     const [isFilterOpen, setIsFilterOpen] = useState(true);
-    
-    // Default dates to today
-    const [filters, setFilters] = useState<JobFilters>(() => {
-        const today = new Date().toISOString().split('T')[0];
-        return { startDate: today, endDate: today, productName: '', containerNo: '' };
-    });
-
+    const [filters, setFilters] = useState<JobFilters>({ startDate: '', endDate: '', productName: '', containerNo: '' });
     const [manualProduct, setManualProduct] = useState({ model_name: '', width: 1000, length: 800, height: 1200, quantity: 10, allow_rotate: true, allow_lay_down: false });
     const [searchResults, setSearchResults] = useState<Product[]>([]);
     const [numPasses, setNumPasses] = useState(10);
     const [activeProduct, setActiveProduct] = useState<string | null>(null);
     const [isManualAddOpen, setIsManualAddOpen] = useState(false);
+    const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+    const [dbConfig, setDbConfig] = useState<DbConfig>({ host: '', database: '', user: '', password: '', port: 5432 });
     const controlPanelRef = useRef<HTMLDivElement>(null);
 
-    useEffect(() => { loadJobs(); }, []);
+    // V4.22: Auto Real-time Search with Debounce
+    useEffect(() => {
+        const timer = setTimeout(async () => {
+            setIsLoading(true);
+            try {
+                const data = await fetchJobs(filters);
+                setJobs(data);
+            } catch (error) {
+                console.error("Error loading jobs:", error);
+            } finally {
+                setIsLoading(false);
+            }
+        }, 400);
+        return () => clearTimeout(timer);
+    }, [filters]);
 
-    const loadJobs = async () => {
+    useEffect(() => {
+        const loadDbConfig = async () => {
+            const config = await getDbConfig();
+            setDbConfig(config);
+        };
+        loadDbConfig();
+    }, []);
+
+    const handleDbSave = async () => {
         setIsLoading(true);
-        const data = await fetchJobs(filters);
-        setJobs(data);
+        const res = await updateDbConfig(dbConfig);
+        alert(res.message);
         setIsLoading(false);
+        if (res.success) {
+            setIsSettingsOpen(false);
+            const data = await fetchJobs(filters);
+            setJobs(data);
+        }
     };
 
     const handleFilterChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -63,8 +86,13 @@ export default function Home({ user }: { user: SessionUser }) {
     };
 
     const handlePassesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        let val = parseInt(e.target.value);
-        if (isNaN(val)) val = 1;
+        const valStr = e.target.value;
+        if (valStr === '') {
+            setNumPasses('' as any);
+            return;
+        }
+        let val = parseInt(valStr);
+        if (isNaN(val)) return;
         if (val > 50) { val = 50; alert("최대 50회까지 입력 가능합니다."); }
         setNumPasses(val);
     };
@@ -78,7 +106,14 @@ export default function Home({ user }: { user: SessionUser }) {
             setResult(res);
             setIsLoading(false);
             // 모바일: 시뮬레이션 후 컨트롤 패널 최상단으로 스크롤
-            setTimeout(() => { window.scrollTo({ top: 0, behavior: 'smooth' }); }, 100);
+            setTimeout(() => {
+                const mobileScroll = document.getElementById('mobile-scroll-container');
+                if (mobileScroll) {
+                    mobileScroll.scrollTo({ top: 0, behavior: 'smooth' });
+                } else {
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                }
+            }, 100);
         }, 100);
     };
 
@@ -86,12 +121,20 @@ export default function Home({ user }: { user: SessionUser }) {
         setSelectedJobId(jobId);
         setIsFilterOpen(false);
         setIsLoading(true);
-        const data = await fetchProductsByJob(jobId);
-        setProducts(data);
+        // Reset results and products immediately for UI responsiveness
         setResult(null);
-        setIsLoading(false);
-        const job = jobs.find(j => j.id === jobId);
-        if (job) setSelectedContainer(job.container_type);
+        setProducts([]);
+
+        try {
+            const data = await fetchProductsByJob(jobId);
+            setProducts(data);
+            const job = jobs.find(j => j.id === jobId);
+            if (job) setSelectedContainer(job.container_type);
+        } catch (error) {
+            console.error("Error selecting job:", error);
+        } finally {
+            setIsLoading(false);
+        }
     };
 
     const addManualProduct = () => {
@@ -131,18 +174,16 @@ export default function Home({ user }: { user: SessionUser }) {
             {/* Header - Desktop Only (Mobile has its own fixed header for better feel) */}
             <div className="hidden md:flex items-center gap-3 mb-2 shrink-0">
                 <Package className="w-8 h-8 text-sky-500" />
-                <h1 className="text-xl font-black tracking-tight uppercase">
+                <h1 className="text-xl font-black tracking-tight uppercase pr-4">
                     CTNR <span className="text-sky-500">Optimizer</span>
                 </h1>
-                <LogoutButton username={user.username} name={user.name} role={user.role} />
-            </div>
-
-            {/* Packing Result Card (Dynamic) - New Location */}
-            {result && (
-                <div className="mb-2 shrink-0">
-                    <PackingStatsCard result={result} />
+                <div className="flex items-center gap-1">
+                    <button onClick={() => setIsSettingsOpen(true)} className="p-2 hover:bg-white/5 rounded-full text-slate-400 hover:text-sky-400 transition-all">
+                        <Settings2 className="w-5 h-5" />
+                    </button>
+                    <LogoutButton username={user.username} name={user.name} role={user.role} />
                 </div>
-            )}
+            </div>
 
             {/* Job Selection */}
             <section className="space-y-4 shrink-0">
@@ -158,45 +199,44 @@ export default function Home({ user }: { user: SessionUser }) {
 
                 <AnimatePresence>
                     {isFilterOpen && (
-                        <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden space-y-4">
-                            <div className="grid grid-cols-2 gap-3">
-                                <div className="space-y-1.5">
-                                    <label className="text-[11px] md:text-[10px] text-slate-500 font-bold ml-1">시작일</label>
-                                    <div className="relative">
-                                        <Calendar className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500" />
-                                        <input type="date" name="startDate" value={filters.startDate} onChange={handleFilterChange}
-                                            className="w-full bg-[#11111a] border border-white/5 rounded-xl py-2 md:py-1.5 pl-8 md:pl-7 pr-2 text-xs md:text-[10px] focus:ring-1 focus:ring-sky-500 outline-none transition-all" />
+                        <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
+                            <div className="space-y-4 pb-1">
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div className="space-y-1.5">
+                                        <label className="text-[11px] md:text-[10px] text-slate-500 font-bold ml-1">시작일</label>
+                                        <div className="relative">
+                                            <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 md:w-3.5 md:h-3.5 text-slate-500" />
+                                            <input type="date" name="startDate" value={filters.startDate} onChange={handleFilterChange}
+                                                className="w-full bg-[#11111a] border border-white/5 rounded-2xl py-3 md:py-2 pl-10 md:pl-9 pr-3 text-sm md:text-xs focus:ring-1 focus:ring-sky-500 outline-none transition-all" />
+                                        </div>
+                                    </div>
+                                    <div className="space-y-1.5">
+                                        <label className="text-[11px] md:text-[10px] text-slate-500 font-bold ml-1">종료일</label>
+                                        <div className="relative">
+                                            <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 md:w-3.5 md:h-3.5 text-slate-500" />
+                                            <input type="date" name="endDate" value={filters.endDate} onChange={handleFilterChange}
+                                                className="w-full bg-[#11111a] border border-white/5 rounded-2xl py-3 md:py-2 pl-10 md:pl-9 pr-3 text-sm md:text-xs focus:ring-1 focus:ring-sky-500 outline-none transition-all" />
+                                        </div>
                                     </div>
                                 </div>
-                                <div className="space-y-1.5">
-                                    <label className="text-[11px] md:text-[10px] text-slate-500 font-bold ml-1">종료일</label>
+                                <div className="space-y-3">
                                     <div className="relative">
-                                        <Calendar className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500" />
-                                        <input type="date" name="endDate" value={filters.endDate} onChange={handleFilterChange}
-                                            className="w-full bg-[#11111a] border border-white/5 rounded-xl py-2 md:py-1.5 pl-8 md:pl-7 pr-2 text-xs md:text-[10px] focus:ring-1 focus:ring-sky-500 outline-none transition-all" />
+                                        <Package className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                                        <input placeholder="제품명 검색..." name="productName" value={filters.productName} onChange={handleFilterChange}
+                                            className="w-full bg-[#11111a] border border-white/5 rounded-2xl py-3.5 md:py-2.5 pl-10 pr-4 text-sm md:text-xs focus:ring-1 focus:ring-sky-500 outline-none transition-all placeholder:text-slate-600" />
+                                    </div>
+                                    <div className="relative">
+                                        <Truck className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                                        <input placeholder="컨테이너 번호 검색..." name="containerNo" value={filters.containerNo} onChange={handleFilterChange}
+                                            className="w-full bg-[#11111a] border border-white/5 rounded-2xl py-3.5 md:py-2.5 pl-10 pr-4 text-sm md:text-xs focus:ring-1 focus:ring-sky-500 outline-none transition-all placeholder:text-slate-600" />
                                     </div>
                                 </div>
-                            </div>
-                            <div className="space-y-3">
-                                <div className="relative">
-                                    <Package className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500" />
-                                    <input placeholder="제품명 검색..." name="productName" value={filters.productName} onChange={handleFilterChange}
-                                        className="w-full bg-[#11111a] border border-white/5 rounded-xl py-2.5 md:py-2 pl-8 pr-3 text-xs md:text-[10px] focus:ring-1 focus:ring-sky-500 outline-none transition-all placeholder:text-slate-600" />
-                                </div>
-                                <div className="relative">
-                                    <Truck className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500" />
-                                    <input placeholder="컨테이너 번호 검색..." name="containerNo" value={filters.containerNo} onChange={handleFilterChange}
-                                        className="w-full bg-[#11111a] border border-white/5 rounded-xl py-2.5 md:py-2 pl-8 pr-3 text-xs md:text-[10px] focus:ring-1 focus:ring-sky-500 outline-none transition-all placeholder:text-slate-600" />
-                                </div>
-                                <button onClick={loadJobs} className="w-full py-2.5 md:py-2 rounded-xl bg-sky-500/10 border border-sky-500/20 text-sky-400 text-xs md:text-[10px] font-black hover:bg-sky-500 hover:text-white transition-all flex items-center justify-center gap-2 mt-1">
-                                    <Search className="w-3.5 h-3.5 md:w-3 md:h-3" />조회하기
-                                </button>
                             </div>
                         </motion.div>
                     )}
                 </AnimatePresence>
 
-                <div className="space-y-2 overflow-y-auto max-h-[155px] md:max-h-[125px] custom-scrollbar pr-1 pb-2">
+                <div className="space-y-2 overflow-y-auto max-h-[220px] md:max-h-[160px] custom-scrollbar pr-1 pb-2">
                     {jobs.length === 0 && !isLoading ? (
                         <div className="flex flex-col items-center justify-center p-8 md:p-6 bg-white/5 border border-white/5 rounded-3xl opacity-40">
                             <Search className="w-6 h-6 mb-2" />
@@ -205,19 +245,19 @@ export default function Home({ user }: { user: SessionUser }) {
                     ) : (
                         jobs.map((job, idx) => (
                             <button key={idx} onClick={() => handleJobSelect(job.id)}
-                                className={`w-full px-3 py-2.5 md:px-3 md:py-2 rounded-xl text-left border transition-all duration-300 flex items-center justify-between group ${selectedJobId === job.id
-                                    ? "bg-sky-500/10 border-sky-500 shadow-[0_4px_15px_rgba(56,189,248,0.1)] ring-1 ring-sky-500/30"
+                                className={`w-full px-3.5 py-3 md:px-4 md:py-3 rounded-2xl text-left border transition-all duration-300 flex items-center justify-between group ${selectedJobId === job.id
+                                    ? "bg-sky-500/10 border-sky-500 shadow-[0_0_25px_rgba(56,189,248,0.15)] ring-1 ring-sky-500/30"
                                     : "bg-[#11111a] border-white/5 text-slate-400 hover:border-white/10 hover:bg-white/[0.07]"}`}
                             >
-                                <div className="flex items-center gap-2 min-w-0">
-                                    <div className={`text-[13px] md:text-xs font-black truncate uppercase tracking-tight ${getCarrierColor(job.transporter)}`}>
+                                <div className="flex items-center gap-3 min-w-0">
+                                    <div className={`text-[15px] md:text-sm font-black truncate uppercase tracking-tight ${getCarrierColor(job.transporter)}`}>
                                         {job.cntr_no || "번호없음"}
-                                        <span className="ml-1.5 text-[9px] font-bold text-slate-600 normal-case tracking-normal opacity-70">
+                                        <span className="ml-2 text-[10px] font-bold text-slate-600 normal-case tracking-normal">
                                             [{job.transporter ? (job.transporter.includes("천마") ? "천마" : (job.transporter.includes("BNI") || job.transporter.includes("비엔아이") ? "BNI" : job.transporter.split('(')[0])) : "미정"}]
                                         </span>
                                     </div>
                                 </div>
-                                <div className="text-[10px] md:text-[9px] font-bold text-slate-600 shrink-0 tabular-nums">{job.work_date}</div>
+                                <div className="text-[11px] md:text-[10px] font-bold text-slate-600 shrink-0 tabular-nums">{job.work_date}</div>
                             </button>
                         ))
                     )}
@@ -236,13 +276,13 @@ export default function Home({ user }: { user: SessionUser }) {
                     </button>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-2 gap-2.5">
                     {(Object.keys(CONTAINER_DATA) as ContainerType[]).map((key) => (
                         <button key={key} onClick={() => setSelectedContainer(key)}
-                            className={`p-2.5 md:p-2 rounded-xl md:rounded-lg text-left border transition-all duration-300 ${selectedContainer === key
-                                ? "bg-sky-500/10 border-sky-500 text-sky-400 shadow-md shadow-sky-500/5 ring-1 ring-sky-500/20"
+                            className={`px-3 py-2 md:p-2 rounded-2xl md:rounded-xl text-left border transition-all duration-300 ${selectedContainer === key
+                                ? "bg-sky-500/10 border-sky-500 text-sky-400 shadow-lg shadow-sky-500/5 ring-1 ring-sky-500/20"
                                 : "bg-[#11111a] border-white/5 text-slate-400 hover:border-white/10"}`}>
-                            <p className="text-[10px] md:text-[9px] font-black truncate">{CONTAINER_DATA[key].name}</p>
+                            <p className="text-[11px] md:text-[10px] font-black truncate">{CONTAINER_DATA[key].name}</p>
                         </button>
                     ))}
                 </div>
@@ -328,10 +368,10 @@ export default function Home({ user }: { user: SessionUser }) {
                             <Box className="w-10 h-10 mb-2" /><p className="text-sm font-black">비어 있음</p>
                         </div>
                     ) : (
-                        products.map((p) => (
-                            <motion.div layout initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} key={p.id}
+                        products.map((p, idx) => (
+                            <motion.div layout initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} key={`${p.id}-${idx}`}
                                 onMouseEnter={() => setActiveProduct(p.model_name)} onMouseLeave={() => setActiveProduct(null)}
-                                className={`group relative px-4 py-3 md:px-3 md:py-2 rounded-[1.25rem] md:rounded-2xl border transition-all duration-300 ${activeProduct === p.model_name
+                                className={`group relative px-3 py-1.5 md:px-3 md:py-2 rounded-[1rem] md:rounded-2xl border transition-all duration-300 ${activeProduct === p.model_name
                                     ? "bg-sky-500/10 border-sky-500 shadow-xl shadow-sky-500/5 scale-[1.02] md:scale-[1.01]"
                                     : (result?.unpacked.some(u => u.id === p.id)
                                         ? "bg-rose-500/5 border-rose-500/30 shadow-none"
@@ -352,8 +392,13 @@ export default function Home({ user }: { user: SessionUser }) {
                                         )}
                                         <div className={`flex items-center gap-1 md:gap-0.5 px-2.5 py-1 md:px-1.5 md:py-0.5 rounded-xl md:rounded-lg text-[11px] md:text-[10px] font-black border focus-within:ring-2 transition-all ${result?.unpacked.some(u => u.id === p.id) ? "bg-rose-500/10 text-rose-400 border-rose-500/20 focus-within:ring-rose-500" : "bg-sky-500/10 text-sky-400 border-sky-500/20 focus-within:ring-sky-500"}`}>
                                             <span className="opacity-60 font-medium">Qty</span>
-                                            <input type="number" min="1" value={p.quantity || ''}
-                                                onChange={(e) => { const val = parseInt(e.target.value); setProducts(prev => prev.map(prod => prod.id === p.id ? { ...prod, quantity: isNaN(val) ? 0 : val } : prod)); setResult(null); }}
+                                            <input type="number" min="1" value={p.quantity === 0 ? '' : p.quantity}
+                                                onChange={(e) => {
+                                                    const valStr = e.target.value;
+                                                    const val = valStr === '' ? 0 : parseInt(valStr);
+                                                    setProducts(prev => prev.map(prod => prod.id === p.id ? { ...prod, quantity: isNaN(val) ? 0 : val } : prod));
+                                                    setResult(null);
+                                                }}
                                                 onBlur={() => { if (!p.quantity || p.quantity < 1) setProducts(prev => prev.map(prod => prod.id === p.id ? { ...prod, quantity: 1 } : prod)); }}
                                                 className="w-8 md:w-6 bg-transparent border-none outline-none p-0 m-0 text-center font-black [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" />
                                         </div>
@@ -425,7 +470,7 @@ export default function Home({ user }: { user: SessionUser }) {
 
             {/* ──────────── 모바일 레이아웃 (md 미만) ──────────── */}
             <div className="md:hidden flex flex-col h-screen bg-[#030712] text-slate-100 overflow-hidden">
-                
+
                 {/* Mobile Floating Header (Always Fixed at Top) */}
                 <header className="fixed top-0 left-0 right-0 z-[60] px-4 py-4 bg-[#030712]/80 backdrop-blur-xl border-b border-white/5 flex items-center justify-between">
                     <div className="flex items-center gap-2">
@@ -434,16 +479,21 @@ export default function Home({ user }: { user: SessionUser }) {
                             CTNR <span className="text-sky-400">Optimizer</span>
                         </h1>
                     </div>
-                    <LogoutButton username={user.username} name={user.name} role={user.role} />
+                    <div className="flex items-center gap-1">
+                        <button onClick={() => setIsSettingsOpen(true)} className="p-2 hover:bg-white/5 rounded-full text-slate-400">
+                            <Settings2 className="w-5 h-5" />
+                        </button>
+                        <LogoutButton username={user.username} name={user.name} role={user.role} />
+                    </div>
                 </header>
 
-                <div className="flex-1 flex flex-col overflow-y-auto mt-[68px] pb-32">
+                <div id="mobile-scroll-container" className="flex-1 flex flex-col overflow-y-auto mt-[68px] pb-32">
                     {/* 시뮬레이션 결과 뷰어 — 결과 있을 때만 상단 표시 */}
                     <AnimatePresence>
                         {result && (
                             <motion.div
                                 initial={{ height: 0, opacity: 0 }}
-                                animate={{ height: '320px', opacity: 1 }}
+                                animate={{ height: 'auto', opacity: 1 }}
                                 exit={{ height: 0, opacity: 0 }}
                                 transition={{ duration: 0.5, ease: [0.23, 1, 0.32, 1] }}
                                 className="w-full shrink-0 bg-[#030712] border-b border-white/5 relative"
@@ -457,16 +507,16 @@ export default function Home({ user }: { user: SessionUser }) {
                     </AnimatePresence>
 
                     {/* 컨트롤 패널 — 스크롤 가능 영역 */}
-                    <div ref={controlPanelRef} className="flex-1 flex flex-col px-5 py-6 gap-8">
+                    <div ref={controlPanelRef} className="flex-1 flex flex-col px-4 py-5 gap-6 md:px-5 md:py-6 md:gap-8">
                         {controlPanel}
                     </div>
                 </div>
 
                 {/* 모바일 하단 고정 시뮬레이션 버튼 — Premium Floating Bar */}
-                <div className="fixed bottom-0 left-0 right-0 z-50 px-5 pb-8 pt-4 bg-gradient-to-t from-[#030712] via-[#030712]/95 to-transparent flex flex-col gap-4">
-                    <div className="flex gap-3 items-end">
+                <div className="fixed bottom-0 left-0 right-0 z-50 px-4 pb-4 pt-3 md:px-5 md:pb-8 md:pt-4 bg-gradient-to-t from-[#030712] via-[#030712]/95 to-transparent flex flex-col gap-3 md:gap-4">
+                    <div className="flex gap-2 text-xs md:gap-3 items-end">
                         {/* Passes Count UI with Circle 'N' Style */}
-                        <div className="relative flex items-center gap-3 flex-shrink-0 bg-[#1a1a24] border border-white/10 rounded-3xl px-4 py-2 mt-auto">
+                        <div className="relative flex items-center gap-2 md:gap-3 flex-shrink-0 bg-[#1a1a24] border border-white/10 rounded-[1.25rem] px-3 py-1.5 md:px-4 md:py-2 mt-auto">
                             <div className="w-8 h-8 rounded-full bg-sky-500/10 border border-sky-500/20 flex items-center justify-center">
                                 <span className="text-xs font-black text-sky-500 tracking-tighter">N</span>
                             </div>
@@ -479,9 +529,9 @@ export default function Home({ user }: { user: SessionUser }) {
 
                         {/* Large Action Button */}
                         <button disabled={products.length === 0 || isLoading} onClick={runSimulation}
-                            className="flex-1 py-[1.125rem] rounded-3xl bg-sky-500 hover:bg-sky-400 active:scale-[0.98] disabled:opacity-50 text-white font-black text-[17px] transition-all flex items-center justify-center gap-3 shadow-[0_12px_40px_rgba(56,189,248,0.3)] shadow-sky-500/20">
+                            className="flex-1 py-3 md:py-[1.125rem] rounded-[1.25rem] md:rounded-3xl bg-sky-500 hover:bg-sky-400 active:scale-[0.98] disabled:opacity-50 text-white font-black text-[15px] md:text-[17px] transition-all flex items-center justify-center gap-2 md:gap-3 shadow-[0_12px_40px_rgba(56,189,248,0.3)] shadow-sky-500/20">
                             {isLoading ? (
-                                <div className="w-6 h-6 border-3 border-white/30 border-t-white rounded-full animate-spin" />
+                                <div className="w-5 h-5 md:w-6 md:h-6 border-3 border-white/30 border-t-white rounded-full animate-spin" />
                             ) : (
                                 <>시뮬레이션 실행 <ChevronRight className="w-5 h-5 bg-white/20 rounded-full p-0.5" /></>
                             )}
@@ -489,6 +539,61 @@ export default function Home({ user }: { user: SessionUser }) {
                     </div>
                 </div>
             </div>
+            {/* Database Settings Modal */}
+            <AnimatePresence>
+                {isSettingsOpen && (
+                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setIsSettingsOpen(false)} className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+                        <motion.div initial={{ scale: 0.9, opacity: 0, y: 20 }} animate={{ scale: 1, opacity: 1, y: 0 }} exit={{ scale: 0.9, opacity: 0, y: 20 }}
+                            className="relative w-full max-w-md bg-[#0f111a] border border-white/10 rounded-[2.5rem] shadow-2xl overflow-hidden p-8">
+                            <div className="flex items-center gap-3 mb-6">
+                                <div className="p-3 bg-sky-500/10 rounded-2xl">
+                                    <Settings2 className="w-6 h-6 text-sky-500" />
+                                </div>
+                                <div>
+                                    <h2 className="text-xl font-black text-white">DB 연결 설정</h2>
+                                    <p className="text-xs text-slate-500 font-bold uppercase tracking-widest">Database Configuration</p>
+                                </div>
+                            </div>
+
+                            <div className="space-y-4">
+                                <div className="space-y-2">
+                                    <label className="text-[11px] font-black text-slate-500 ml-1">Host 주소</label>
+                                    <input value={dbConfig.host} onChange={e => setDbConfig({ ...dbConfig, host: e.target.value })}
+                                        className="w-full bg-black/40 border border-white/10 rounded-2xl px-4 py-3 text-sm focus:border-sky-500 outline-none transition-all" placeholder="localhost 또는 IP주소" />
+                                </div>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="space-y-2">
+                                        <label className="text-[11px] font-black text-slate-500 ml-1">DB 이름</label>
+                                        <input value={dbConfig.database} onChange={e => setDbConfig({ ...dbConfig, database: e.target.value })}
+                                            className="w-full bg-black/40 border border-white/10 rounded-2xl px-4 py-3 text-sm focus:border-sky-500 outline-none transition-all" />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <label className="text-[11px] font-black text-slate-500 ml-1">Port</label>
+                                        <input type="number" value={dbConfig.port} onChange={e => setDbConfig({ ...dbConfig, port: parseInt(e.target.value) })}
+                                            className="w-full bg-black/40 border border-white/10 rounded-2xl px-4 py-3 text-sm focus:border-sky-500 outline-none transition-all" />
+                                    </div>
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-[11px] font-black text-slate-500 ml-1">User ID</label>
+                                    <input value={dbConfig.user} onChange={e => setDbConfig({ ...dbConfig, user: e.target.value })}
+                                        className="w-full bg-black/40 border border-white/10 rounded-2xl px-4 py-3 text-sm focus:border-sky-500 outline-none transition-all" />
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-[11px] font-black text-slate-500 ml-1">Password</label>
+                                    <input type="password" value={dbConfig.password} onChange={e => setDbConfig({ ...dbConfig, password: e.target.value })}
+                                        className="w-full bg-black/40 border border-white/10 rounded-2xl px-4 py-3 text-sm focus:border-sky-500 outline-none transition-all" placeholder="비밀번호 입력" />
+                                </div>
+                            </div>
+
+                            <div className="flex gap-3 mt-8">
+                                <button onClick={() => setIsSettingsOpen(false)} className="flex-1 py-4 rounded-2xl bg-white/5 hover:bg-white/10 text-slate-400 font-bold text-sm transition-all">취소</button>
+                                <button onClick={handleDbSave} className="flex-2 py-4 px-8 rounded-2xl bg-sky-500 hover:bg-sky-400 text-white font-black text-sm transition-all shadow-lg shadow-sky-500/20">설정 저장</button>
+                            </div>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
         </>
     );
 }

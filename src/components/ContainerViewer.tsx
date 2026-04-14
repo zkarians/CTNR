@@ -1,9 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls, Edges, PerspectiveCamera, Grid, Sparkles, Html } from '@react-three/drei';
 import * as THREE from 'three';
 import { PackingResult, PackedItem } from '@/lib/types';
-import { Info, Maximize, Box, Ruler } from 'lucide-react';
+import { Info, Maximize, Box, Ruler, Move, RotateCw, RefreshCw } from 'lucide-react';
 
 interface ProductBoxProps {
     item: PackedItem;
@@ -74,6 +74,15 @@ interface ContainerViewerProps {
 }
 
 export default function ContainerViewer({ result, highlightedProduct }: ContainerViewerProps) {
+    const [panMode, setPanMode] = useState(false);
+    const controlsRef = useRef<any>(null);
+
+    const resetCamera = () => {
+        if (controlsRef.current) {
+            controlsRef.current.reset();
+        }
+    };
+
     if (!result) return (
         <div className="w-full h-full flex flex-col items-center justify-center text-slate-500 gap-4 bg-[#0a0a0f] rounded-3xl border border-white/5">
             <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center animate-pulse">
@@ -90,10 +99,18 @@ export default function ContainerViewer({ result, highlightedProduct }: Containe
     const ch = container.height / 1000;
 
     return (
-        <div className="w-full h-full bg-[#030712] relative rounded-3xl overflow-hidden border border-white/10 shadow-2xl">
+        <div className="w-full h-full bg-[#030712] relative flex flex-col md:block rounded-3xl overflow-hidden border border-white/10 shadow-2xl">
+            <div className="relative flex-1 min-h-[260px] md:min-h-0 md:w-full md:h-full">
             <Canvas shadows gl={{ antialias: true }}>
                 <PerspectiveCamera makeDefault position={[cw * 1.5, ch * 2.5, cl * 2]} fov={45} />
-                <OrbitControls makeDefault enableDamping dampingFactor={0.05} />
+                <OrbitControls 
+                    ref={controlsRef}
+                    makeDefault 
+                    enableDamping 
+                    dampingFactor={0.05}
+                    touches={panMode ? { ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_ROTATE } : { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN }}
+                    mouseButtons={panMode ? { LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE } : { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN }}
+                />
 
                 <ambientLight intensity={0.7} />
                 <spotLight position={[10, 20, 10]} angle={0.2} penumbra={1} intensity={2} castShadow />
@@ -136,24 +153,95 @@ export default function ContainerViewer({ result, highlightedProduct }: Containe
                 <Sparkles count={40} position={[cw / 2, ch / 2, -cl / 2]} scale={[cw * 2, ch * 2, cl * 2]} size={0.5} opacity={0.1} color="#38bdf8" />
             </Canvas>
 
+            {/* Camera Control Buttons */}
+            <div className="absolute top-3 right-3 md:top-6 md:right-6 flex flex-col gap-2 z-20">
+                <button 
+                    onClick={() => setPanMode(!panMode)} 
+                    className={`p-2.5 rounded-xl border backdrop-blur-md transition-all shadow-lg ${panMode ? "bg-sky-500/20 border-sky-400 text-sky-400 shadow-sky-500/20" : "bg-black/40 border-white/20 text-slate-300 hover:bg-white/10"}`} 
+                    title={panMode ? "회전 모드로 전환" : "이동 모드로 전환"}
+                >
+                    {panMode ? <Move className="w-4 h-4 md:w-5 md:h-5" /> : <RotateCw className="w-4 h-4 md:w-5 md:h-5" />}
+                </button>
+                <button 
+                    onClick={resetCamera} 
+                    className="p-2.5 rounded-xl bg-black/40 border border-white/20 text-slate-300 backdrop-blur-md hover:bg-white/10 transition-all shadow-lg" 
+                    title="카메라 위치 초기화"
+                >
+                    <RefreshCw className="w-4 h-4 md:w-5 md:h-5" />
+                </button>
+            </div>
+            </div>
+
             {/* Overlay Info Panels */}
-            <div className="absolute top-2 left-2 md:top-6 md:left-6 flex flex-col gap-2 md:gap-4 pointer-events-none transition-all duration-300">
-                <div className="glass p-2 md:p-3 px-3 md:px-4 flex items-center gap-2 md:gap-4 text-[8px] md:text-[10px] font-bold text-slate-400">
-                    <div className="flex items-center gap-1 md:gap-1.5 font-black text-sky-500/80">
-                        <Ruler className="w-2.5 h-2.5 md:w-3 md:h-3" />
-                        <span>{container.width}×{container.length}</span>
+            <div className="relative md:absolute pt-1 px-3 pb-3 md:p-0 bg-[#0a0a0f] border-t border-white/10 md:bg-transparent md:border-none md:top-6 md:left-6 flex flex-col gap-2 md:gap-4 md:pointer-events-none shrink-0 z-10 w-full md:w-auto">
+                <div className="glass-card p-3 md:p-5 md:!bg-black/40 md:backdrop-blur-xl md:border-white/20 min-w-full md:min-w-[240px]">
+                    <div className="flex items-center gap-2 mb-2 md:mb-4 text-sky-400">
+                        <Maximize className="w-3.5 h-3.5 md:w-4 md:h-4" />
+                        <h3 className="text-[11px] md:text-xs font-black uppercase tracking-widest">{container.name}</h3>
                     </div>
-                    <div className="w-px h-2 md:h-3 bg-white/10" />
-                    <div className="flex items-center gap-1 md:gap-1.5 uppercase">
-                        <span>H: {container.height}mm</span>
+
+                    <div className="flex items-center justify-between pb-2 md:pb-3 mb-2 md:mb-3 border-b border-white/10">
+                        <div>
+                            <p className="text-[9px] md:text-[10px] text-slate-500 font-bold uppercase mb-0.5 md:mb-1">적재 효율성</p>
+                            <span className="text-2xl md:text-3xl font-black text-sky-400 leading-none">{result.efficiency.toFixed(1)}%</span>
+                        </div>
+                        <div className="flex items-center gap-4 md:gap-6">
+                            <div className="text-right">
+                                <p className="text-[8px] md:text-[9px] text-slate-500 font-bold uppercase mb-0.5">적재 완료</p>
+                                <p className="text-sm md:text-base font-bold text-white leading-none">{items.length} <span className="text-[8px] font-normal text-slate-400 italic">PKGS</span></p>
+                            </div>
+                            <div className="text-right">
+                                <p className="text-[8px] md:text-[9px] text-slate-500 font-bold uppercase mb-0.5">미적재</p>
+                                <p className={`text-sm md:text-base font-bold leading-none ${result.unpacked.length > 0 ? "text-red-400" : "text-emerald-400"}`}>
+                                    {result.unpacked.reduce((s, u) => s + u.quantity, 0)} <span className="text-[8px] font-normal text-slate-400 italic">PKGS</span>
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
+                        {/* Unpacked Detail List */}
+                        {result.unpacked.length > 0 ? (
+                            <div>
+                                <p className="text-[8px] md:text-[9px] font-black uppercase text-red-400 mb-1.5 flex items-center gap-1">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-red-500 inline-block animate-pulse"></span>
+                                    미적재 목록
+                                </p>
+                                <div className="space-y-1 md:space-y-1.5 max-h-24 md:max-h-32 overflow-y-auto custom-scrollbar">
+                                    {result.unpacked.map((u, i) => (
+                                        <div key={i} className="flex justify-between items-center bg-red-500/10 rounded-md md:rounded-lg px-2 py-1 md:px-2.5 md:py-1.5 border border-red-500/20">
+                                            <span className="text-[9px] md:text-[10px] text-red-300 font-bold truncate mr-2">{u.model_name}</span>
+                                            <span className="text-[9px] md:text-[10px] font-black text-red-400 shrink-0">×{u.quantity}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        ) : (
+                            <div>
+                                <div className="flex items-center justify-center gap-2 bg-emerald-500/10 rounded-lg md:rounded-xl px-2.5 py-1.5 md:px-3 md:py-2 border border-emerald-500/20">
+                                    <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block"></span>
+                                    <p className="text-[10px] font-black text-emerald-400">전량 적재 완료</p>
+                                </div>
+                            </div>
+                        )}
+                </div>
+
+                <div className="hidden md:flex glass p-3 px-4 items-center gap-4 text-[10px] font-bold text-slate-400">
+                    <div className="flex items-center gap-1.5">
+                        <Ruler className="w-3 h-3 text-sky-500" />
+                        <span>DIM: {container.width}x{container.length}</span>
+                    </div>
+                    <div className="w-px h-3 bg-white/10" />
+                    <div className="flex items-center gap-1.5 uppercase">
+                        <span>Max Height: {container.height}mm</span>
                     </div>
                 </div>
             </div>
 
             {/* Instruction Help */}
-            <div className="absolute bottom-2 right-2 md:bottom-6 md:right-6 glass p-1.5 md:p-2 px-2 md:px-3 text-[8px] md:text-[10px] text-slate-500 flex items-center gap-1.5 md:gap-2 max-w-[150px] md:max-w-none">
-                <Info className="w-2.5 h-2.5 md:w-3 md:h-3 text-sky-500 shrink-0" />
-                <span className="truncate md:whitespace-normal">마우스로 회전/확대하고 박스를 클릭하세요.</span>
+            <div className="hidden md:flex absolute bottom-3 right-3 md:bottom-6 md:right-6 glass p-2 px-3 text-[9px] md:text-[10px] text-slate-500 items-center gap-1.5 md:gap-2">
+                <Info className="w-3 h-3 text-sky-500" />
+                <span className="hidden sm:inline">마우스로 회전/확대하고 박스에 마우스를 올려 상세 정보를 확인하세요.</span>
+                <span className="sm:hidden">회전/확대 지원 (상세정보: 박스 터치)</span>
             </div>
         </div>
     );
