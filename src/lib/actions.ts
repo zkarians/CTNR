@@ -106,10 +106,13 @@ export async function searchProducts(query: string): Promise<Product[]> {
 }
 
 export async function fetchProductsByJob(jobId: number): Promise<Product[]> {
+    console.log(`[fetchProductsByJob] Called with jobId: ${jobId} (type: ${typeof jobId})`);
     try {
-        return await getProductsForJob(jobId);
-    } catch (error) {
-        console.error("Failed to fetch products for job:", error);
+        const products = await getProductsForJob(jobId);
+        console.log(`[fetchProductsByJob] Returned ${products.length} products`);
+        return products;
+    } catch (error: any) {
+        console.error(`[fetchProductsByJob] CRITICAL ERROR:`, error?.message || error);
         return [];
     }
 }

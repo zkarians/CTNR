@@ -127,27 +127,32 @@ export async function getJobsFromDB(filters?: JobFilters): Promise<Job[]> {
  * 특정 작업(Job)에 포함된 제품 목록과 수량을 가져옵니다.
  */
 export async function getProductsForJob(jobId: number): Promise<Product[]> {
+    console.log(`[getProductsForJob] START - jobId: ${jobId} (type: ${typeof jobId})`);
     try {
         const client = await pool.connect();
+        console.log(`[getProductsForJob] DB connected OK`);
         try {
             const query = `
                 SELECT 
                     r.prod_name as id,
                     r.prod_name as model_name,
-                    CAST(m.width AS INTEGER) as width,
-                    CAST(m.depth AS INTEGER) as length,
-                    CAST(m.height AS INTEGER) as height,
+                    COALESCE(CAST(m.width AS INTEGER), 0) as width,
+                    COALESCE(CAST(m.depth AS INTEGER), 0) as length,
+                    COALESCE(CAST(m.height AS INTEGER), 0) as height,
                     CAST(r.qty_plan AS INTEGER) as quantity,
                     m.prod_type
                 FROM container_results r
-                JOIN product_master_sync m ON r.prod_name = m.prod_name
-                WHERE r.job_id IN (
-                    SELECT id FROM container_jobs 
-                    WHERE job_name = (SELECT job_name FROM container_jobs WHERE id = $1)
-                )
+                LEFT JOIN product_master_sync m ON r.prod_name = m.prod_name
+                WHERE r.job_id = $1
                 AND r.qty_plan > 0
             `;
             const res = await client.query(query, [jobId]);
+            console.log(`[getProductsForJob] Found ${res.rows.length} products for jobId: ${jobId}`);
+            if (res.rows.length === 0) {
+                console.warn(`[getProductsForJob] WARNING: 0 products returned. Checking raw count...`);
+                const rawCount = await client.query('SELECT COUNT(*) FROM container_results WHERE job_id = $1', [jobId]);
+                console.warn(`[getProductsForJob] Raw container_results count for job_id=${jobId}: ${rawCount.rows[0].count}`);
+            }
 
             return res.rows.map(row => ({
                 id: row.id,
@@ -162,8 +167,9 @@ export async function getProductsForJob(jobId: number): Promise<Product[]> {
         } finally {
             client.release();
         }
-    } catch (error) {
-        console.error('getProductsForJob Error:', error);
+    } catch (error: any) {
+        console.error(`[getProductsForJob] CRITICAL ERROR for jobId=${jobId}:`, error?.message || error);
+        console.error(`[getProductsForJob] Full error:`, error);
         return [];
     }
 }
