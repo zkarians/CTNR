@@ -12,7 +12,7 @@ import {
     Product, PackingResult, ContainerType, CONTAINER_DATA, Job, JobFilters
 } from '@/lib/types';
 import { packContainer } from '@/lib/packer';
-import { fetchJobs, fetchProductsByJob, searchProducts, getDbConfig, updateDbConfig } from '@/lib/actions';
+import { fetchJobs, fetchProductsByJob, searchProducts, getDbConfig, updateDbConfig, updatePassword } from '@/lib/actions';
 import { SessionUser } from '@/lib/auth';
 import { DbConfig } from '@/lib/types';
 
@@ -32,6 +32,8 @@ export default function Home({ user }: { user: SessionUser }) {
     const [isManualAddOpen, setIsManualAddOpen] = useState(false);
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [dbConfig, setDbConfig] = useState<DbConfig>({ host: '', database: '', user: '', password: '', port: 5432 });
+    const [passwordData, setPasswordData] = useState({ current: '', new: '', confirm: '' });
+    const [isPasswordUpdating, setIsPasswordUpdating] = useState(false);
     const controlPanelRef = useRef<HTMLDivElement>(null);
 
     // V4.22: Auto Real-time Search with Debounce
@@ -69,6 +71,34 @@ export default function Home({ user }: { user: SessionUser }) {
             setJobs(data);
         }
     };
+    const handlePasswordUpdate = async () => {
+        if (!passwordData.current || !passwordData.new || !passwordData.confirm) {
+            alert("모든 필드를 입력해주세요.");
+            return;
+        }
+        if (passwordData.new !== passwordData.confirm) {
+            alert("새 비밀번호가 일치하지 않습니다.");
+            return;
+        }
+        if (passwordData.new.length < 4) {
+            alert("비밀번호는 최소 4자 이상이어야 합니다.");
+            return;
+        }
+
+        setIsPasswordUpdating(true);
+        try {
+            const res = await updatePassword(passwordData.current, passwordData.new);
+            alert(res.success ? "비밀번호가 성공적으로 변경되었습니다." : res.error);
+            if (res.success) {
+                setPasswordData({ current: '', new: '', confirm: '' });
+            }
+        } catch (error) {
+            alert("비밀번호 변경 중 오류가 발생했습니다.");
+        } finally {
+            setIsPasswordUpdating(false);
+        }
+    };
+
 
     const handleFilterChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         setFilters(prev => ({ ...prev, [e.target.name]: e.target.value }));
@@ -95,6 +125,18 @@ export default function Home({ user }: { user: SessionUser }) {
         if (isNaN(val)) return;
         if (val > 50) { val = 50; alert("최대 50회까지 입력 가능합니다."); }
         setNumPasses(val);
+    };
+
+    const refreshJobs = async () => {
+        setIsLoading(true);
+        try {
+            const data = await fetchJobs(filters);
+            setJobs(data);
+        } catch (error) {
+            console.error("Error refreshing jobs:", error);
+        } finally {
+            setIsLoading(false);
+        }
     };
 
     const runSimulation = () => {
@@ -192,39 +234,21 @@ export default function Home({ user }: { user: SessionUser }) {
                         <Briefcase className="w-4 h-4 md:w-3.5 md:h-3.5" />
                         작업 데이터 조회
                     </div>
-                    <button onClick={() => setIsFilterOpen(!isFilterOpen)} className="p-1.5 hover:bg-white/5 rounded-lg text-slate-400 transition-colors">
-                        <Filter className={`w-5 h-5 md:w-4 md:h-4 ${isFilterOpen ? "text-sky-500" : ""}`} />
-                    </button>
+                    <div className="flex items-center gap-1">
+                        <button onClick={refreshJobs} className={`p-1.5 hover:bg-white/5 rounded-lg text-slate-400 transition-all ${isLoading ? "animate-spin text-sky-500" : ""}`} title="새로고침">
+                            <RotateCw className="w-4 h-4 md:w-3.5 md:h-3.5" />
+                        </button>
+                        <button onClick={() => setIsFilterOpen(!isFilterOpen)} className="p-1.5 hover:bg-white/5 rounded-lg text-slate-400 transition-colors">
+                            <Filter className={`w-5 h-5 md:w-4 md:h-4 ${isFilterOpen ? "text-sky-500" : ""}`} />
+                        </button>
+                    </div>
                 </div>
 
                 <AnimatePresence>
                     {isFilterOpen && (
                         <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
                             <div className="space-y-4 pb-1">
-                                <div className="grid grid-cols-2 gap-3">
-                                    <div className="space-y-1.5">
-                                        <label className="text-[11px] md:text-[10px] text-slate-500 font-bold ml-1">시작일</label>
-                                        <div className="relative">
-                                            <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 md:w-3.5 md:h-3.5 text-slate-500" />
-                                            <input type="date" name="startDate" value={filters.startDate} onChange={handleFilterChange}
-                                                className="w-full bg-[#11111a] border border-white/5 rounded-2xl py-3 md:py-2 pl-10 md:pl-9 pr-3 text-sm md:text-xs focus:ring-1 focus:ring-sky-500 outline-none transition-all" />
-                                        </div>
-                                    </div>
-                                    <div className="space-y-1.5">
-                                        <label className="text-[11px] md:text-[10px] text-slate-500 font-bold ml-1">종료일</label>
-                                        <div className="relative">
-                                            <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 md:w-3.5 md:h-3.5 text-slate-500" />
-                                            <input type="date" name="endDate" value={filters.endDate} onChange={handleFilterChange}
-                                                className="w-full bg-[#11111a] border border-white/5 rounded-2xl py-3 md:py-2 pl-10 md:pl-9 pr-3 text-sm md:text-xs focus:ring-1 focus:ring-sky-500 outline-none transition-all" />
-                                        </div>
-                                    </div>
-                                </div>
                                 <div className="space-y-3">
-                                    <div className="relative">
-                                        <Package className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-                                        <input placeholder="제품명 검색..." name="productName" value={filters.productName} onChange={handleFilterChange}
-                                            className="w-full bg-[#11111a] border border-white/5 rounded-2xl py-3.5 md:py-2.5 pl-10 pr-4 text-sm md:text-xs focus:ring-1 focus:ring-sky-500 outline-none transition-all placeholder:text-slate-600" />
-                                    </div>
                                     <div className="relative">
                                         <Truck className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
                                         <input placeholder="컨테이너 번호 검색..." name="containerNo" value={filters.containerNo} onChange={handleFilterChange}
@@ -551,44 +575,88 @@ export default function Home({ user }: { user: SessionUser }) {
                                     <Settings2 className="w-6 h-6 text-sky-500" />
                                 </div>
                                 <div>
-                                    <h2 className="text-xl font-black text-white">DB 연결 설정</h2>
-                                    <p className="text-xs text-slate-500 font-bold uppercase tracking-widest">Database Configuration</p>
+                                    <h2 className="text-xl font-black text-white">
+                                        {user.role === 'admin' ? "DB 연결 설정" : "사용자 설정"}
+                                    </h2>
+                                    <p className="text-xs text-slate-500 font-bold uppercase tracking-widest">
+                                        {user.role === 'admin' ? "Database Configuration" : "User Settings"}
+                                    </p>
                                 </div>
                             </div>
 
-                            <div className="space-y-4">
-                                <div className="space-y-2">
-                                    <label className="text-[11px] font-black text-slate-500 ml-1">Host 주소</label>
-                                    <input value={dbConfig.host} onChange={e => setDbConfig({ ...dbConfig, host: e.target.value })}
-                                        className="w-full bg-black/40 border border-white/10 rounded-2xl px-4 py-3 text-sm focus:border-sky-500 outline-none transition-all" placeholder="localhost 또는 IP주소" />
-                                </div>
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div className="space-y-2">
-                                        <label className="text-[11px] font-black text-slate-500 ml-1">DB 이름</label>
-                                        <input value={dbConfig.database} onChange={e => setDbConfig({ ...dbConfig, database: e.target.value })}
-                                            className="w-full bg-black/40 border border-white/10 rounded-2xl px-4 py-3 text-sm focus:border-sky-500 outline-none transition-all" />
+                            {user.role === 'admin' && (
+                                <>
+                                    <div className="space-y-4">
+                                        <div className="space-y-2">
+                                            <label className="text-[11px] font-black text-slate-500 ml-1">Host 주소</label>
+                                            <input value={dbConfig.host} onChange={e => setDbConfig({ ...dbConfig, host: e.target.value })}
+                                                className="w-full bg-black/40 border border-white/10 rounded-2xl px-4 py-3 text-sm focus:border-sky-500 outline-none transition-all" placeholder="localhost 또는 IP주소" />
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div className="space-y-2">
+                                                <label className="text-[11px] font-black text-slate-500 ml-1">DB 이름</label>
+                                                <input value={dbConfig.database} onChange={e => setDbConfig({ ...dbConfig, database: e.target.value })}
+                                                    className="w-full bg-black/40 border border-white/10 rounded-2xl px-4 py-3 text-sm focus:border-sky-500 outline-none transition-all" />
+                                            </div>
+                                            <div className="space-y-2">
+                                                <label className="text-[11px] font-black text-slate-500 ml-1">Port</label>
+                                                <input type="number" value={dbConfig.port} onChange={e => setDbConfig({ ...dbConfig, port: parseInt(e.target.value) })}
+                                                    className="w-full bg-black/40 border border-white/10 rounded-2xl px-4 py-3 text-sm focus:border-sky-500 outline-none transition-all" />
+                                            </div>
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="text-[11px] font-black text-slate-500 ml-1">User ID</label>
+                                            <input value={dbConfig.user} onChange={e => setDbConfig({ ...dbConfig, user: e.target.value })}
+                                                className="w-full bg-black/40 border border-white/10 rounded-2xl px-4 py-3 text-sm focus:border-sky-500 outline-none transition-all" />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="text-[11px] font-black text-slate-500 ml-1">Password</label>
+                                            <input type="password" value={dbConfig.password} onChange={e => setDbConfig({ ...dbConfig, password: e.target.value })}
+                                                className="w-full bg-black/40 border border-white/10 rounded-2xl px-4 py-3 text-sm focus:border-sky-500 outline-none transition-all" placeholder="비밀번호 입력" />
+                                        </div>
                                     </div>
-                                    <div className="space-y-2">
-                                        <label className="text-[11px] font-black text-slate-500 ml-1">Port</label>
-                                        <input type="number" value={dbConfig.port} onChange={e => setDbConfig({ ...dbConfig, port: parseInt(e.target.value) })}
-                                            className="w-full bg-black/40 border border-white/10 rounded-2xl px-4 py-3 text-sm focus:border-sky-500 outline-none transition-all" />
-                                    </div>
-                                </div>
-                                <div className="space-y-2">
-                                    <label className="text-[11px] font-black text-slate-500 ml-1">User ID</label>
-                                    <input value={dbConfig.user} onChange={e => setDbConfig({ ...dbConfig, user: e.target.value })}
-                                        className="w-full bg-black/40 border border-white/10 rounded-2xl px-4 py-3 text-sm focus:border-sky-500 outline-none transition-all" />
-                                </div>
-                                <div className="space-y-2">
-                                    <label className="text-[11px] font-black text-slate-500 ml-1">Password</label>
-                                    <input type="password" value={dbConfig.password} onChange={e => setDbConfig({ ...dbConfig, password: e.target.value })}
-                                        className="w-full bg-black/40 border border-white/10 rounded-2xl px-4 py-3 text-sm focus:border-sky-500 outline-none transition-all" placeholder="비밀번호 입력" />
-                                </div>
-                            </div>
 
-                            <div className="flex gap-3 mt-8">
-                                <button onClick={() => setIsSettingsOpen(false)} className="flex-1 py-4 rounded-2xl bg-white/5 hover:bg-white/10 text-slate-400 font-bold text-sm transition-all">취소</button>
-                                <button onClick={handleDbSave} className="flex-2 py-4 px-8 rounded-2xl bg-sky-500 hover:bg-sky-400 text-white font-black text-sm transition-all shadow-lg shadow-sky-500/20">설정 저장</button>
+                                    <div className="flex gap-3 mt-8 mb-8">
+                                        <button onClick={() => setIsSettingsOpen(false)} className="flex-1 py-4 rounded-2xl bg-white/5 hover:bg-white/10 text-slate-400 font-bold text-sm transition-all">취소</button>
+                                        <button onClick={handleDbSave} className="flex-2 py-4 px-8 rounded-2xl bg-sky-500 hover:bg-sky-400 text-white font-black text-sm transition-all shadow-lg shadow-sky-500/20">설정 저장</button>
+                                    </div>
+                                </>
+                            )}
+
+                            <div className={`${user.role === 'admin' ? 'border-t border-white/5 pt-8' : ''}`}>
+                                <div className="flex items-center gap-3 mb-6">
+                                    <div className="p-3 bg-amber-500/10 rounded-2xl">
+                                        <Briefcase className="w-6 h-6 text-amber-500" />
+                                    </div>
+                                    <div>
+                                        <h2 className="text-xl font-black text-white">비밀번호 변경</h2>
+                                        <p className="text-xs text-slate-500 font-bold uppercase tracking-widest">Change Password</p>
+                                    </div>
+                                </div>
+
+                                <div className="space-y-4">
+                                    <div className="space-y-2">
+                                        <label className="text-[11px] font-black text-slate-500 ml-1">현재 비밀번호</label>
+                                        <input type="password" value={passwordData.current} onChange={e => setPasswordData({ ...passwordData, current: e.target.value })}
+                                            className="w-full bg-black/40 border border-white/10 rounded-2xl px-4 py-3 text-sm focus:border-amber-500/50 outline-none transition-all" />
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="space-y-2">
+                                            <label className="text-[11px] font-black text-slate-500 ml-1">새 비밀번호</label>
+                                            <input type="password" value={passwordData.new} onChange={e => setPasswordData({ ...passwordData, new: e.target.value })}
+                                                className="w-full bg-black/40 border border-white/10 rounded-2xl px-4 py-3 text-sm focus:border-amber-500/50 outline-none transition-all" />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="text-[11px] font-black text-slate-500 ml-1">비밀번호 확인</label>
+                                            <input type="password" value={passwordData.confirm} onChange={e => setPasswordData({ ...passwordData, confirm: e.target.value })}
+                                                className="w-full bg-black/40 border border-white/10 rounded-2xl px-4 py-3 text-sm focus:border-amber-500/50 outline-none transition-all" />
+                                        </div>
+                                    </div>
+                                    <button onClick={handlePasswordUpdate} disabled={isPasswordUpdating}
+                                        className="w-full py-4 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-500 hover:bg-amber-500 hover:text-white font-black text-sm transition-all mt-2">
+                                        {isPasswordUpdating ? "변경 중..." : "비밀번호 변경 적용"}
+                                    </button>
+                                </div>
                             </div>
                         </motion.div>
                     </div>

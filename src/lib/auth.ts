@@ -27,7 +27,8 @@ function decodeSession(token: string): SessionUser | null {
 
 export async function login(
     username: string,
-    password: string
+    password: string,
+    rememberMe: boolean = false
 ): Promise<{ success: boolean; error?: string; user?: SessionUser }> {
     try {
         const client = await pool.connect();
@@ -63,7 +64,7 @@ export async function login(
         cookieStore.set(SESSION_COOKIE, encodeSession(sessionUser), {
             httpOnly: true,
             secure: process.env.NODE_ENV === "production",
-            maxAge: 60 * 60 * 24 * 7, // 7 days
+            maxAge: rememberMe ? 60 * 60 * 24 * 30 : 60 * 60 * 24, // 30 days if rememberMe, else 1 day
             path: "/",
         });
 
@@ -87,5 +88,48 @@ export async function getSession(): Promise<SessionUser | null> {
         return decodeSession(token);
     } catch {
         return null;
+    }
+}
+
+export async function updatePassword(
+    currentPassword: string,
+    newPassword: string
+): Promise<{ success: boolean; error?: string }> {
+    try {
+        const session = await getSession();
+        if (!session) {
+            return { success: false, error: "세션이 만료되었습니다. 다시 로그인해주세요." };
+        }
+
+        const client = await pool.connect();
+        try {
+            const res = await client.query(
+                `SELECT password FROM "User" WHERE id = $1 LIMIT 1`,
+                [session.id]
+            );
+
+            if (res.rows.length === 0) {
+                return { success: false, error: "사용자를 찾을 수 없습니다." };
+            }
+
+            const user = res.rows[0];
+            const passwordMatch = await bcrypt.compare(currentPassword, user.password);
+            if (!passwordMatch) {
+                return { success: false, error: "현재 비밀번호가 일치하지 않습니다." };
+            }
+
+            const hashedPassword = await bcrypt.hash(newPassword, 10);
+            await client.query(
+                `UPDATE "User" SET password = $1 WHERE id = $2`,
+                [hashedPassword, session.id]
+            );
+
+            return { success: true };
+        } finally {
+            client.release();
+        }
+    } catch (error) {
+        console.error("Update password error:", error);
+        return { success: false, error: "비밀번호 변경 중 오류가 발생했습니다." };
     }
 }

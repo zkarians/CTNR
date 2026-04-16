@@ -9,6 +9,7 @@ import {
     resetPool
 } from "./db";
 import { Product, Job, JobFilters, DbConfig } from "./types";
+import { updatePassword as updatePass } from "./auth";
 
 export async function getDbConfig(): Promise<DbConfig> {
     return {
@@ -111,4 +112,8 @@ export async function fetchProductsByJob(jobId: number): Promise<Product[]> {
         console.error("Failed to fetch products for job:", error);
         return [];
     }
+}
+
+export async function updatePassword(currentPassword: string, newPassword: string) {
+    return await updatePass(currentPassword, newPassword);
 }

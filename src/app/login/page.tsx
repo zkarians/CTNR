@@ -10,6 +10,7 @@ export default function LoginPage() {
     const router = useRouter();
     const [username, setUsername] = useState("");
     const [password, setPassword] = useState("");
+    const [rememberMe, setRememberMe] = useState(false);
     const [showPassword, setShowPassword] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -23,7 +24,7 @@ export default function LoginPage() {
         setIsLoading(true);
         setError(null);
 
-        const result = await login(username.trim(), password);
+        const result = await login(username.trim(), password, rememberMe);
 
         if (result.success) {
             router.push("/");
@@ -122,6 +123,24 @@ export default function LoginPage() {
                                     )}
                                 </button>
                             </div>
+                        </div>
+
+                        {/* Remember Me */}
+                        <div className="flex items-center gap-2 px-1">
+                            <input
+                                id="rememberMe"
+                                type="checkbox"
+                                checked={rememberMe}
+                                onChange={(e) => setRememberMe(e.target.checked)}
+                                disabled={isLoading}
+                                className="w-4 h-4 rounded bg-white/[0.05] border-white/[0.08] text-sky-500 focus:ring-sky-500/30 transition-all cursor-pointer"
+                            />
+                            <label
+                                htmlFor="rememberMe"
+                                className="text-xs text-slate-400 font-medium cursor-pointer select-none"
+                            >
+                                로그인 상태 유지
+                            </label>
                         </div>
 
                         {/* Error */}
