@@ -97,7 +97,7 @@ export async function searchProducts(query: string): Promise<Product[]> {
             height: row.height,
             quantity: 1,
             allow_rotate: true,
-            allow_lay_down: (row.model_name && (row.model_name.includes('PSM') || row.model_name.includes('LT'))) || row.prod_type === 'CDZ' || (row.width <= 150 || row.length <= 150 || row.height <= 150)
+            allow_lay_down: false
         }));
     } catch (e) {
         console.error(e);
@@ -106,13 +106,10 @@ export async function searchProducts(query: string): Promise<Product[]> {
 }
 
 export async function fetchProductsByJob(jobId: number): Promise<Product[]> {
-    console.log(`[fetchProductsByJob] Called with jobId: ${jobId} (type: ${typeof jobId})`);
     try {
-        const products = await getProductsForJob(jobId);
-        console.log(`[fetchProductsByJob] Returned ${products.length} products`);
-        return products;
-    } catch (error: any) {
-        console.error(`[fetchProductsByJob] CRITICAL ERROR:`, error?.message || error);
+        return await getProductsForJob(jobId);
+    } catch (error) {
+        console.error("Failed to fetch products for job:", error);
         return [];
     }
 }

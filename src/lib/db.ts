@@ -75,19 +75,21 @@ export async function getJobsFromDB(filters?: JobFilters): Promise<Job[]> {
 
             const whereSql = whereClauses.length > 0 ? "WHERE " + whereClauses.join(" AND ") : "";
             const query = `
-                SELECT 
-                    MIN(j.id) as id, 
-                    j.job_name, 
-                    j.etd,
-                    j.saved_at,
-                    r.cntr_no,
-                    r.transporter,
-                    r.cntr_type
-                FROM container_jobs j
-                LEFT JOIN container_results r ON r.job_id = j.id
-                ${whereSql}
-                GROUP BY j.job_name, j.etd, j.saved_at, r.cntr_no, r.transporter, r.cntr_type
-                ORDER BY j.saved_at DESC, id DESC 
+                SELECT * FROM (
+                    SELECT DISTINCT ON (COALESCE(r.cntr_no, j.id::text), j.job_name)
+                        j.id, 
+                        j.job_name, 
+                        j.etd,
+                        j.saved_at,
+                        r.cntr_no,
+                        r.transporter,
+                        r.cntr_type
+                    FROM container_jobs j
+                    LEFT JOIN container_results r ON r.job_id = j.id
+                    ${whereSql}
+                    ORDER BY COALESCE(r.cntr_no, j.id::text), j.job_name, j.saved_at DESC, j.id DESC
+                ) sub
+                ORDER BY saved_at DESC, id DESC 
                 LIMIT 100
             `;
             const res = await client.query(query, params);
@@ -127,49 +129,66 @@ export async function getJobsFromDB(filters?: JobFilters): Promise<Job[]> {
  * 특정 작업(Job)에 포함된 제품 목록과 수량을 가져옵니다.
  */
 export async function getProductsForJob(jobId: number): Promise<Product[]> {
-    console.log(`[getProductsForJob] START - jobId: ${jobId} (type: ${typeof jobId})`);
     try {
         const client = await pool.connect();
-        console.log(`[getProductsForJob] DB connected OK`);
         try {
+            // First, find the container number and job name for this jobId to handle split jobs
+            const infoQuery = `
+                SELECT j.job_name, r.cntr_no 
+                FROM container_jobs j
+                LEFT JOIN container_results r ON r.job_id = j.id
+                WHERE j.id = $1
+                LIMIT 1
+            `;
+            const infoRes = await client.query(infoQuery, [jobId]);
+            
+            if (infoRes.rows.length === 0) return [];
+            
+            const { job_name, cntr_no } = infoRes.rows[0];
+
+            // If we have a container number, fetch products for ALL jobs that share this container number and job name.
+            // This handles cases where data was split across multiple job IDs.
+            // If cntr_no is null, fall back to only fetching for this specific job ID (matching grouping in getJobsFromDB).
             const query = `
                 SELECT 
                     r.prod_name as id,
                     r.prod_name as model_name,
-                    COALESCE(CAST(m.width AS INTEGER), 0) as width,
-                    COALESCE(CAST(m.depth AS INTEGER), 0) as length,
-                    COALESCE(CAST(m.height AS INTEGER), 0) as height,
-                    CAST(r.qty_plan AS INTEGER) as quantity,
+                    COALESCE(CAST(NULLIF(m.width, '') AS NUMERIC), 0) as width,
+                    COALESCE(CAST(NULLIF(m.depth, '') AS NUMERIC), 0) as length,
+                    COALESCE(CAST(NULLIF(m.height, '') AS NUMERIC), 0) as height,
+                    SUM(CAST(NULLIF(r.qty_plan, '') AS NUMERIC)) as quantity,
                     m.prod_type
                 FROM container_results r
+                JOIN container_jobs j ON r.job_id = j.id
                 LEFT JOIN product_master_sync m ON r.prod_name = m.prod_name
-                WHERE r.job_id = $1
-                AND r.qty_plan > 0
+                WHERE (
+                    ($2::text IS NOT NULL AND r.cntr_no = $2 AND j.job_name = $3)
+                    OR
+                    ($2::text IS NULL AND j.id = $1)
+                )
+                AND CAST(NULLIF(r.qty_plan, '') AS NUMERIC) > 0
+                GROUP BY r.prod_name, m.width, m.depth, m.height, m.prod_type
             `;
-            const res = await client.query(query, [jobId]);
-            console.log(`[getProductsForJob] Found ${res.rows.length} products for jobId: ${jobId}`);
-            if (res.rows.length === 0) {
-                console.warn(`[getProductsForJob] WARNING: 0 products returned. Checking raw count...`);
-                const rawCount = await client.query('SELECT COUNT(*) FROM container_results WHERE job_id = $1', [jobId]);
-                console.warn(`[getProductsForJob] Raw container_results count for job_id=${jobId}: ${rawCount.rows[0].count}`);
-            }
+            
+            console.log(`Fetching products for logical job (JobId: ${jobId}, Container: ${cntr_no}, Name: ${job_name})`);
+            const res = await client.query(query, [jobId, cntr_no, job_name]);
+            console.log(`Found ${res.rows.length} product types for logical job`);
 
             return res.rows.map(row => ({
                 id: row.id,
                 model_name: row.model_name,
-                width: row.width || 0,
-                length: row.length || 0,
-                height: row.height || 0,
-                quantity: row.quantity,
+                width: Number(row.width) || 0,
+                length: Number(row.length) || 0,
+                height: Number(row.height) || 0,
+                quantity: Math.round(Number(row.quantity)) || 0,
                 allow_rotate: true,
-                allow_lay_down: (row.model_name && (row.model_name.includes('PSM') || row.model_name.includes('LT'))) || row.prod_type === 'CDZ' || (row.width <= 150 || row.length <= 150 || row.height <= 150)
+                allow_lay_down: false
             }));
         } finally {
             client.release();
         }
-    } catch (error: any) {
-        console.error(`[getProductsForJob] CRITICAL ERROR for jobId=${jobId}:`, error?.message || error);
-        console.error(`[getProductsForJob] Full error:`, error);
+    } catch (error) {
+        console.error('getProductsForJob Error:', error);
         return [];
     }
 }

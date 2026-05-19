@@ -51,7 +51,7 @@ export interface PackedItem {
     w: number;
     l: number;
     h: number;
-    orientation: 'std' | 'rotated' | 'lay_side' | 'lay_front';
+    orientation: 'std' | 'rot' | 'lay';
 }
 
 export interface PackingResult {

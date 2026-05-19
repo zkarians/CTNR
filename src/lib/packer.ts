@@ -38,10 +38,34 @@ function isStableBottom(p: Product, orientedW: number, orientedL: number): boole
     return true;
 }
 
+/**
+ * V4.24: Evaluate the value of a generated wall block. 
+ * Combines packed volume density (volume / depth) and width utilization.
+ */
+function evaluateWallScore(wallItems: any[], containerWidth: number): number {
+    if (!wallItems || wallItems.length === 0) return 0;
+    
+    let vol = 0;
+    let maxW = 0;
+    let maxD = 0;
+    for (const it of wallItems) {
+        vol += (it.w * it.l * it.h);
+        const lEdge = (it.yRel || 0) + it.l;
+        if (lEdge > maxD) maxD = lEdge;
+        const wEdge = it.x + it.w;
+        if (wEdge > maxW) maxW = wEdge;
+    }
+    if (maxD <= 0) return 0;
+    
+    const widthRatio = containerWidth > 0 ? maxW / containerWidth : 0;
+    // V4.30: Increase width utilization bonus to favor 3-column refrigerator walls (775mm wide)
+    return (vol / maxD) * (1 + widthRatio * 2.5);
+}
+
 export function packContainer(
     containerInput: ContainerDimensions,
     productsInput: Product[],
-    numPasses: number = 30,
+    numPasses: number = 100,
     force: boolean = false
 ): PackingResult {
     const container = {
@@ -49,14 +73,24 @@ export function packContainer(
         width: Number(containerInput.width), length: Number(containerInput.length), height: Number(containerInput.height)
     };
     const aggMap = new Map<string, Product>();
+    const invalidProducts: Product[] = []; // V5.03: Track 0-dimension products to return as unpacked
+
     for (const p of productsInput) {
-        const ex = aggMap.get(p.id);
         const qty = Number(p.quantity);
+        if (qty <= 0) continue;
+
+        // V5.03: Filter out products with 0 or negative dimensions
+        if (Number(p.width) <= 0 || Number(p.length) <= 0 || Number(p.height) <= 0) {
+            invalidProducts.push({ ...p, width: Number(p.width), length: Number(p.length), height: Number(p.height), quantity: qty });
+            continue;
+        }
+
+        const ex = aggMap.get(p.id);
         if (ex) ex.quantity += qty;
         else aggMap.set(p.id, { ...p, width: Number(p.width), length: Number(p.length), height: Number(p.height), quantity: qty });
     }
     const products = Array.from(aggMap.values());
-    if (container.width <= 0) return { container: { ...container, id: '40hc' }, items: [], efficiency: 0, unpacked: products };
+    if (container.width <= 0) return { container: { ...container, id: '40hc' }, items: [], efficiency: 0, unpacked: [...products, ...invalidProducts] };
 
     const totalQty = products.reduce((acc, p) => acc + p.quantity, 0);
 
@@ -72,6 +106,12 @@ export function packContainer(
 
     for (let pIdx = 0; pIdx < passes; pIdx++) {
         const res = doTwoPhasePacking(container, sortedNormal, sortedSmall, products, pIdx);
+        
+        // V5.03: Append invalid 0-dimension products to the unpacked list so user sees them as failed
+        if (invalidProducts.length > 0) {
+            res.unpacked.push(...invalidProducts);
+        }
+
         if (!bestRes || res.items.length > bestRes.items.length) {
             bestRes = res;
         }
@@ -100,25 +140,35 @@ function doTwoPhasePacking(container: any, normalProducts: Product[], smallProdu
         if (rem.length === 0) break;
 
         const p1 = rem[0];
-        const depths = Array.from(new Set([p1.length, p1.width, p1.height])).filter(d => d > 0 && d <= (container.length - currentY) + 0.5).sort((a, b) => b - a);
+        // V4.23: Include rotated dimensions in depth candidates to allow better width-fill orientation
+        const depthCandidates = p1.allow_rotate 
+            ? [p1.length, p1.width, p1.height] 
+            : [p1.length, p1.height];
+        
+        // V4.27 Depth Expansion: Include small product orientations to allow scavenging best rotations
+        const smallRem = allProducts.filter(p => (unpacked.get(p.id) || 0) > 0 && isSmallProduct(p));
+        for (const sp of smallRem) {
+            depthCandidates.push(sp.length, sp.width);
+        }
+
+        const depths = Array.from(new Set(depthCandidates))
+            .filter(d => d > 0 && d <= (container.length - currentY) + 0.5)
+            .sort((a, b) => b - a);
 
         let bestWItems: any[] = [];
         let bestActualDepth = 0;
+        let bestWallScore = -Infinity;
 
         for (const limitD of depths) {
-            const tempU = new Map(normalUnpacked);
-            // Phase 1: only normal products in base/topping
-            const wallItems = blockPackShelf(container.width, container.height, limitD, runNormal, tempU, false);
+            // V4.26: Pass global unpacked and allProducts so blockPackShelf can scavenge small items for side gaps
+            const tempU = new Map(unpacked);
+            const wallItems = blockPackShelf(container.width, container.height, limitD, allProducts, tempU, false);
 
-            if (wallItems.length > bestWItems.length) {
+            const score = evaluateWallScore(wallItems, container.width);
+            if (score > bestWallScore) {
+                bestWallScore = score;
                 bestWItems = wallItems;
                 bestActualDepth = wallItems.length > 0 ? Math.max(...wallItems.map((it: any) => (it.yRel || 0) + it.l)) : 0;
-            } else if (wallItems.length === bestWItems.length && wallItems.length > 0) {
-                const curActual = Math.max(...wallItems.map((it: any) => (it.yRel || 0) + it.l));
-                if (curActual < bestActualDepth) {
-                    bestWItems = wallItems;
-                    bestActualDepth = curActual;
-                }
             }
         }
 
@@ -133,8 +183,11 @@ function doTwoPhasePacking(container: any, normalProducts: Product[], smallProdu
             const pi = { ...wi, y: currentY + (wi.yRel || 0), product: { ...wi.product, quantity: 1 } };
             placed.push(pi);
             wallPlaced.push(pi);
-            normalUnpacked.set(wi.product.id, normalUnpacked.get(wi.product.id)! - 1);
             unpacked.set(wi.product.id, unpacked.get(wi.product.id)! - 1);
+            // Only deduct from Phase 1 target map if it was a normal product
+            if (!isSmallProduct(wi.product)) {
+                normalUnpacked.set(wi.product.id, normalUnpacked.get(wi.product.id)! - 1);
+            }
         }
         walls.push({ y: currentY, depth: bestActualDepth, items: wallPlaced });
         currentY += bestActualDepth;
@@ -142,22 +195,30 @@ function doTwoPhasePacking(container: any, normalProducts: Product[], smallProdu
 
     // ---- PHASE 2: Fill headroom of ALL walls with ANY remaining unpacked items ----
     // This catches items that didn't fit in Phase 1's block evaluation
-    const allRemainingProducts = allProducts.filter(p => (unpacked.get(p.id) || 0) > 0);
+    const allRemainingProducts = allProducts.filter(p => (unpacked.get(p.id) || 0) > 0 && !isSmallProduct(p));
     const runPhase2 = pIdx > 0 ? [...allRemainingProducts].sort(() => Math.random() - 0.5) : allRemainingProducts;
 
     for (const wall of walls) {
         let wallMaxZ = 0;
         let wallMaxW = 0;
         let wallBaseL = wall.depth;
+        let isTopLay = false;
         for (const item of wall.items) {
+            // V4.28: Ignore small products for base height. Side-gap towers must not block headroom detection.
+            if (isSmallProduct(item.product)) continue;
             const topZ = item.z + item.h;
-            if (topZ > wallMaxZ) wallMaxZ = topZ;
+            if (topZ > wallMaxZ) {
+                wallMaxZ = topZ;
+                isTopLay = (item.orientation === 'lay');
+            } else if (topZ === wallMaxZ && item.orientation === 'lay') {
+                isTopLay = true;
+            }
             const rightEdge = item.x + item.w;
             if (rightEdge > wallMaxW) wallMaxW = rightEdge;
         }
 
         let curZ = wallMaxZ;
-        let filled = true;
+        let filled = !isTopLay; // V5.02: Block filling if top item is laid down
         while (filled && curZ < container.height) {
             filled = false;
             let bestRowScore = -Infinity;
@@ -172,8 +233,7 @@ function doTwoPhasePacking(container: any, normalProducts: Product[], smallProdu
                 for (const to of orients) {
                     if (to.h > (container.height - curZ) + 0.5 || to.l > wallBaseL + 0.5) continue;
 
-                    // V4.16: Check if base items are too short for tall toppers
-                    const baseMaxH = wall.items.reduce((max: number, it: any) => Math.max(max, it.h), 0);
+                    const baseMaxH = wall.items.reduce((max: number, it: any) => Math.max(max, isSmallProduct(it.product) ? 0 : it.h), 0);
                     if (baseMaxH < 500 && to.h >= 670) continue;
 
                     const suppW = Math.min(to.w, wallMaxW);
@@ -209,7 +269,8 @@ function doTwoPhasePacking(container: any, normalProducts: Product[], smallProdu
                     unpacked.set(ri.product.id, unpacked.get(ri.product.id)! - 1);
                 }
                 curZ += bestRowH;
-                filled = true;
+                // V5.04: If the stacked item is laid down, stop filling on top of it.
+                filled = bestRowItems[0].orientation !== 'lay';
             }
         }
     }
@@ -228,24 +289,32 @@ function doTwoPhasePacking(container: any, normalProducts: Product[], smallProdu
             if (rem.length === 0) break;
 
             const p1 = rem[0];
-            const depths = Array.from(new Set([p1.length, p1.width, p1.height])).filter(d => d > 0 && d <= (container.length - currentY) + 0.5).sort((a, b) => b - a);
+            const depthCandidates = p1.allow_rotate 
+                ? [p1.length, p1.width, p1.height] 
+                : [p1.length, p1.height];
+            
+            // V4.27 Depth Expansion (Phase 3)
+            const smallRem = allProducts.filter(p => (unpacked.get(p.id) || 0) > 0 && isSmallProduct(p));
+            for (const sp of smallRem) {
+                depthCandidates.push(sp.length, sp.width);
+            }
+
+            const depths = Array.from(new Set(depthCandidates)).filter(d => d > 0 && d <= (container.length - currentY) + 0.5).sort((a, b) => b - a);
 
             let bestWItems: any[] = [];
             let bestActualDepth = 0;
+            let bestWallScore = -Infinity;
 
             for (const limitD of depths) {
-                const tempU = new Map(floorUnpacked);
-                const wallItems = blockPackShelf(container.width, container.height, limitD, runFloor, tempU, false);
+                // V4.26 Scavenge side gaps in Phase 3 as well
+                const tempU = new Map(unpacked);
+                const wallItems = blockPackShelf(container.width, container.height, limitD, allProducts, tempU, false);
 
-                if (wallItems.length > bestWItems.length) {
+                const score = evaluateWallScore(wallItems, container.width);
+                if (score > bestWallScore) {
+                    bestWallScore = score;
                     bestWItems = wallItems;
                     bestActualDepth = wallItems.length > 0 ? Math.max(...wallItems.map((it: any) => (it.yRel || 0) + it.l)) : 0;
-                } else if (wallItems.length === bestWItems.length && wallItems.length > 0) {
-                    const curActual = Math.max(...wallItems.map((it: any) => (it.yRel || 0) + it.l));
-                    if (curActual < bestActualDepth) {
-                        bestWItems = wallItems;
-                        bestActualDepth = curActual;
-                    }
                 }
             }
 
@@ -260,38 +329,77 @@ function doTwoPhasePacking(container: any, normalProducts: Product[], smallProdu
                 const pi = { ...wi, y: currentY + (wi.yRel || 0), product: { ...wi.product, quantity: 1 } };
                 placed.push(pi);
                 phase3Wall.push(pi);
-                floorUnpacked.set(wi.product.id, floorUnpacked.get(wi.product.id)! - 1);
                 unpacked.set(wi.product.id, unpacked.get(wi.product.id)! - 1);
+                if (!isSmallProduct(wi.product)) {
+                    floorUnpacked.set(wi.product.id, floorUnpacked.get(wi.product.id)! - 1);
+                }
             }
             walls.push({ y: currentY, depth: bestActualDepth, items: phase3Wall });
             currentY += bestActualDepth;
         }
     }
 
-    // ---- PHASE 4: Stack remaining SMALL products on top of ALL walls ----
-    const remainingSmall = allProducts.filter(p => (unpacked.get(p.id) || 0) > 0 && isSmallProduct(p));
-    const runPhase4 = pIdx > 0 ? [...remainingSmall].sort(() => Math.random() - 0.5) : remainingSmall;
-
+    // ---- PRE-PHASE 4: Merge continuous flat tops into Macro Walls ----
+    // V4.25: Instead of isolated walls, merge walls that are contiguous and share identical top profile geometry.
+    interface MacroWall {
+        y: number;
+        depth: number;
+        maxZ: number;
+        maxW: number;
+        isTopLay?: boolean;
+    }
+    const macroWalls: MacroWall[] = [];
+    
     for (const wall of walls) {
         let wallMaxZ = 0;
         let wallMaxW = 0;
-        let wallBaseL = wall.depth;
+        let isTopLay = false;
         for (const item of wall.items) {
+            if (isSmallProduct(item.product)) continue;
             const topZ = item.z + item.h;
-            if (topZ > wallMaxZ) wallMaxZ = topZ;
+            if (topZ > wallMaxZ) {
+                wallMaxZ = topZ;
+                isTopLay = (item.orientation === 'lay');
+            } else if (topZ === wallMaxZ && item.orientation === 'lay') {
+                isTopLay = true;
+            }
             const rightEdge = item.x + item.w;
             if (rightEdge > wallMaxW) wallMaxW = rightEdge;
         }
-        // Also check already-placed Phase 2 toppers in this wall's y range
         for (const pi of placed) {
-            if (pi.y >= wall.y && pi.y < wall.y + wallBaseL) {
+            if (pi.y >= wall.y && pi.y < wall.y + wall.depth) {
+                if (isSmallProduct(pi.product)) continue;
                 const topZ = pi.z + pi.h;
-                if (topZ > wallMaxZ) wallMaxZ = topZ;
+                if (topZ > wallMaxZ) {
+                    wallMaxZ = topZ;
+                    isTopLay = (pi.orientation === 'lay');
+                } else if (topZ === wallMaxZ && pi.orientation === 'lay') {
+                    isTopLay = true;
+                }
             }
         }
+        
+        if (macroWalls.length > 0) {
+            const last = macroWalls[macroWalls.length - 1];
+            // If they sequentially touch and have identical Z/W capacity boundaries, merge them.
+            if (Math.abs((last.y + last.depth) - wall.y) < 1 && Math.abs(last.maxZ - wallMaxZ) < 1 && Math.abs(last.maxW - wallMaxW) < 1 && last.isTopLay === isTopLay) {
+                last.depth += wall.depth;
+                continue;
+            }
+        }
+        macroWalls.push({ y: wall.y, depth: wall.depth, maxZ: wallMaxZ, maxW: wallMaxW, isTopLay });
+    }
+    // ---- PHASE 4: Stack remaining SMALL products on top of ALL macro walls ----
+    const remainingSmall = allProducts.filter(p => (unpacked.get(p.id) || 0) > 0 && isSmallProduct(p));
+    const runPhase4 = pIdx > 0 ? [...remainingSmall].sort(() => Math.random() - 0.5) : remainingSmall;
+
+    for (const wall of macroWalls) {
+        let wallMaxZ = wall.maxZ;
+        let wallMaxW = wall.maxW;
+        let wallBaseL = wall.depth;
 
         let curZ = wallMaxZ;
-        let filled = true;
+        let filled = !wall.isTopLay; // V5.02: Block filling if top item is laid down
         while (filled && curZ < container.height) {
             filled = false;
             let bestRowScore = -Infinity;
@@ -307,15 +415,35 @@ function doTwoPhasePacking(container: any, normalProducts: Product[], smallProdu
                     const suppW = Math.min(to.w, wallMaxW);
                     const suppL = Math.min(to.l, wallBaseL);
                     if (suppW * suppL < to.w * to.l * 0.66) continue;
-                    const fitCount = Math.floor((wallMaxW + 0.5) / to.w);
-                    if (fitCount === 0) continue;
-                    const rowCount = Math.min(fitCount, avail);
+                    
+                    // V4.25: Fill in 2D space (Width x Depth) instead of a single 1D strip.
+                    const fitCountW = Math.floor((wallMaxW + 0.5) / to.w);
+                    const fitCountL = Math.floor((wallBaseL + 0.5) / to.l);
+                    if (fitCountW === 0 || fitCountL === 0) continue;
+                    
+                    const countLimit = Math.min(fitCountW * fitCountL, avail);
                     const rowItems: any[] = [];
-                    for (let ri = 0; ri < rowCount; ri++) {
-                        rowItems.push({ product: sp, x: ri * to.w, y: wall.y, z: curZ, w: to.w, l: to.l, h: to.h, orientation: to.type });
+                    let placedCount = 0;
+                    
+                    for (let l_idx = 0; l_idx < fitCountL; l_idx++) {
+                        for (let w_idx = 0; w_idx < fitCountW; w_idx++) {
+                            if (placedCount >= countLimit) break;
+                            rowItems.push({ 
+                                product: sp, 
+                                x: w_idx * to.w, 
+                                y: wall.y + (l_idx * to.l), 
+                                z: curZ, 
+                                w: to.w, l: to.l, h: to.h, 
+                                orientation: to.type 
+                            });
+                            placedCount++;
+                        }
                     }
-                    const rowVol = rowCount * to.w * to.l * to.h;
-                    const rowScore = fitCount * 1_000_000 + rowVol;
+                    
+                    // Strongly prioritize volume to ensure we pick rotations/products that fill the most raw capacity
+                    const rowVol = placedCount * to.w * to.l * to.h;
+                    const rowScore = placedCount * 1_000_000 + rowVol;
+                    
                     if (rowScore > bestRowScore) {
                         bestRowScore = rowScore;
                         bestRowItems = rowItems;
@@ -329,7 +457,8 @@ function doTwoPhasePacking(container: any, normalProducts: Product[], smallProdu
                     unpacked.set(ri.product.id, unpacked.get(ri.product.id)! - 1);
                 }
                 curZ += bestRowH;
-                filled = true;
+                // V5.04: If the stacked item is laid down, stop filling on top of it.
+                filled = bestRowItems[0].orientation !== 'lay';
             }
         }
     }
@@ -349,15 +478,22 @@ function doTwoPhasePacking(container: any, normalProducts: Product[], smallProdu
             if (rem.length === 0) break;
 
             const p1 = rem[0];
-            const depths = Array.from(new Set([p1.length, p1.width, p1.height])).filter(d => d > 0 && d <= (container.length - currentY) + 0.5).sort((a, b) => b - a);
+            const depthCandidates = p1.allow_rotate 
+                ? [p1.length, p1.width, p1.height] 
+                : [p1.length, p1.height];
+            const depths = Array.from(new Set(depthCandidates)).filter(d => d > 0 && d <= (container.length - currentY) + 0.5).sort((a, b) => b - a);
 
             let bestWItems: any[] = [];
             let bestActualDepth = 0;
+            let bestWallScore = -Infinity;
 
             for (const limitD of depths) {
                 const tempU = new Map(floorUnpacked);
                 const wallItems = blockPackShelf(container.width, container.height, limitD, runSmallFloor, tempU, true);
-                if (wallItems.length > bestWItems.length) {
+                
+                const score = evaluateWallScore(wallItems, container.width);
+                if (score > bestWallScore) {
+                    bestWallScore = score;
                     bestWItems = wallItems;
                     bestActualDepth = wallItems.length > 0 ? Math.max(...wallItems.map((it: any) => (it.yRel || 0) + it.l)) : 0;
                 }
@@ -423,9 +559,14 @@ function doTwoPhasePacking(container: any, normalProducts: Product[], smallProdu
 }
 
 function getOrients(p: Product): any[] {
+    // V5.01: Safety Shutoff. Prevent infinite loops caused by zero-dimension items (curZ += 0 loops).
+    if (p.width < 1 || p.length < 1 || p.height < 1) return [];
+
     const all: any[] = [];
     all.push({ w: p.width, l: p.length, h: p.height, type: 'std' });
-    all.push({ w: p.length, l: p.width, h: p.height, type: 'rot' });
+    if (p.allow_rotate) {
+        all.push({ w: p.length, l: p.width, h: p.height, type: 'rot' });
+    }
     if (p.allow_lay_down) {
         all.push({ w: p.height, l: p.length, h: p.width, type: 'lay' });
         all.push({ w: p.width, l: p.height, h: p.length, type: 'lay' });
@@ -454,141 +595,206 @@ function blockPackShelf(W: number, H: number, D: number, allProducts: Product[],
         let bestBlockW = 0;
         let bestBlockItems: any[] = [];
 
-        for (const p of rem) {
-            // Skip small items in base blocks during Phase 1
-            if (!allowSmall && isSmallProduct(p)) continue;
+        // V4.26 Side Gap Scavenging
+        // Pass 0: Try to fit normal products.
+        // Pass 1: Also try scavenging to see if small items provide a better local fit.
+        for (const passIdx of [0, 1]) {
+            // Phase 4/5 (allowSmall=true) already considers everyone, so Pass 1 is redundant.
+            if (passIdx === 1 && allowSmall) break;
 
-            const orients = [
-                { w: p.length, l: p.width, h: p.height, type: 'rot' },
-                { w: p.width, l: p.length, h: p.height, type: 'std' }
-            ].filter(o => o.w <= (W - currentX) + 0.5 && o.l <= D + 0.5 && o.h <= H + 0.5 && isStableBottom(p, o.w, o.l));
+            for (const p of rem) {
+                const isSmall = isSmallProduct(p);
+                if (passIdx === 0 && !allowSmall && isSmall) continue;
+                if (passIdx === 1 && !isSmall) continue;
 
-            for (const o of orients) {
-                for (let bW = 1; bW <= Math.min(5, unpacked.get(p.id)!); bW++) {
-                    for (let bL = 1; bL <= 5; bL++) {
-                        const totalW = o.w * bW;
-                        const totalL = o.l * bL;
-                        if (totalW > (W - currentX) + 0.5) break;
-                        if (totalL > D + 0.5) break;
+                const orientsList = [];
+                orientsList.push({ w: p.width, l: p.length, h: p.height, type: 'std' });
+                if (p.allow_rotate) {
+                    orientsList.push({ w: p.length, l: p.width, h: p.height, type: 'rot' });
+                }
+                if (p.allow_lay_down) {
+                    orientsList.push({ w: p.height, l: p.length, h: p.width, type: 'lay' });
+                    orientsList.push({ w: p.width, l: p.height, h: p.length, type: 'lay' });
+                    orientsList.push({ w: p.height, l: p.width, h: p.length, type: 'lay' });
+                    orientsList.push({ w: p.length, l: p.height, h: p.width, type: 'lay' });
+                }
 
-                        const maxHCount = Math.floor((H + 0.5) / o.h);
-                        const hCount = Math.min(maxHCount, Math.floor(unpacked.get(p.id)! / (bW * bL)));
-                        if (hCount === 0) continue;
+                const orients = orientsList.filter(o => o.w <= (W - currentX) + 0.5 && o.l <= D + 0.5 && o.h <= H + 0.5 && isStableBottom(p, o.w, o.l));
 
-                        let tempItems: any[] = [];
-                        for (let bwIdx = 0; bwIdx < bW; bwIdx++) {
-                            for (let blIdx = 0; blIdx < bL; blIdx++) {
-                                for (let phIdx = 0; phIdx < hCount; phIdx++) {
-                                    tempItems.push({ product: p, x: currentX + (bwIdx * o.w), yRel: blIdx * o.l, z: phIdx * o.h, w: o.w, l: o.l, h: o.h, orientation: o.type });
-                                }
-                            }
-                        }
+                for (const o of orients) {
+                    for (let bW = 1; bW <= Math.min(5, unpacked.get(p.id)!); bW++) {
+                        for (let bL = 1; bL <= 5; bL++) {
+                            const totalW = o.w * bW;
+                            const totalL = o.l * bL;
+                            if (totalW > (W - currentX) + 0.5) break;
+                            if (totalL > D + 0.5) break;
 
-                        let curZ = hCount * o.h;
-                        let tempU_Col = new Map(unpacked);
-                        tempU_Col.set(p.id, tempU_Col.get(p.id)! - (hCount * bW * bL));
+                            // V5.05: If orientation is 'lay', limit height count to 1 to prevent stacking laid down items
+                            const maxHCount = o.type === 'lay' ? 1 : Math.floor((H + 0.5) / o.h);
+                            const limitHCount = Math.min(maxHCount, Math.floor(unpacked.get(p.id)! / (bW * bL)));
+                            if (limitHCount === 0) continue;
 
-                        // ROW-BASED TOPPING (V4.12) - only normal items during Phase 1
-                        let zPossible = true;
-                        while (curZ < H && zPossible) {
-                            zPossible = false;
-                            let bestRowScore = -Infinity;
-                            let bestRowItems: any[] = [];
-                            let bestRowH = 0;
-
-                            for (const topP of allProducts) {
-                                if (!allowSmall && isSmallProduct(topP)) continue;
-                                const avail = tempU_Col.get(topP.id) || 0;
-                                if (avail <= 0) continue;
-
-                                const actualOrients = getOrients(topP);
-
-                                for (const to of actualOrients) {
-                                    if (to.w < 1 || to.l > totalL + 0.5 || to.h > (H - curZ) + 0.5) continue;
-
-                                    // V4.16: Base h<500 cannot support topper h≥670
-                                    if (o.h < 500 && to.h >= 670) continue;
-
-                                    const suppW = Math.min(to.w, totalW);
-                                    const suppL = Math.min(to.l, totalL);
-                                    if (suppW * suppL < (to.w * to.l * 0.66)) continue;
-
-                                    const fitCountW = Math.floor((totalW + 0.5) / to.w);
-                                    const fitCountL = Math.floor((totalL + 0.5) / to.l);
-                                    const fitCount = fitCountW * fitCountL;
-                                    if (fitCount === 0) continue;
-                                    const rowCount = Math.min(fitCount, avail);
-
-                                    const rowItems: any[] = [];
-                                    let placedCount = 0;
-                                    for (let riL = 0; riL < fitCountL && placedCount < rowCount; riL++) {
-                                        for (let riW = 0; riW < fitCountW && placedCount < rowCount; riW++) {
-                                            rowItems.push({ product: topP, x: currentX + (riW * to.w), yRel: riL * to.l, z: curZ, w: to.w, l: to.l, h: to.h, orientation: to.type });
-                                            placedCount++;
+                            for (let hCount = 1; hCount <= limitHCount; hCount++) {
+                                let tempItems: any[] = [];
+                                for (let bwIdx = 0; bwIdx < bW; bwIdx++) {
+                                    for (let blIdx = 0; blIdx < bL; blIdx++) {
+                                        for (let phIdx = 0; phIdx < hCount; phIdx++) {
+                                            tempItems.push({ product: p, x: currentX + (bwIdx * o.w), yRel: blIdx * o.l, z: phIdx * o.h, w: o.w, l: o.l, h: o.h, orientation: o.type });
                                         }
                                     }
+                                }
 
-                                    // V4.17: Score by PHYSICAL CAPACITY (fitCount), not actual placed count
-                                    const potentialW = fitCountW * to.w;
-                                    const potentialL = fitCountL * to.l;
-                                    const potentialUtil = (potentialW * potentialL) / (totalW * totalL);
-                                    const rowVol = rowCount * to.w * to.l * to.h;
-                                    const rowScore = fitCount * 1_000_000 + rowVol * potentialUtil;
+                                let curZ = hCount * o.h;
+                                let tempU_Col = new Map(unpacked);
+                                tempU_Col.set(p.id, tempU_Col.get(p.id)! - (hCount * bW * bL));
 
-                                    if (rowScore > bestRowScore) {
-                                        bestRowScore = rowScore;
-                                        bestRowItems = rowItems;
-                                        bestRowH = to.h;
+                            const effectiveAllowSmall = allowSmall || (passIdx === 1);
+
+                            // ROW-BASED TOPPING (V4.12)
+                            // V5.02: No stacking on top of laid down (lay) items
+                            let zPossible = o.type !== 'lay';
+                            while (curZ < H && zPossible) {
+                                zPossible = false;
+                                let bestRowScore = -Infinity;
+                                let bestRowItems: any[] = [];
+                                let bestRowH = 0;
+
+                                for (const topP of allProducts) {
+                                    if (!effectiveAllowSmall && isSmallProduct(topP)) continue;
+                                    const avail = tempU_Col.get(topP.id) || 0;
+                                    if (avail <= 0) continue;
+
+                                    const actualOrients = getOrients(topP);
+
+                                    for (const to of actualOrients) {
+                                        if (to.w < 1 || to.l > totalL + 0.5 || to.h > (H - curZ) + 0.5) continue;
+
+                                        // V4.16: Base h<500 cannot support topper h≥670
+                                        if (o.h < 500 && to.h >= 670) continue;
+
+                                        const suppW = Math.min(to.w, totalW);
+                                        const suppL = Math.min(to.l, totalL);
+                                        if (suppW * suppL < (to.w * to.l * 0.66)) continue;
+
+                                        // V5.00 Identical Product Row Sharing & Identity Sorting
+                                        const identicalProducts = [{ p: topP, qty: avail }];
+                                        let combinedAvail = avail;
+
+                                        for (const otherP of allProducts) {
+                                            if (otherP.id === topP.id) continue;
+                                            const otherAvail = tempU_Col.get(otherP.id) || 0;
+                                            if (otherAvail <= 0) continue;
+                                            
+                                            // Check if otherP can match the exact dimensions of 'to'
+                                            const oo = getOrients(otherP).find(x => Math.abs(x.w - to.w) < 0.5 && Math.abs(x.l - to.l) < 0.5 && Math.abs(x.h - to.h) < 0.5);
+                                            if (oo) {
+                                                identicalProducts.push({ p: otherP, qty: otherAvail });
+                                                combinedAvail += otherAvail;
+                                            }
+                                        }
+
+                                        // IDEA 2: Sort to prioritize identical models (topP.id === p.id or otherP.id === p.id)
+                                        identicalProducts.sort((a, b) => {
+                                            const aIsBase = a.p.id === p.id;
+                                            const bIsBase = b.p.id === p.id;
+                                            if (aIsBase && !bIsBase) return -1;
+                                            if (!aIsBase && bIsBase) return 1;
+                                            return 0;
+                                        });
+
+                                        const fitCountW = Math.floor((totalW + 0.5) / to.w);
+                                        const fitCountL = Math.floor((totalL + 0.5) / to.l);
+                                        const fitCount = fitCountW * fitCountL;
+                                        if (fitCount === 0) continue;
+                                        const rowCount = Math.min(fitCount, combinedAvail);
+
+                                        const rowItems: any[] = [];
+                                        let placedCount = 0;
+                                        let currentIdx = 0;
+                                        let qtyUsed = 0;
+                                        for (let riL = 0; riL < fitCountL && placedCount < rowCount; riL++) {
+                                            for (let riW = 0; riW < fitCountW && placedCount < rowCount; riW++) {
+                                                const currentItem = identicalProducts[currentIdx];
+                                                rowItems.push({ product: currentItem.p, x: currentX + (riW * to.w), yRel: riL * to.l, z: curZ, w: to.w, l: to.l, h: to.h, orientation: to.type });
+                                                placedCount++;
+                                                qtyUsed++;
+                                                if (qtyUsed >= currentItem.qty) {
+                                                    currentIdx++;
+                                                    qtyUsed = 0;
+                                                }
+                                            }
+                                        }
+
+                                        // V4.17: Score by PHYSICAL CAPACITY (fitCount), not actual placed count
+                                        const potentialW = fitCountW * to.w;
+                                        const potentialL = fitCountL * to.l;
+                                        const potentialUtil = (potentialW * potentialL) / (totalW * totalL);
+                                        const rowVol = rowCount * to.w * to.l * to.h;
+                                        const rowScore = fitCount * 1_000_000 + rowVol * potentialUtil;
+
+                                        if (rowScore > bestRowScore) {
+                                            bestRowScore = rowScore;
+                                            bestRowItems = rowItems;
+                                            bestRowH = to.h;
+                                        }
+                                    }
+                                }
+
+                                if (bestRowItems.length > 0) {
+                                    tempItems.push(...bestRowItems);
+                                    for (const ri of bestRowItems) {
+                                        tempU_Col.set(ri.product.id, tempU_Col.get(ri.product.id)! - 1);
+                                    }
+                                    curZ += bestRowH;
+                                    // V5.04: If the stacked item is laid down, stop filling on top of it.
+                                    zPossible = bestRowItems[0].orientation !== 'lay';
+                                }
+                            }
+
+                            const vol = tempItems.reduce((s: number, it: any) => s + (it.w * it.l * it.h), 0);
+
+                            // V4.18: Look-ahead - estimate how many more items fit in remaining width
+                            const remainW = W - currentX - totalW;
+                            let lookAheadVol = 0;
+                            if (remainW > 50) {
+                                for (const rp of rem) {
+                                    const rpAvail = tempU_Col.get(rp.id) || 0;
+                                    if (rpAvail <= 0) continue;
+                                    const rpOrients = getOrients(rp).filter(ro => ro.w <= remainW + 0.5 && ro.l <= D + 0.5 && ro.h <= H + 0.5);
+                                    for (const ro of rpOrients) {
+                                        const bwFit = Math.floor((remainW + 0.5) / ro.w);
+                                        const hcFit = Math.floor((H + 0.5) / ro.h);
+                                        const lFit = Math.floor((totalL + 0.5) / ro.l);
+                                        const countFit = Math.min(bwFit * hcFit * lFit, rpAvail);
+                                        const fitVol = countFit * ro.w * ro.l * ro.h;
+                                        if (fitVol > lookAheadVol) lookAheadVol = fitVol;
                                     }
                                 }
                             }
-
-                            if (bestRowItems.length > 0) {
-                                tempItems.push(...bestRowItems);
-                                for (const ri of bestRowItems) {
-                                    tempU_Col.set(ri.product.id, tempU_Col.get(ri.product.id)! - 1);
-                                }
-                                curZ += bestRowH;
-                                zPossible = true;
+                            const widthFillBonus = remainW < 50 ? (totalW / W) * 100000 : 0;
+                            const volBonus = vol * 0.0000001;
+                            const widthFillRatio = totalW / W;
+                            
+                            // V5.02: Penalize 'lay' orientations that leave too much headroom to force them to the top
+                            let layPenalty = 1.0;
+                            if (o.type === 'lay') {
+                                const wastedH = H - curZ;
+                                // If wasted height is more than 20% of container, penalize heavily
+                                if (wastedH > H * 0.2) layPenalty = 0.001; 
+                                else layPenalty = 0.8; // Small penalty even if near top
                             }
-                        }
 
-                        const vol = tempItems.reduce((s: number, it: any) => s + (it.w * it.l * it.h), 0);
+                            // V4.30: Increase widthFillRatio weight to 1.5 to favor high-width-utilization blocks
+                            const score = (((vol + lookAheadVol + widthFillBonus) / totalL + totalL + volBonus) * (1 + widthFillRatio * 1.5)) * layPenalty;
 
-                        // V4.18: Look-ahead - estimate how many more items fit in remaining width
-                        const remainW = W - currentX - totalW;
-                        let lookAheadVol = 0;
-                        if (remainW > 50) {
-                            for (const rp of rem) {
-                                const rpAvail = tempU_Col.get(rp.id) || 0;
-                                if (rpAvail <= 0) continue;
-                                const rpOrients = [
-                                    { w: rp.width, l: rp.length, h: rp.height },
-                                    { w: rp.length, l: rp.width, h: rp.height }
-                                ].filter(ro => ro.w <= remainW + 0.5 && ro.l <= D + 0.5 && ro.h <= H + 0.5 && isStableBottom(rp, ro.w, ro.l));
-                                for (const ro of rpOrients) {
-                                    const bwFit = Math.floor((remainW + 0.5) / ro.w);
-                                    const hcFit = Math.floor((H + 0.5) / ro.h);
-                                    const depthFit = Math.floor((totalL + 0.5) / ro.l);
-                                    const countFit = Math.min(bwFit * hcFit * depthFit, rpAvail);
-                                    const fitVol = countFit * ro.w * ro.l * ro.h;
-                                    if (fitVol > lookAheadVol) lookAheadVol = fitVol;
+                            if (score > bestBlockScore) {
+                                    bestBlockScore = score;
+                                    bestBlockItems = tempItems;
+                                    bestBlockW = totalW;
                                 }
                             }
                         }
-                        const widthFillBonus = remainW < 50 ? (totalW / W) * 100000 : 0;
-
-                        // V4.22: Tiebreaker ensures real placed volume explicitly wins over virtual look-ahead volume ties.
-                        // This forces full-width contiguous blocks (bW=4) to beat fragment blocks (bW=1).
-                        const volBonus = vol * 0.0000001;
-                        const score = (vol + lookAheadVol + widthFillBonus) / totalL + totalL + volBonus;
-
-                        if (score > bestBlockScore) {
-                            bestBlockScore = score;
-                            bestBlockItems = tempItems;
-                            bestBlockW = totalW;
-                        }
-                    } // close bL loop
+                    }
                 }
             }
         }

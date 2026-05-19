@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
     Search, Box, Package, Truck, RotateCw, Plus, Trash2,
-    Settings2, ChevronRight, Filter, Calendar, Briefcase, Move3d,
+    Settings2, ChevronRight, Filter, Calendar, Briefcase, Move3d, X
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import ContainerViewer from '@/components/ContainerViewer';
@@ -249,10 +249,18 @@ export default function Home({ user }: { user: SessionUser }) {
                         <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
                             <div className="space-y-4 pb-1">
                                 <div className="space-y-3">
-                                    <div className="relative">
+                                    <div className="relative group/search">
                                         <Truck className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
                                         <input placeholder="컨테이너 번호 검색..." name="containerNo" value={filters.containerNo} onChange={handleFilterChange}
-                                            className="w-full bg-[#11111a] border border-white/5 rounded-2xl py-3.5 md:py-2.5 pl-10 pr-4 text-sm md:text-xs focus:ring-1 focus:ring-sky-500 outline-none transition-all placeholder:text-slate-600" />
+                                            className="w-full bg-[#11111a] border border-white/5 rounded-2xl py-3.5 md:py-2.5 pl-10 pr-10 text-sm md:text-xs focus:ring-1 focus:ring-sky-500 outline-none transition-all placeholder:text-slate-600" />
+                                        {filters.containerNo && (
+                                            <button 
+                                                onClick={() => setFilters(prev => ({ ...prev, containerNo: '' }))}
+                                                className="absolute right-3 top-1/2 -translate-y-1/2 p-1 hover:bg-white/10 rounded-full text-slate-500 hover:text-sky-400 transition-all"
+                                            >
+                                                <X className="w-4 h-4 md:w-3.5 md:h-3.5" />
+                                            </button>
+                                        )}
                                     </div>
                                 </div>
                             </div>
