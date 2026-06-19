@@ -43,6 +43,32 @@ export const pool = new Proxy({} as Pool, {
     }
 });
 
+let _remotePool: Pool | null = null;
+
+export function getRemotePool(): Pool {
+    if (!_remotePool) {
+        console.log("Remote DB Pool: Initializing with host idlezero.iptime.org");
+        _remotePool = new Pool({
+            user: 'postgres',
+            host: 'idlezero.iptime.org',
+            database: 'excel',
+            password: 'z456qwe12!@',
+            port: 5432,
+            ssl: false,
+            connectionTimeoutMillis: 10000,
+        });
+    }
+    return _remotePool;
+}
+
+export async function resetRemotePool() {
+    if (_remotePool) {
+        await _remotePool.end();
+        _remotePool = null;
+    }
+}
+
+
 /**
  * 폰 DB에서 최근 작업 리스트를 가져옵니다. (필터 지원)
  */
@@ -153,10 +179,10 @@ export async function getProductsForJob(jobId: number): Promise<Product[]> {
                 SELECT 
                     r.prod_name as id,
                     r.prod_name as model_name,
-                    COALESCE(CAST(NULLIF(m.width, '') AS NUMERIC), 0) as width,
-                    COALESCE(CAST(NULLIF(m.depth, '') AS NUMERIC), 0) as length,
-                    COALESCE(CAST(NULLIF(m.height, '') AS NUMERIC), 0) as height,
-                    SUM(CAST(NULLIF(r.qty_plan, '') AS NUMERIC)) as quantity,
+                    COALESCE(m.width, 0) as width,
+                    COALESCE(m.depth, 0) as length,
+                    COALESCE(m.height, 0) as height,
+                    SUM(COALESCE(r.qty_plan, 0)) as quantity,
                     m.prod_type
                 FROM container_results r
                 JOIN container_jobs j ON r.job_id = j.id
@@ -166,7 +192,7 @@ export async function getProductsForJob(jobId: number): Promise<Product[]> {
                     OR
                     ($2::text IS NULL AND j.id = $1)
                 )
-                AND CAST(NULLIF(r.qty_plan, '') AS NUMERIC) > 0
+                AND COALESCE(r.qty_plan, 0) > 0
                 GROUP BY r.prod_name, m.width, m.depth, m.height, m.prod_type
             `;
             

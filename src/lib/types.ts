@@ -10,7 +10,7 @@ export interface ContainerDimensions {
 
 export const CONTAINER_DATA: Record<ContainerType, ContainerDimensions> = {
     '40hc': { id: '40hc', name: '40ft High Cube', width: 2352, length: 12032, height: 2698 },
-    '40rf': { id: '40rf', name: '40ft Reefer', width: 2294, length: 11558, height: 2209 },
+    '40rf': { id: '40rf', name: '40ft Reefer', width: 2290, length: 11560, height: 2540 },
     '40std': { id: '40std', name: '40ft Standard', width: 2352, length: 12032, height: 2393 },
     '20std': { id: '20std', name: '20ft Standard', width: 2352, length: 5898, height: 2393 },
 };

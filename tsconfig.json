@@ -37,6 +37,8 @@
   ],
   "exclude": [
     "node_modules",
-    "debug-packer.ts"
+    "debug-packer.ts",
+    "scratch/**/*",
+    "src/lib/backup_*/**/*"
   ]
 }

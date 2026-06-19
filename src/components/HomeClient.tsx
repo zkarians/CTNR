@@ -12,7 +12,7 @@ import {
     Product, PackingResult, ContainerType, CONTAINER_DATA, Job, JobFilters
 } from '@/lib/types';
 import { packContainer } from '@/lib/packer';
-import { fetchJobs, fetchProductsByJob, searchProducts, getDbConfig, updateDbConfig, updatePassword } from '@/lib/actions';
+import { fetchJobs, fetchProductsByJob, searchProducts, getDbConfig, updateDbConfig, updatePassword, syncDb } from '@/lib/actions';
 import { SessionUser } from '@/lib/auth';
 import { DbConfig } from '@/lib/types';
 
@@ -34,6 +34,7 @@ export default function Home({ user }: { user: SessionUser }) {
     const [dbConfig, setDbConfig] = useState<DbConfig>({ host: '', database: '', user: '', password: '', port: 5432 });
     const [passwordData, setPasswordData] = useState({ current: '', new: '', confirm: '' });
     const [isPasswordUpdating, setIsPasswordUpdating] = useState(false);
+    const [isSyncing, setIsSyncing] = useState(false);
     const controlPanelRef = useRef<HTMLDivElement>(null);
 
     // V4.22: Auto Real-time Search with Debounce
@@ -69,6 +70,32 @@ export default function Home({ user }: { user: SessionUser }) {
             setIsSettingsOpen(false);
             const data = await fetchJobs(filters);
             setJobs(data);
+        }
+    };
+
+    const handleSync = async () => {
+        if (!confirm("원격 DB의 데이터를 가져와 로컬 DB를 업데이트하시겠습니까?\n이 작업은 로컬의 기존 작업 데이터를 모두 초기화하고 원격 데이터로 덮어씁니다.")) {
+            return;
+        }
+        
+        setIsSyncing(true);
+        try {
+            const res = await syncDb();
+            if (res.success) {
+                alert(`${res.message}\n\n[동기화 통계]\n- 작업 개수: ${res.stats?.jobs}개\n- 결과 상세: ${res.stats?.results}개\n- 제품 규격: ${res.stats?.products}개`);
+                // Refresh jobs list
+                const data = await fetchJobs(filters);
+                setJobs(data);
+                setResult(null);
+                setProducts([]);
+            } else {
+                alert(res.message);
+            }
+        } catch (error) {
+            console.error("Sync error:", error);
+            alert("동기화 중 오류가 발생했습니다.");
+        } finally {
+            setIsSyncing(false);
         }
     };
     const handlePasswordUpdate = async () => {
@@ -577,8 +604,8 @@ export default function Home({ user }: { user: SessionUser }) {
                     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
                         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setIsSettingsOpen(false)} className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
                         <motion.div initial={{ scale: 0.9, opacity: 0, y: 20 }} animate={{ scale: 1, opacity: 1, y: 0 }} exit={{ scale: 0.9, opacity: 0, y: 20 }}
-                            className="relative w-full max-w-md bg-[#0f111a] border border-white/10 rounded-[2.5rem] shadow-2xl overflow-hidden p-8">
-                            <div className="flex items-center gap-3 mb-6">
+                            className="relative w-full max-w-md bg-[#0f111a] border border-white/10 rounded-[2.5rem] shadow-2xl overflow-hidden p-8 max-h-[90vh] flex flex-col">
+                            <div className="flex items-center gap-3 mb-6 shrink-0">
                                 <div className="p-3 bg-sky-500/10 rounded-2xl">
                                     <Settings2 className="w-6 h-6 text-sky-500" />
                                 </div>
@@ -592,78 +619,115 @@ export default function Home({ user }: { user: SessionUser }) {
                                 </div>
                             </div>
 
-                            {user.role === 'admin' && (
-                                <>
+                            <div className="overflow-y-auto custom-scrollbar flex-1 pr-1 space-y-6">
+                                {user.role === 'admin' && (
+                                    <>
+                                        <div className="space-y-4">
+                                            <div className="space-y-2">
+                                                <label className="text-[11px] font-black text-slate-500 ml-1">Host 주소</label>
+                                                <input value={dbConfig.host} onChange={e => setDbConfig({ ...dbConfig, host: e.target.value })}
+                                                    className="w-full bg-black/40 border border-white/10 rounded-2xl px-4 py-3 text-sm focus:border-sky-500 outline-none transition-all" placeholder="localhost 또는 IP주소" />
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-4">
+                                                <div className="space-y-2">
+                                                    <label className="text-[11px] font-black text-slate-500 ml-1">DB 이름</label>
+                                                    <input value={dbConfig.database} onChange={e => setDbConfig({ ...dbConfig, database: e.target.value })}
+                                                        className="w-full bg-black/40 border border-white/10 rounded-2xl px-4 py-3 text-sm focus:border-sky-500 outline-none transition-all" />
+                                                </div>
+                                                <div className="space-y-2">
+                                                    <label className="text-[11px] font-black text-slate-500 ml-1">Port</label>
+                                                    <input type="number" value={dbConfig.port} onChange={e => setDbConfig({ ...dbConfig, port: parseInt(e.target.value) })}
+                                                        className="w-full bg-black/40 border border-white/10 rounded-2xl px-4 py-3 text-sm focus:border-sky-500 outline-none transition-all" />
+                                                </div>
+                                            </div>
+                                            <div className="space-y-2">
+                                                <label className="text-[11px] font-black text-slate-500 ml-1">User ID</label>
+                                                <input value={dbConfig.user} onChange={e => setDbConfig({ ...dbConfig, user: e.target.value })}
+                                                    className="w-full bg-black/40 border border-white/10 rounded-2xl px-4 py-3 text-sm focus:border-sky-500 outline-none transition-all" />
+                                            </div>
+                                            <div className="space-y-2">
+                                                <label className="text-[11px] font-black text-slate-500 ml-1">Password</label>
+                                                <input type="password" value={dbConfig.password} onChange={e => setDbConfig({ ...dbConfig, password: e.target.value })}
+                                                    className="w-full bg-black/40 border border-white/10 rounded-2xl px-4 py-3 text-sm focus:border-sky-500 outline-none transition-all" placeholder="비밀번호 입력" />
+                                            </div>
+                                        </div>
+
+                                        <div className="flex gap-3 mt-4 mb-4">
+                                            <button onClick={() => setIsSettingsOpen(false)} className="flex-1 py-4 rounded-2xl bg-white/5 hover:bg-white/10 text-slate-400 font-bold text-sm transition-all">취소</button>
+                                            <button onClick={handleDbSave} className="flex-2 py-4 px-8 rounded-2xl bg-sky-500 hover:bg-sky-400 text-white font-black text-sm transition-all shadow-lg shadow-sky-500/20">설정 저장</button>
+                                        </div>
+                                    </>
+                                )}
+
+                                {/* Remote DB Sync Section */}
+                                <div className="border-t border-white/5 pt-6">
+                                    <div className="flex items-center gap-3 mb-4">
+                                        <div className="p-3 bg-emerald-500/10 rounded-2xl">
+                                            <RotateCw className={`w-6 h-6 text-emerald-500 ${isSyncing ? "animate-spin" : ""}`} />
+                                        </div>
+                                        <div>
+                                            <h2 className="text-xl font-black text-white">원격 DB 동기화</h2>
+                                            <p className="text-xs text-slate-500 font-bold uppercase tracking-widest">Remote DB Sync</p>
+                                        </div>
+                                    </div>
+                                    
+                                    <p className="text-xs text-slate-400 mb-4 leading-relaxed">
+                                        원격 데이터베이스(<code className="text-sky-400 bg-sky-500/10 px-1.5 py-0.5 rounded">idlezero.iptime.org</code>)의 제품 마스터 및 작업 데이터를 로컬 DB로 동기화합니다. 로컬 DB의 기존 데이터는 초기화됩니다.
+                                    </p>
+
+                                    <button 
+                                        onClick={handleSync} 
+                                        disabled={isSyncing || isLoading}
+                                        className="w-full py-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 hover:bg-emerald-500 hover:text-white font-black text-sm transition-all flex items-center justify-center gap-2 active:scale-[0.98] disabled:opacity-50"
+                                    >
+                                        {isSyncing ? (
+                                            <>
+                                                <div className="w-5 h-5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                                                동기화 진행 중...
+                                            </>
+                                        ) : (
+                                            <>
+                                                <RotateCw className="w-4 h-4" />
+                                                원격 데이터 동기화 실행
+                                            </>
+                                        )}
+                                    </button>
+                                </div>
+
+                                <div className="border-t border-white/5 pt-6">
+                                    <div className="flex items-center gap-3 mb-6">
+                                        <div className="p-3 bg-amber-500/10 rounded-2xl">
+                                            <Briefcase className="w-6 h-6 text-amber-500" />
+                                        </div>
+                                        <div>
+                                            <h2 className="text-xl font-black text-white">비밀번호 변경</h2>
+                                            <p className="text-xs text-slate-500 font-bold uppercase tracking-widest">Change Password</p>
+                                        </div>
+                                    </div>
+
                                     <div className="space-y-4">
                                         <div className="space-y-2">
-                                            <label className="text-[11px] font-black text-slate-500 ml-1">Host 주소</label>
-                                            <input value={dbConfig.host} onChange={e => setDbConfig({ ...dbConfig, host: e.target.value })}
-                                                className="w-full bg-black/40 border border-white/10 rounded-2xl px-4 py-3 text-sm focus:border-sky-500 outline-none transition-all" placeholder="localhost 또는 IP주소" />
+                                            <label className="text-[11px] font-black text-slate-500 ml-1">현재 비밀번호</label>
+                                            <input type="password" value={passwordData.current} onChange={e => setPasswordData({ ...passwordData, current: e.target.value })}
+                                                className="w-full bg-black/40 border border-white/10 rounded-2xl px-4 py-3 text-sm focus:border-amber-500/50 outline-none transition-all" />
                                         </div>
                                         <div className="grid grid-cols-2 gap-4">
                                             <div className="space-y-2">
-                                                <label className="text-[11px] font-black text-slate-500 ml-1">DB 이름</label>
-                                                <input value={dbConfig.database} onChange={e => setDbConfig({ ...dbConfig, database: e.target.value })}
-                                                    className="w-full bg-black/40 border border-white/10 rounded-2xl px-4 py-3 text-sm focus:border-sky-500 outline-none transition-all" />
+                                                <label className="text-[11px] font-black text-slate-500 ml-1">새 비밀번호</label>
+                                                <input type="password" value={passwordData.new} onChange={e => setPasswordData({ ...passwordData, new: e.target.value })}
+                                                    className="w-full bg-black/40 border border-white/10 rounded-2xl px-4 py-3 text-sm focus:border-amber-500/50 outline-none transition-all" />
                                             </div>
                                             <div className="space-y-2">
-                                                <label className="text-[11px] font-black text-slate-500 ml-1">Port</label>
-                                                <input type="number" value={dbConfig.port} onChange={e => setDbConfig({ ...dbConfig, port: parseInt(e.target.value) })}
-                                                    className="w-full bg-black/40 border border-white/10 rounded-2xl px-4 py-3 text-sm focus:border-sky-500 outline-none transition-all" />
+                                                <label className="text-[11px] font-black text-slate-500 ml-1">비밀번호 확인</label>
+                                                <input type="password" value={passwordData.confirm} onChange={e => setPasswordData({ ...passwordData, confirm: e.target.value })}
+                                                    className="w-full bg-black/40 border border-white/10 rounded-2xl px-4 py-3 text-sm focus:border-amber-500/50 outline-none transition-all" />
                                             </div>
                                         </div>
-                                        <div className="space-y-2">
-                                            <label className="text-[11px] font-black text-slate-500 ml-1">User ID</label>
-                                            <input value={dbConfig.user} onChange={e => setDbConfig({ ...dbConfig, user: e.target.value })}
-                                                className="w-full bg-black/40 border border-white/10 rounded-2xl px-4 py-3 text-sm focus:border-sky-500 outline-none transition-all" />
-                                        </div>
-                                        <div className="space-y-2">
-                                            <label className="text-[11px] font-black text-slate-500 ml-1">Password</label>
-                                            <input type="password" value={dbConfig.password} onChange={e => setDbConfig({ ...dbConfig, password: e.target.value })}
-                                                className="w-full bg-black/40 border border-white/10 rounded-2xl px-4 py-3 text-sm focus:border-sky-500 outline-none transition-all" placeholder="비밀번호 입력" />
-                                        </div>
+                                        <button onClick={handlePasswordUpdate} disabled={isPasswordUpdating}
+                                            className="w-full py-4 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-500 hover:bg-amber-500 hover:text-white font-black text-sm transition-all mt-2">
+                                            {isPasswordUpdating ? "변경 중..." : "비밀번호 변경 적용"}
+                                        </button>
                                     </div>
-
-                                    <div className="flex gap-3 mt-8 mb-8">
-                                        <button onClick={() => setIsSettingsOpen(false)} className="flex-1 py-4 rounded-2xl bg-white/5 hover:bg-white/10 text-slate-400 font-bold text-sm transition-all">취소</button>
-                                        <button onClick={handleDbSave} className="flex-2 py-4 px-8 rounded-2xl bg-sky-500 hover:bg-sky-400 text-white font-black text-sm transition-all shadow-lg shadow-sky-500/20">설정 저장</button>
-                                    </div>
-                                </>
-                            )}
-
-                            <div className={`${user.role === 'admin' ? 'border-t border-white/5 pt-8' : ''}`}>
-                                <div className="flex items-center gap-3 mb-6">
-                                    <div className="p-3 bg-amber-500/10 rounded-2xl">
-                                        <Briefcase className="w-6 h-6 text-amber-500" />
-                                    </div>
-                                    <div>
-                                        <h2 className="text-xl font-black text-white">비밀번호 변경</h2>
-                                        <p className="text-xs text-slate-500 font-bold uppercase tracking-widest">Change Password</p>
-                                    </div>
-                                </div>
-
-                                <div className="space-y-4">
-                                    <div className="space-y-2">
-                                        <label className="text-[11px] font-black text-slate-500 ml-1">현재 비밀번호</label>
-                                        <input type="password" value={passwordData.current} onChange={e => setPasswordData({ ...passwordData, current: e.target.value })}
-                                            className="w-full bg-black/40 border border-white/10 rounded-2xl px-4 py-3 text-sm focus:border-amber-500/50 outline-none transition-all" />
-                                    </div>
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div className="space-y-2">
-                                            <label className="text-[11px] font-black text-slate-500 ml-1">새 비밀번호</label>
-                                            <input type="password" value={passwordData.new} onChange={e => setPasswordData({ ...passwordData, new: e.target.value })}
-                                                className="w-full bg-black/40 border border-white/10 rounded-2xl px-4 py-3 text-sm focus:border-amber-500/50 outline-none transition-all" />
-                                        </div>
-                                        <div className="space-y-2">
-                                            <label className="text-[11px] font-black text-slate-500 ml-1">비밀번호 확인</label>
-                                            <input type="password" value={passwordData.confirm} onChange={e => setPasswordData({ ...passwordData, confirm: e.target.value })}
-                                                className="w-full bg-black/40 border border-white/10 rounded-2xl px-4 py-3 text-sm focus:border-amber-500/50 outline-none transition-all" />
-                                        </div>
-                                    </div>
-                                    <button onClick={handlePasswordUpdate} disabled={isPasswordUpdating}
-                                        className="w-full py-4 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-500 hover:bg-amber-500 hover:text-white font-black text-sm transition-all mt-2">
-                                        {isPasswordUpdating ? "변경 중..." : "비밀번호 변경 적용"}
-                                    </button>
                                 </div>
                             </div>
                         </motion.div>
