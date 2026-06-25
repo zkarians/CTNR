@@ -105,11 +105,16 @@ export function packContainer(
     const passes = Math.max(numPasses, 30);
 
     for (let pIdx = 0; pIdx < passes; pIdx++) {
-        const res = doTwoPhasePacking(container, sortedNormal, sortedSmall, products, pIdx);
+        let res = doTwoPhasePacking(container, sortedNormal, sortedSmall, products, pIdx);
         
         // V5.03: Append invalid 0-dimension products to the unpacked list so user sees them as failed
         if (invalidProducts.length > 0) {
             res.unpacked.push(...invalidProducts);
+        }
+
+        // V6.00: Apply post-swap optimizer to resolve suboptimal greedy gap choices
+        if (res.unpacked.length > 0) {
+            res = optimizePackResultWithSwaps(container, res);
         }
 
         if (!bestRes || res.items.length > bestRes.items.length) {
@@ -807,4 +812,182 @@ function blockPackShelf(W: number, H: number, D: number, allProducts: Product[],
         currentX += bestBlockW;
     }
     return wallItems;
+}
+
+/**
+ * V6.00 Post-Swap Optimizer
+ * Try to resolve suboptimal greedy block packing by swapping an unpacked product with a packed product,
+ * then trying to place the displaced product in any remaining empty space.
+ */
+function optimizePackResultWithSwaps(container: ContainerDimensions, result: PackingResult): PackingResult {
+    let items = result.items.map(it => ({ ...it }));
+    let unpacked = result.unpacked.map(p => ({ ...p }));
+
+    let improved = true;
+    let iteration = 0;
+    while (improved && iteration < 10) {
+        improved = false;
+        iteration++;
+
+        // Try to pack any unpacked item by swapping
+        for (let uIdx = 0; uIdx < unpacked.length; uIdx++) {
+            const uProd = unpacked[uIdx];
+            if (uProd.quantity <= 0) continue;
+
+            // Try swapping with each packed item
+            for (let pIdx = 0; pIdx < items.length; pIdx++) {
+                const pItem = items[pIdx];
+                if (pItem.product.id === uProd.id) continue;
+
+                // 1. Can we place uProd at pItem's position?
+                const uOrients = getOrients(uProd);
+                let validOrient = null;
+                for (const o of uOrients) {
+                    if (pItem.x + o.w > container.width ||
+                        pItem.y + o.l > container.length ||
+                        pItem.z + o.h > container.height) {
+                        continue;
+                    }
+
+                    let overlap = false;
+                    for (let k = 0; k < items.length; k++) {
+                        if (k === pIdx) continue;
+                        const other = items[k];
+                        const xOverlap = Math.max(pItem.x, other.x) < Math.min(pItem.x + o.w, other.x + other.w);
+                        const yOverlap = Math.max(pItem.y, other.y) < Math.min(pItem.y + o.l, other.y + other.l);
+                        const zOverlap = Math.max(pItem.z, other.z) < Math.min(pItem.z + o.h, other.z + other.h);
+                        if (xOverlap && yOverlap && zOverlap) {
+                            overlap = true;
+                            break;
+                        }
+                    }
+                    if (overlap) continue;
+
+                    if (pItem.z > 0) {
+                        let supportArea = 0;
+                        const itemArea = o.w * o.l;
+                        for (let k = 0; k < items.length; k++) {
+                            if (k === pIdx) continue;
+                            const other = items[k];
+                            const otherTop = other.z + other.h;
+                            if (Math.abs(otherTop - pItem.z) < 1) {
+                                const xOverlap = Math.max(0, Math.min(pItem.x + o.w, other.x + other.w) - Math.max(pItem.x, other.x));
+                                const yOverlap = Math.max(0, Math.min(pItem.y + o.l, other.y + other.l) - Math.max(pItem.y, other.y));
+                                supportArea += xOverlap * yOverlap;
+                            }
+                        }
+                        if (supportArea / itemArea < 0.66) continue;
+                    }
+
+                    validOrient = o;
+                    break;
+                }
+
+                if (!validOrient) continue;
+
+                // 2. Temporarily swap uProd into pItem's position
+                const displacedProduct = pItem.product;
+                const tempItems = items.filter((_, idx) => idx !== pIdx);
+                const swappedItem: PackedItem = {
+                    product: { ...uProd, quantity: 1 },
+                    x: pItem.x,
+                    y: pItem.y,
+                    z: pItem.z,
+                    w: validOrient.w,
+                    l: validOrient.l,
+                    h: validOrient.h,
+                    orientation: validOrient.type
+                };
+                tempItems.push(swappedItem);
+
+                // 3. Try to place the displaced product in any remaining space
+                const displacedOrients = getOrients(displacedProduct);
+                let placementFound = false;
+                let newPlacement: PackedItem | null = null;
+
+                const xCandidates = Array.from(new Set([0, ...tempItems.map(it => it.x), ...tempItems.map(it => it.x + it.w)]))
+                    .filter(x => x >= 0 && x < container.width);
+                const yCandidates = Array.from(new Set([0, ...tempItems.map(it => it.y), ...tempItems.map(it => it.y + it.l)]))
+                    .filter(y => y >= 0 && y < container.length);
+                const zCandidates = Array.from(new Set([0, ...tempItems.map(it => it.z + it.h)]))
+                    .filter(z => z >= 0 && z < container.height);
+
+                yCandidates.sort((a, b) => a - b);
+                zCandidates.sort((a, b) => a - b);
+                xCandidates.sort((a, b) => a - b);
+
+                for (const z of zCandidates) {
+                    for (const y of yCandidates) {
+                        for (const x of xCandidates) {
+                            for (const o of displacedOrients) {
+                                if (x + o.w > container.width ||
+                                    y + o.l > container.length ||
+                                    z + o.h > container.height) {
+                                    continue;
+                                }
+
+                                let overlap = false;
+                                for (const other of tempItems) {
+                                    const xOverlap = Math.max(x, other.x) < Math.min(x + o.w, other.x + other.w);
+                                    const yOverlap = Math.max(y, other.y) < Math.min(y + o.l, other.y + other.l);
+                                    const zOverlap = Math.max(z, other.z) < Math.min(z + o.h, other.z + other.h);
+                                    if (xOverlap && yOverlap && zOverlap) {
+                                        overlap = true;
+                                        break;
+                                    }
+                                }
+                                if (overlap) continue;
+
+                                if (z > 0) {
+                                    let supportArea = 0;
+                                    const itemArea = o.w * o.l;
+                                    for (const other of tempItems) {
+                                        const otherTop = other.z + other.h;
+                                        if (Math.abs(otherTop - z) < 1) {
+                                            const xOverlap = Math.max(0, Math.min(x + o.w, other.x + other.w) - Math.max(x, other.x));
+                                            const yOverlap = Math.max(0, Math.min(y + o.l, other.y + other.l) - Math.max(y, other.y));
+                                            supportArea += xOverlap * yOverlap;
+                                        }
+                                    }
+                                    if (supportArea / itemArea < 0.66) continue;
+                                }
+
+                                newPlacement = {
+                                    product: { ...displacedProduct, quantity: 1 },
+                                    x, y, z,
+                                    w: o.w, l: o.l, h: o.h,
+                                    orientation: o.type
+                                };
+                                placementFound = true;
+                                break;
+                            }
+                            if (placementFound) break;
+                        }
+                        if (placementFound) break;
+                    }
+                    if (placementFound) break;
+                }
+
+                if (placementFound && newPlacement) {
+                    items = tempItems;
+                    items.push(newPlacement);
+                    uProd.quantity--;
+                    improved = true;
+                    break;
+                }
+            }
+            if (improved) break;
+        }
+    }
+
+    const finalUnpacked = unpacked.filter(p => p.quantity > 0);
+    const vol = items.reduce((s, i) => s + (i.w * i.l * i.h), 0);
+    const efficiency = (vol / (container.width * container.length * container.height)) * 100;
+
+    return {
+        container,
+        items,
+        efficiency,
+        unpacked: finalUnpacked
+    };
 }
