@@ -248,7 +248,7 @@ export default function ContainerViewer({ result, highlightedProduct }: Containe
                     </div>
 
                     {/* Remaining Distance HUD Card */}
-                    {remainingDistance > 0 && (
+                    {showRuler && remainingDistance > 0 && (
                         <div className="flex items-center justify-between p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 mb-3 shadow-[0_0_15px_rgba(245,158,11,0.05)]">
                             <div className="flex items-center gap-2">
                                 <Ruler className="w-3.5 h-3.5 text-amber-400" />
