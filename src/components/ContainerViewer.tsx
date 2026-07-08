@@ -74,6 +74,7 @@ interface ContainerViewerProps {
 }
 
 export default function ContainerViewer({ result, highlightedProduct }: ContainerViewerProps) {
+    const [showRuler, setShowRuler] = useState(true);
     const [panMode, setPanMode] = useState(false);
     const controlsRef = useRef<any>(null);
 
@@ -97,6 +98,10 @@ export default function ContainerViewer({ result, highlightedProduct }: Containe
     const cw = container.width / 1000;
     const cl = container.length / 1000;
     const ch = container.height / 1000;
+
+    // Calculate maximum depth reached by packed items and remaining distance to the entrance
+    const maxOccupiedLength = items.length > 0 ? Math.max(...items.map(item => item.y + item.l)) : 0;
+    const remainingDistance = Math.max(0, container.length - maxOccupiedLength);
 
     return (
         <div className="w-full h-full bg-[#030712] relative flex flex-col md:block rounded-3xl overflow-hidden border border-white/10 shadow-2xl">
@@ -150,6 +155,42 @@ export default function ContainerViewer({ result, highlightedProduct }: Containe
                     />
                 ))}
 
+                {/* Distance Measurement Guide */}
+                {showRuler && items.length > 0 && remainingDistance > 10 && (
+                    <group>
+                        {/* 1. Cargo Boundary plane at Z = -maxOccupiedLength / 1000 */}
+                        <mesh position={[cw / 2, ch / 2, -maxOccupiedLength / 1000]}>
+                            <planeGeometry args={[cw, ch]} />
+                            <meshBasicMaterial color="#f59e0b" transparent opacity={0.05} side={THREE.DoubleSide} depthWrite={false} />
+                            <Edges color="#f59e0b" threshold={15} opacity={0.3} transparent />
+                        </mesh>
+
+                        {/* 2. Arrow or Guide strip on the floor from cargo boundary to entrance */}
+                        <mesh position={[cw / 2, 0.01, -(maxOccupiedLength + remainingDistance / 2) / 1000]} rotation={[-Math.PI / 2, 0, 0]}>
+                            <planeGeometry args={[0.08, remainingDistance / 1000]} />
+                            <meshBasicMaterial color="#f59e0b" transparent opacity={0.2} />
+                        </mesh>
+                        
+                        {/* Outer boundary lines along the floor */}
+                        <mesh position={[0.02, 0.01, -(maxOccupiedLength + remainingDistance / 2) / 1000]} rotation={[-Math.PI / 2, 0, 0]}>
+                            <planeGeometry args={[0.02, remainingDistance / 1000]} />
+                            <meshBasicMaterial color="#f59e0b" transparent opacity={0.4} />
+                        </mesh>
+                        <mesh position={[cw - 0.02, 0.01, -(maxOccupiedLength + remainingDistance / 2) / 1000]} rotation={[-Math.PI / 2, 0, 0]}>
+                            <planeGeometry args={[0.02, remainingDistance / 1000]} />
+                            <meshBasicMaterial color="#f59e0b" transparent opacity={0.4} />
+                        </mesh>
+
+                        {/* 3. Distance floating HTML label */}
+                        <Html position={[cw / 2, ch / 2, -(maxOccupiedLength + remainingDistance / 2) / 1000]} center distanceFactor={8}>
+                            <div className="bg-slate-950/90 text-amber-400 border border-amber-500/50 px-2.5 py-1.5 rounded-xl text-[10px] font-black whitespace-nowrap shadow-[0_0_20px_rgba(245,158,11,0.3)] flex items-center gap-1.5 backdrop-blur-sm pointer-events-none select-none animate-in fade-in zoom-in duration-350">
+                                <Ruler className="w-3.5 h-3.5 text-amber-500" />
+                                <span>남은 거리: {(remainingDistance).toLocaleString()} mm</span>
+                            </div>
+                        </Html>
+                    </group>
+                )}
+
                 <Sparkles count={40} position={[cw / 2, ch / 2, -cl / 2]} scale={[cw * 2, ch * 2, cl * 2]} size={0.5} opacity={0.1} color="#38bdf8" />
             </Canvas>
 
@@ -161,6 +202,13 @@ export default function ContainerViewer({ result, highlightedProduct }: Containe
                     title={panMode ? "회전 모드로 전환" : "이동 모드로 전환"}
                 >
                     {panMode ? <Move className="w-4 h-4 md:w-5 md:h-5" /> : <RotateCw className="w-4 h-4 md:w-5 md:h-5" />}
+                </button>
+                <button 
+                    onClick={() => setShowRuler(!showRuler)} 
+                    className={`p-2.5 rounded-xl border backdrop-blur-md transition-all shadow-lg ${showRuler ? "bg-amber-500/20 border-amber-400 text-amber-400 shadow-amber-500/20" : "bg-black/40 border-white/20 text-slate-300 hover:bg-white/10"}`} 
+                    title={showRuler ? "거리 측정 가이드 숨기기" : "거리 측정 가이드 표시"}
+                >
+                    <Ruler className="w-4 h-4 md:w-5 md:h-5" />
                 </button>
                 <button 
                     onClick={resetCamera} 
@@ -198,6 +246,19 @@ export default function ContainerViewer({ result, highlightedProduct }: Containe
                             </div>
                         </div>
                     </div>
+
+                    {/* Remaining Distance HUD Card */}
+                    {remainingDistance > 0 && (
+                        <div className="flex items-center justify-between p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 mb-3 shadow-[0_0_15px_rgba(245,158,11,0.05)]">
+                            <div className="flex items-center gap-2">
+                                <Ruler className="w-3.5 h-3.5 text-amber-400" />
+                                <div>
+                                    <p className="text-[8px] md:text-[9px] text-slate-400 font-bold uppercase tracking-wider">입구까지 남은 거리</p>
+                                    <p className="text-xs font-black text-amber-400">{(remainingDistance).toLocaleString()} mm ({(remainingDistance / 1000).toFixed(2)}m)</p>
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
                         {/* Unpacked Detail List */}
                         {result.unpacked.length > 0 ? (
