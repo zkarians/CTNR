@@ -66,19 +66,24 @@ function hasSupportAtZ(
 ): boolean {
     if (z === 0) return true; // 바닥은 항상 지탱됨
     
+    const targetArea = w * l;
+    let supportArea = 0;
+    
     for (const item of placedItems) {
         const itemTop = item.z + item.h;
         // z축 방향으로 바로 아래에 맞닿아 있는지 확인 (5mm 내외의 오차 허용)
         if (Math.abs(itemTop - z) <= 5) {
-            // X-Y 수평 영역이 겹치는지 판단 (0.5mm 오차 허용)
-            const xOverlap = Math.max(x, item.x) < Math.min(x + w, item.x + item.w) - 0.5;
-            const yOverlap = Math.max(y, item.y) < Math.min(y + l, item.y + item.l) - 0.5;
-            if (xOverlap && yOverlap) {
-                return true; // 지탱 상자 존재
-            }
+            // X축 방향으로 겹치는 길이 계산
+            const xOverlap = Math.max(0, Math.min(x + w, item.x + item.w) - Math.max(x, item.x));
+            // Y축 방향으로 겹치는 길이 계산
+            const yOverlap = Math.max(0, Math.min(y + l, item.y + item.l) - Math.max(y, item.y));
+            
+            supportArea += xOverlap * yOverlap;
         }
     }
-    return false;
+    
+    // 지탱해 주는 하단 면적의 총합이 상자 밑면 면적의 75% 이상을 차지해야 적재 가능
+    return (supportArea / targetArea) >= 0.75;
 }
 
 function hasValidBaseForLowProduct(
