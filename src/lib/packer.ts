@@ -871,7 +871,8 @@ function blockPackShelf(W: number, H: number, D: number, allProducts: Product[],
                                 let bestRowH = 0;
 
                                 for (const topP of allProducts) {
-                                    if (!effectiveAllowSmall && isSmallProduct(topP)) continue;
+                                    const allowedSmallTopper = effectiveAllowSmall || (o.h >= 500);
+                                    if (!allowedSmallTopper && isSmallProduct(topP)) continue;
                                     const avail = tempU_Col.get(topP.id) || 0;
                                     if (avail <= 0) continue;
 
