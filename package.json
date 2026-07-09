@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev -H 127.0.0.1",
+    "dev": "next dev -H 0.0.0.0 -p 4000",
     "clean": "powershell -Command \"Remove-Item -Path .next -Recurse -Force -ErrorAction SilentlyContinue\"",
     "dev:clean": "npm run clean && npm run dev",
     "build": "next build",
@@ -39,6 +39,7 @@
     "eslint-config-next": "latest",
     "postcss": "latest",
     "tailwindcss": "latest",
+    "tsx": "^4.23.0",
     "typescript": "latest"
   }
 }

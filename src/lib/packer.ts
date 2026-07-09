@@ -1,11 +1,12 @@
 import { ContainerDimensions, Product, PackedItem, PackingResult } from "./types";
 
 /**
- * V4.19 - Stability Filter Exemption
- * - Exempt large appliances (h>1500mm) from stability rule.
- * - FALLBACK: Always allow at least one orientation if all others are blocked.
- * - Stability Orientation Filter (V4.14), Universal Headroom Fill (V4.15)
- * - Row-Based Topping (V4.12), Multi-Column Blocks (V4.7), 2/3 Support (V4.4)
+ * V6.10 - Floating Item Fix
+ * - Phase 2 headroom fill now iterates in both X and Y directions (was X-only), fixing
+ *   incorrect support checks that caused products to float above their actual support zone.
+ * - Gravity Drop: tightened "below us" threshold from 1mm to 0.5mm and added 0.5mm inset
+ *   to X/Y overlap checks for more accurate settling.
+ * - V4.19: Stability Filter Exemption, V6.00: Post-swap optimizer
  */
 
 function isSmallProduct(p: Product): boolean {
@@ -121,29 +122,66 @@ function hasValidBaseForLowProduct(
     y: number,
     w: number,
     l: number,
-    placedItems: PackedItem[]
+    placedItems: PackedItem[],
+    curZ: number
 ): boolean {
-    let hasOtherBase = false;
-    let maxBaseHeight = 0;
-    
+    let hasDirectBase = false;
+    let maxDirectBaseH = 0;
+
     for (const item of placedItems) {
         const xOverlap = Math.max(x, item.x) < Math.min(x + w, item.x + item.w) - 0.5;
         const yOverlap = Math.max(y, item.y) < Math.min(y + l, item.y + item.l) - 0.5;
-        
+
         if (xOverlap && yOverlap) {
-            if (item.h > 270) {
-                hasOtherBase = true;
-                if (item.h > maxBaseHeight) {
-                    maxBaseHeight = item.h;
+            // 바로 아래에 맞닿아 있는 베이스만 인정 (5mm 오차 허용)
+            const isDirectBase = Math.abs((item.z + item.h) - curZ) <= 5;
+            if (isDirectBase && item.h > 270) {
+                hasDirectBase = true;
+                if (item.h > maxDirectBaseH) {
+                    maxDirectBaseH = item.h;
                 }
             }
         }
     }
-    
-    if (hasOtherBase) {
-        return maxBaseHeight >= 500;
+
+    // 바로 아래 베이스가 없거나 높이가 500mm 미만이면 불가
+    if (!hasDirectBase) return false;
+    return maxDirectBaseH >= 500;
+}
+
+function isBaseLowProduct(
+    x: number,
+    y: number,
+    w: number,
+    l: number,
+    placedItems: PackedItem[],
+    curZ: number
+): boolean {
+    for (const item of placedItems) {
+        const xOverlap = Math.max(x, item.x) < Math.min(x + w, item.x + item.w) - 0.5;
+        const yOverlap = Math.max(y, item.y) < Math.min(y + l, item.y + item.l) - 0.5;
+        if (xOverlap && yOverlap) {
+            const isDirectBase = Math.abs((item.z + item.h) - curZ) <= 5;
+            if (isDirectBase && isLowHeightProduct(item.product, item.h)) {
+                return true;
+            }
+        }
     }
-    return true;
+    return false;
+}
+
+function hasItemsOnTop(item: PackedItem, allItems: PackedItem[]): boolean {
+    const topZ = item.z + item.h;
+    for (const other of allItems) {
+        if (other.z >= topZ - 5) {
+            const xOverlap = Math.max(item.x, other.x) < Math.min(item.x + item.w, other.x + other.w) - 0.5;
+            const yOverlap = Math.max(item.y, other.y) < Math.min(item.y + item.l, other.y + other.l) - 0.5;
+            if (xOverlap && yOverlap) {
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
 /**
@@ -398,37 +436,64 @@ function doTwoPhasePacking(container: any, normalProducts: Product[], smallProdu
                     const suppL = Math.min(to.l, wallBaseL);
                     if (suppW * suppL < to.w * to.l * 0.66) continue;
 
-                    const fitCount = Math.floor((wallMaxW + 0.5) / to.w);
-                    if (fitCount === 0) continue;
+                    const fitCountW = Math.floor((wallMaxW + 0.5) / to.w);
+                    const fitCountL = Math.floor((wallBaseL + 0.5) / to.l);
+                    if (fitCountW === 0 || fitCountL === 0) continue;
+                    const fitCount = fitCountW * fitCountL;
                     const rowCount = Math.min(fitCount, avail);
 
                     const rowItems: any[] = [];
-                    for (let ri = 0; ri < rowCount; ri++) {
-                        const targetX = ri * to.w;
-                        const targetY = wall.y;
+                    let placedCount = 0;
+                    outerLoop: for (let li = 0; li < fitCountL; li++) {
+                        for (let ri = 0; ri < fitCountW; ri++) {
+                            if (placedCount >= rowCount) break outerLoop;
+                            const targetX = ri * to.w;
+                            const targetY = wall.y + (li * to.l);
                         
-                        // 1. 공중 부양 방지 지탱면 검사
-                        if (!hasSupportAtZ(targetX, targetY, to.w, to.l, curZ, placed)) {
-                            continue;
-                        }
+                            // 1. 공중 부양 방지 지탱면 검사
+                            if (!hasSupportAtZ(targetX, targetY, to.w, to.l, curZ, placed)) {
+                                continue;
+                            }
+
+                            // 추가: 3D 오버랩(겹침) 검사
+                            let overlap = false;
+                            for (const other of placed) {
+                                const xOverlap = Math.max(targetX, other.x) < Math.min(targetX + to.w, other.x + other.w) - 0.5;
+                                const yOverlap = Math.max(targetY, other.y) < Math.min(targetY + to.l, other.y + other.l) - 0.5;
+                                const zOverlap = Math.max(curZ, other.z) < Math.min(curZ + to.h, other.z + other.h) - 0.5;
+                                if (xOverlap && yOverlap && zOverlap) {
+                                    overlap = true;
+                                    break;
+                                }
+                            }
+                            if (overlap) continue;
                         
-                        if (isTopperLow) {
-                            // 2. 10단 누적 제한 체크
+                            // 2. 10단 누적 제한 체크 (모든 제품에 적용)
                             const stacked = getStackedCount(targetX, targetY, to.w, to.l, placed);
                             if (stacked >= 10) {
                                 continue;
                             }
-                            // 3. 베이스 높이 500 이상 체크
-                            if (!hasValidBaseForLowProduct(targetX, targetY, to.w, to.l, placed)) {
+
+                            // 3. 바로 아래가 낮은 제품(h <= 270)인 경우 위에 적재 금지 (단, z=0 바닥인 경우는 허용)
+                            if (curZ > 0 && isBaseLowProduct(targetX, targetY, to.w, to.l, placed, curZ)) {
                                 continue;
                             }
+
+                            if (isTopperLow) {
+                                // 4. 베이스 높이 500 이상 체크 (바로 아래 베이스 기준)
+                                if (!hasValidBaseForLowProduct(targetX, targetY, to.w, to.l, placed, curZ)) {
+                                    continue;
+                                }
+                            }
+                            rowItems.push({ product: sp, x: targetX, y: targetY, z: curZ, w: to.w, l: to.l, h: to.h, orientation: to.type });
+                            placedCount++;
                         }
-                        rowItems.push({ product: sp, x: targetX, y: targetY, z: curZ, w: to.w, l: to.l, h: to.h, orientation: to.type });
                     }
 
                     // V4.17: Score by PHYSICAL CAPACITY (fitCount), not actual placed count
-                    const potentialW = fitCount * to.w;
-                    const potentialUtil = potentialW / wallMaxW;
+                    const potentialW = fitCountW * to.w;
+                    const potentialL = fitCountL * to.l;
+                    const potentialUtil = (potentialW * potentialL) / (wallMaxW * wallBaseL);
                     const rowVol = rowCount * to.w * to.l * to.h;
                     const rowScore = fitCount * 1_000_000 + rowVol * potentialUtil;
 
@@ -622,16 +687,36 @@ function doTwoPhasePacking(container: any, normalProducts: Product[], smallProdu
                             if (!hasSupportAtZ(targetX, targetY, to.w, to.l, curZ, placed)) {
                                 continue;
                             }
+
+                            // 추가: 3D 오버랩(겹침) 검사
+                            let overlap = false;
+                            for (const other of placed) {
+                                const xOverlap = Math.max(targetX, other.x) < Math.min(targetX + to.w, other.x + other.w) - 0.5;
+                                const yOverlap = Math.max(targetY, other.y) < Math.min(targetY + to.l, other.y + other.l) - 0.5;
+                                const zOverlap = Math.max(curZ, other.z) < Math.min(curZ + to.h, other.z + other.h) - 0.5;
+                                if (xOverlap && yOverlap && zOverlap) {
+                                    overlap = true;
+                                    break;
+                                }
+                            }
+                            if (overlap) continue;
                             
                             const isTopperLow = isLowHeightProduct(sp, to.h);
+                            
+                            // 2. 10단 누적 제한 체크 (모든 제품에 적용)
+                            const stacked = getStackedCount(targetX, targetY, to.w, to.l, placed);
+                            if (stacked >= 10) {
+                                continue;
+                            }
+
+                            // 3. 바로 아래가 낮은 제품(h <= 270)인 경우 위에 적재 금지 (단, z=0 바닥인 경우는 허용)
+                            if (curZ > 0 && isBaseLowProduct(targetX, targetY, to.w, to.l, placed, curZ)) {
+                                continue;
+                            }
+
                             if (isTopperLow) {
-                                // 2. 베이스 높이 500 이상 체크
-                                if (!hasValidBaseForLowProduct(targetX, targetY, to.w, to.l, placed)) {
-                                    continue;
-                                }
-                                // 3. 10단 누적 제한 체크
-                                const stacked = getStackedCount(targetX, targetY, to.w, to.l, placed);
-                                if (stacked >= 10) {
+                                // 4. 베이스 높이 500 이상 체크 (바로 아래 베이스 기준)
+                                if (!hasValidBaseForLowProduct(targetX, targetY, to.w, to.l, placed, curZ)) {
                                     continue;
                                 }
                             }
@@ -742,12 +827,12 @@ function doTwoPhasePacking(container: any, normalProducts: Product[], smallProdu
                 const other = placed[j];
                 // Must be below our item (its top <= our current bottom)
                 const otherTop = other.z + other.h;
-                if (otherTop > item.z + 1) continue; // not below us
+                if (otherTop > item.z + 0.5) continue; // not below us (use 0.5mm tolerance)
 
                 // Check X-axis overlap
-                const xOverlap = other.x < item.x + item.w && other.x + other.w > item.x;
+                const xOverlap = other.x < item.x + item.w - 0.5 && other.x + other.w > item.x + 0.5;
                 // Check Y-axis overlap
-                const yOverlap = other.y < item.y + item.l && other.y + other.l > item.y;
+                const yOverlap = other.y < item.y + item.l - 0.5 && other.y + other.l > item.y + 0.5;
                 if (xOverlap && yOverlap) {
                     if (otherTop > supportZ) {
                         supportZ = otherTop;
@@ -890,6 +975,10 @@ function blockPackShelf(W: number, H: number, D: number, allProducts: Product[],
                                         if (isTopperLow) {
                                             const isBaseLow = isLowHeightProduct(p, o.h);
                                             if (!isBaseLow && o.h < 500) continue;
+                                        } else {
+                                            // 토퍼가 대형(height >= 500)인 경우, 아래 베이스가 낮은 제품이면 적재 금지
+                                            const isBaseLow = isLowHeightProduct(p, o.h);
+                                            if (isBaseLow) continue;
                                         }
 
                                         const suppW = Math.min(to.w, totalW);
@@ -944,13 +1033,10 @@ function blockPackShelf(W: number, H: number, D: number, allProducts: Product[],
                                                     continue;
                                                 }
 
-                                                // 2. 이 격자 위치에 이 토퍼를 배치할 때 누적 단수가 10단을 넘는지 검사
-                                                const isCurrLow = isLowHeightProduct(currentItem.p, to.h);
-                                                if (isCurrLow) {
-                                                    const stacked = getStackedCountInTemp(targetX, targetYRel, to.w, to.l, tempItems);
-                                                    if (stacked >= 10) {
-                                                        continue; // 10단 초과하므로 이 셀에는 배치하지 않고 건너뜀
-                                                    }
+                                                // 2. 이 격자 위치에 이 토퍼를 배치할 때 누적 단수가 10단을 넘는지 검사 (모든 제품에 적용)
+                                                const stacked = getStackedCountInTemp(targetX, targetYRel, to.w, to.l, tempItems);
+                                                if (stacked >= 10) {
+                                                    continue; // 10단 초과하므로 이 셀에는 배치하지 않고 건너뜀
                                                 }
                                                 
                                                 rowItems.push({ product: currentItem.p, x: currentX + (riW * to.w), yRel: riL * to.l, z: curZ, w: to.w, l: to.l, h: to.h, orientation: to.type });
@@ -1072,6 +1158,9 @@ function optimizePackResultWithSwaps(container: ContainerDimensions, result: Pac
                 const pItem = items[pIdx];
                 if (pItem.product.id === uProd.id) continue;
 
+                // 추가: 위에 다른 상자가 쌓여있는 경우 스왑 대상에서 제외 (공중부양 및 적재 붕괴 방지)
+                if (hasItemsOnTop(pItem, items)) continue;
+
                 // 추가: 스몰 제품이 존재할 때, 바닥(z=0)에 깔린 500mm 이상 대형 베이스는 스왑 제외
                 const hasSmall = items.some(it => isLowHeightProduct(it.product, it.h));
                 if (hasSmall && pItem.z === 0 && Number(pItem.product.height) >= 500) {
@@ -1113,15 +1202,20 @@ function optimizePackResultWithSwaps(container: ContainerDimensions, result: Pac
                         continue;
                     }
 
+                    // 2. 10단 누적 제한 체크 (모든 제품에 적용)
+                    const stacked = getStackedCount(pItem.x, pItem.y, o.w, o.l, otherItems);
+                    if (stacked + 1 > 10) continue;
+
+                    // 3. 바로 아래가 낮은 제품(h <= 270)인 경우 위에 적재 금지 (단, z=0 바닥인 경우는 허용)
+                    if (pItem.z > 0 && isBaseLowProduct(pItem.x, pItem.y, o.w, o.l, otherItems, pItem.z)) {
+                        continue;
+                    }
+
                     // 제약조건 검사: 270mm 이하인 낮은 제품인 경우
                     const isTopperLow = isLowHeightProduct(uProd, o.h);
                     if (isTopperLow) {
-                        // 2. 10단 누적 제한 체크
-                        const stacked = getStackedCount(pItem.x, pItem.y, o.w, o.l, otherItems);
-                        if (stacked + 1 > 10) continue;
-                        
-                        // 3. 베이스 높이 500 이상 체크
-                        if (!hasValidBaseForLowProduct(pItem.x, pItem.y, o.w, o.l, otherItems)) {
+                        // 4. 베이스 높이 500 이상 체크 (바로 아래 베이스 기준)
+                        if (!hasValidBaseForLowProduct(pItem.x, pItem.y, o.w, o.l, otherItems, pItem.z)) {
                             continue;
                         }
                     }
@@ -1206,14 +1300,19 @@ function optimizePackResultWithSwaps(container: ContainerDimensions, result: Pac
                                     continue;
                                 }
 
+                                // 2. 10단 누적 제한 체크 (모든 제품에 적용)
+                                const stacked = getStackedCount(x, y, o.w, o.l, tempItems);
+                                if (stacked + 1 > 10) continue;
+
+                                // 3. 바로 아래가 낮은 제품(h <= 270)인 경우 위에 적재 금지 (단, z=0 바닥인 경우는 허용)
+                                if (z > 0 && isBaseLowProduct(x, y, o.w, o.l, tempItems, z)) {
+                                    continue;
+                                }
+
                                 const isDisplacedLow = isLowHeightProduct(displacedProduct, o.h);
                                 if (isDisplacedLow) {
-                                    // 2. 10단 누적 제한 체크
-                                    const stacked = getStackedCount(x, y, o.w, o.l, tempItems);
-                                    if (stacked + 1 > 10) continue;
-                                    
-                                    // 3. 베이스 높이 500 이상 체크
-                                    if (!hasValidBaseForLowProduct(x, y, o.w, o.l, tempItems)) {
+                                    // 4. 베이스 높이 500 이상 체크 (바로 아래 베이스 기준)
+                                    if (!hasValidBaseForLowProduct(x, y, o.w, o.l, tempItems, z)) {
                                         continue;
                                     }
                                 }
@@ -1249,6 +1348,30 @@ function optimizePackResultWithSwaps(container: ContainerDimensions, result: Pac
                 }
 
                 if (placementFound && newPlacement) {
+                    const testItems = [...tempItems, newPlacement];
+                    let testOverlap = false;
+                    for (let ti = 0; ti < testItems.length; ti++) {
+                        for (let tj = ti + 1; tj < testItems.length; tj++) {
+                            const itemA = testItems[ti];
+                            const itemB = testItems[tj];
+                            const xOverlap = Math.max(itemA.x, itemB.x) < Math.min(itemA.x + itemA.w, itemB.x + itemB.w) - 0.5;
+                            const yOverlap = Math.max(itemA.y, itemB.y) < Math.min(itemA.y + itemA.l, itemB.y + itemB.l) - 0.5;
+                            const zOverlap = Math.max(itemA.z, itemB.z) < Math.min(itemA.z + itemA.h, itemB.z + itemB.h) - 0.5;
+                            if (xOverlap && yOverlap && zOverlap) {
+                                testOverlap = true;
+                                console.log(`[SWAP ERROR DETECTED!]`);
+                                console.log(`  Attempting swap: uProd ${uProd.id} with pItem ${pItem.product.id} at (${pItem.x},${pItem.y},${pItem.z})`);
+                                console.log(`  swappedItem: ${swappedItem.product.id} at (${swappedItem.x},${swappedItem.y},${swappedItem.z}) Size: ${swappedItem.w}x${swappedItem.l}x${swappedItem.h}`);
+                                console.log(`  newPlacement (displaced): ${newPlacement.product.id} at (${newPlacement.x},${newPlacement.y},${newPlacement.z}) Size: ${newPlacement.w}x${newPlacement.l}x${newPlacement.h}`);
+                                console.log(`  Overlapping pair in result:`);
+                                console.log(`    A: ${itemA.product.id} at (${itemA.x},${itemA.y},${itemA.z}) Size: ${itemA.w}x${itemA.l}x${itemA.h}`);
+                                console.log(`    B: ${itemB.product.id} at (${itemB.x},${itemB.y},${itemB.z}) Size: ${itemB.w}x${itemB.l}x${itemB.h}`);
+                                break;
+                            }
+                        }
+                        if (testOverlap) break;
+                    }
+
                     items = tempItems;
                     items.push(newPlacement);
                     uProd.quantity--;

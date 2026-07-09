@@ -1,7 +1,7 @@
 @echo off
 cd /d "%~dp0"
 echo [INFO] checking port 4000...
-powershell -Command "Get-NetTCPConnection -LocalPort 4000 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }"
+powershell -Command "Get-NetTCPConnection -LocalPort 4000 -ErrorAction SilentlyContinue | Where-Object { $_.OwningProcess -gt 0 } | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }"
 echo [INFO] Starting CTNR Optimizer on port 4000...
 cmd /c "npm.cmd run dev -- -p 4000 -H 0.0.0.0"
 if %ERRORLEVEL% neq 0 (

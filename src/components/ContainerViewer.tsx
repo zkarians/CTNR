@@ -16,8 +16,9 @@ function ProductBox({ item, idx, isHighlighted, allItems }: ProductBoxProps) {
     const { x, y, z, w, h, l, product } = item;
     const [hovered, setHovered] = useState(false);
 
-    // 기둥의 최상단 박스인지 판별하는 로직
-    const isTopMost = (() => {
+    // 기둥의 최상단 박스인지 판별하는 로직 (성능 최적화: 마우스 호버될 때만 lazy evaluation)
+    const isTopMost = React.useMemo(() => {
+        if (!hovered) return false;
         for (const other of allItems) {
             if (other === item) continue;
             // X, Y 수평 오버랩 판별 (1mm 허용 오차)
@@ -31,7 +32,7 @@ function ProductBox({ item, idx, isHighlighted, allItems }: ProductBoxProps) {
             }
         }
         return true; // 최상단 제품임
-    })();
+    }, [hovered, item, allItems, x, y, z, w, l]);
 
     // Three.js coordinate system:
     // packer X (width)  -> Three.js X
@@ -128,7 +129,7 @@ export default function ContainerViewer({ result, highlightedProduct }: Containe
     return (
         <div className="w-full h-full bg-[#030712] relative flex flex-col md:block rounded-3xl overflow-hidden border border-white/10 shadow-2xl">
             <div className="relative flex-1 min-h-[260px] md:min-h-0 md:w-full md:h-full">
-            <Canvas shadows gl={{ antialias: true }}>
+            <Canvas gl={{ antialias: true, powerPreference: "high-performance" }}>
                 <PerspectiveCamera makeDefault position={[cw * 1.5, ch * 2.5, cl * 2]} fov={45} />
                 <OrbitControls 
                     ref={controlsRef}
@@ -140,7 +141,7 @@ export default function ContainerViewer({ result, highlightedProduct }: Containe
                 />
 
                 <ambientLight intensity={0.7} />
-                <spotLight position={[10, 20, 10]} angle={0.2} penumbra={1} intensity={2} castShadow />
+                <spotLight position={[10, 20, 10]} angle={0.2} penumbra={1} intensity={2} />
                 <pointLight position={[-10, 10, -10]} intensity={1} />
                 <pointLight position={[5, -5, 5]} intensity={0.5} color="#38bdf8" />
 
