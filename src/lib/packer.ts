@@ -13,6 +13,78 @@ function isSmallProduct(p: Product): boolean {
     return Math.min(Number(p.width), Number(p.length), Number(p.height)) <= 300;
 }
 
+function isLowHeightProduct(p: Product, orientedH?: number): boolean {
+    const h = orientedH !== undefined ? orientedH : Number(p.height);
+    return h <= 270;
+}
+
+function getStackedCount(
+    productId: string,
+    x: number,
+    y: number,
+    w: number,
+    l: number,
+    placedItems: PackedItem[]
+): number {
+    let count = 0;
+    for (const item of placedItems) {
+        if (item.product.id !== productId) continue;
+        const xOverlap = Math.max(x, item.x) < Math.min(x + w, item.x + item.w) - 0.5;
+        const yOverlap = Math.max(y, item.y) < Math.min(y + l, item.y + item.l) - 0.5;
+        if (xOverlap && yOverlap) {
+            count++;
+        }
+    }
+    return count;
+}
+
+function getStackedCountInTemp(
+    productId: string,
+    x: number,
+    yRel: number,
+    w: number,
+    l: number,
+    tempItems: any[]
+): number {
+    let count = 0;
+    for (const item of tempItems) {
+        if (item.product.id !== productId) continue;
+        const xOverlap = Math.max(x, item.x) < Math.min(x + w, item.x + item.w) - 0.5;
+        const yOverlap = Math.max(yRel, item.yRel) < Math.min(yRel + l, item.yRel + item.l) - 0.5;
+        if (xOverlap && yOverlap) {
+            count++;
+        }
+    }
+    return count;
+}
+
+function hasValidBaseForLowProduct(
+    x: number,
+    y: number,
+    w: number,
+    l: number,
+    placedItems: PackedItem[]
+): boolean {
+    let hasOtherBase = false;
+    let maxBaseHeight = 0;
+    for (const item of placedItems) {
+        const xOverlap = Math.max(x, item.x) < Math.min(x + w, item.x + item.w) - 0.5;
+        const yOverlap = Math.max(y, item.y) < Math.min(y + l, item.y + item.l) - 0.5;
+        if (xOverlap && yOverlap) {
+            if (item.h > 270) {
+                hasOtherBase = true;
+                if (item.h > maxBaseHeight) {
+                    maxBaseHeight = item.h;
+                }
+            }
+        }
+    }
+    if (hasOtherBase) {
+        return maxBaseHeight >= 500;
+    }
+    return true;
+}
+
 /**
  * V4.14: Check if placing a product with bottom face (orientedW × orientedL) is stable.
  * If the smallest face ≤ 1/4 of the largest face, and the bottom IS the smallest → REJECT.
@@ -241,6 +313,9 @@ function doTwoPhasePacking(container: any, normalProducts: Product[], smallProdu
                     const baseMaxH = wall.items.reduce((max: number, it: any) => Math.max(max, isSmallProduct(it.product) ? 0 : it.h), 0);
                     if (baseMaxH < 500 && to.h >= 670) continue;
 
+                    const isTopperLow = isLowHeightProduct(sp, to.h);
+                    if (isTopperLow && baseMaxH < 500) continue;
+
                     const suppW = Math.min(to.w, wallMaxW);
                     const suppL = Math.min(to.l, wallBaseL);
                     if (suppW * suppL < to.w * to.l * 0.66) continue;
@@ -251,7 +326,16 @@ function doTwoPhasePacking(container: any, normalProducts: Product[], smallProdu
 
                     const rowItems: any[] = [];
                     for (let ri = 0; ri < rowCount; ri++) {
-                        rowItems.push({ product: sp, x: ri * to.w, y: wall.y, z: curZ, w: to.w, l: to.l, h: to.h, orientation: to.type });
+                        const targetX = ri * to.w;
+                        const targetY = wall.y;
+                        
+                        if (isTopperLow) {
+                            const stacked = getStackedCount(sp.id, targetX, targetY, to.w, to.l, placed);
+                            if (stacked >= 10) {
+                                continue;
+                            }
+                        }
+                        rowItems.push({ product: sp, x: targetX, y: targetY, z: curZ, w: to.w, l: to.l, h: to.h, orientation: to.type });
                     }
 
                     // V4.17: Score by PHYSICAL CAPACITY (fitCount), not actual placed count
@@ -433,10 +517,27 @@ function doTwoPhasePacking(container: any, normalProducts: Product[], smallProdu
                     for (let l_idx = 0; l_idx < fitCountL; l_idx++) {
                         for (let w_idx = 0; w_idx < fitCountW; w_idx++) {
                             if (placedCount >= countLimit) break;
+                            
+                            const targetX = w_idx * to.w;
+                            const targetY = wall.y + (l_idx * to.l);
+                            
+                            const isTopperLow = isLowHeightProduct(sp, to.h);
+                            if (isTopperLow) {
+                                // 1. 베이스 높이 500 이상 체크
+                                if (!hasValidBaseForLowProduct(targetX, targetY, to.w, to.l, placed)) {
+                                    continue;
+                                }
+                                // 2. 10단 누적 제한 체크
+                                const stacked = getStackedCount(sp.id, targetX, targetY, to.w, to.l, placed);
+                                if (stacked >= 10) {
+                                    continue;
+                                }
+                            }
+                            
                             rowItems.push({ 
                                 product: sp, 
-                                x: w_idx * to.w, 
-                                y: wall.y + (l_idx * to.l), 
+                                x: targetX, 
+                                y: targetY, 
                                 z: curZ, 
                                 w: to.w, l: to.l, h: to.h, 
                                 orientation: to.type 
@@ -636,7 +737,10 @@ function blockPackShelf(W: number, H: number, D: number, allProducts: Product[],
 
                             // V5.05: If orientation is 'lay', limit height count to 1 to prevent stacking laid down items
                             const maxHCount = o.type === 'lay' ? 1 : Math.floor((H + 0.5) / o.h);
-                            const limitHCount = Math.min(maxHCount, Math.floor(unpacked.get(p.id)! / (bW * bL)));
+                            let limitHCount = Math.min(maxHCount, Math.floor(unpacked.get(p.id)! / (bW * bL)));
+                            if (isLowHeightProduct(p, o.h)) {
+                                limitHCount = Math.min(limitHCount, 10);
+                            }
                             if (limitHCount === 0) continue;
 
                             for (let hCount = 1; hCount <= limitHCount; hCount++) {
@@ -676,6 +780,14 @@ function blockPackShelf(W: number, H: number, D: number, allProducts: Product[],
 
                                         // V4.16: Base h<500 cannot support topper h≥670
                                         if (o.h < 500 && to.h >= 670) continue;
+
+                                        // 만약 토퍼가 낮은 제품인 경우, 아래에서 받쳐주는 베이스(o)의 높이가 500 이상이어야 함
+                                        // 단, 베이스(p)가 이미 낮은 제품인 경우에는 연속해서 쌓는 것이므로 제외
+                                        const isTopperLow = isLowHeightProduct(topP, to.h);
+                                        if (isTopperLow) {
+                                            const isBaseLow = isLowHeightProduct(p, o.h);
+                                            if (!isBaseLow && o.h < 500) continue;
+                                        }
 
                                         const suppW = Math.min(to.w, totalW);
                                         const suppL = Math.min(to.l, totalL);
@@ -720,6 +832,18 @@ function blockPackShelf(W: number, H: number, D: number, allProducts: Product[],
                                         for (let riL = 0; riL < fitCountL && placedCount < rowCount; riL++) {
                                             for (let riW = 0; riW < fitCountW && placedCount < rowCount; riW++) {
                                                 const currentItem = identicalProducts[currentIdx];
+                                                
+                                                // 추가: 이 격자 위치에 이 토퍼를 배치할 때 누적 단수가 10단을 넘는지 검사
+                                                const isCurrLow = isLowHeightProduct(currentItem.p, to.h);
+                                                if (isCurrLow) {
+                                                    const targetX = currentX + (riW * to.w);
+                                                    const targetYRel = riL * to.l;
+                                                    const stacked = getStackedCountInTemp(currentItem.p.id, targetX, targetYRel, to.w, to.l, tempItems);
+                                                    if (stacked >= 10) {
+                                                        continue; // 10단 초과하므로 이 셀에는 배치하지 않고 건너뜀
+                                                    }
+                                                }
+                                                
                                                 rowItems.push({ product: currentItem.p, x: currentX + (riW * to.w), yRel: riL * to.l, z: curZ, w: to.w, l: to.l, h: to.h, orientation: to.type });
                                                 placedCount++;
                                                 qtyUsed++;
@@ -863,6 +987,20 @@ function optimizePackResultWithSwaps(container: ContainerDimensions, result: Pac
                     }
                     if (overlap) continue;
 
+                    // 제약조건 검사: 270mm 이하인 낮은 제품인 경우
+                    const isTopperLow = isLowHeightProduct(uProd, o.h);
+                    if (isTopperLow) {
+                        const otherItems = items.filter((_, idx) => idx !== pIdx);
+                        // 1. 10단 누적 제한 체크
+                        const stacked = getStackedCount(uProd.id, pItem.x, pItem.y, o.w, o.l, otherItems);
+                        if (stacked + 1 > 10) continue;
+                        
+                        // 2. 베이스 높이 500 이상 체크
+                        if (!hasValidBaseForLowProduct(pItem.x, pItem.y, o.w, o.l, otherItems)) {
+                            continue;
+                        }
+                    }
+
                     if (pItem.z > 0) {
                         let supportArea = 0;
                         const itemArea = o.w * o.l;
@@ -937,6 +1075,18 @@ function optimizePackResultWithSwaps(container: ContainerDimensions, result: Pac
                                     }
                                 }
                                 if (overlap) continue;
+
+                                const isDisplacedLow = isLowHeightProduct(displacedProduct, o.h);
+                                if (isDisplacedLow) {
+                                    // 1. 10단 누적 제한 체크
+                                    const stacked = getStackedCount(displacedProduct.id, x, y, o.w, o.l, tempItems);
+                                    if (stacked + 1 > 10) continue;
+                                    
+                                    // 2. 베이스 높이 500 이상 체크
+                                    if (!hasValidBaseForLowProduct(x, y, o.w, o.l, tempItems)) {
+                                        continue;
+                                    }
+                                }
 
                                 if (z > 0) {
                                     let supportArea = 0;
