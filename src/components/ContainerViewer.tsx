@@ -9,11 +9,29 @@ interface ProductBoxProps {
     item: PackedItem;
     idx: number;
     isHighlighted: boolean;
+    allItems: PackedItem[];
 }
 
-function ProductBox({ item, idx, isHighlighted }: ProductBoxProps) {
+function ProductBox({ item, idx, isHighlighted, allItems }: ProductBoxProps) {
     const { x, y, z, w, h, l, product } = item;
     const [hovered, setHovered] = useState(false);
+
+    // 기둥의 최상단 박스인지 판별하는 로직
+    const isTopMost = (() => {
+        for (const other of allItems) {
+            if (other === item) continue;
+            // X, Y 수평 오버랩 판별 (1mm 허용 오차)
+            const xOverlap = Math.max(x, other.x) < Math.min(x + w, other.x + other.w) - 1;
+            const yOverlap = Math.max(y, other.y) < Math.min(y + l, other.y + other.l) - 1;
+            if (xOverlap && yOverlap) {
+                // 우리보다 Z가 더 높은 아이템이 존재하는가?
+                if (other.z > item.z) {
+                    return false; // 위에 다른 제품이 적재되어 있음
+                }
+            }
+        }
+        return true; // 최상단 제품임
+    })();
 
     // Three.js coordinate system:
     // packer X (width)  -> Three.js X
@@ -60,7 +78,10 @@ function ProductBox({ item, idx, isHighlighted }: ProductBoxProps) {
                             <p className="flex justify-between border-b border-white/5 pb-1"><span>치수(mm)</span> <span className="text-white">{w} x {l} x {h}</span></p>
                             <p className="flex justify-between border-b border-white/5 pb-1"><span>위치(X,Y,Z)</span> <span className="text-white">{x}, {y}, {z}</span></p>
                             <p className="flex justify-between border-b border-white/5 pb-1"><span>적재타입</span> <span className="text-white uppercase">{item.orientation}</span></p>
-                            <p className="flex justify-between"><span>끝단거리(Y)</span> <span className="text-white">{y + l} mm</span></p>
+                            <p className={`flex justify-between ${isTopMost ? 'border-b border-white/5 pb-1' : ''}`}><span>끝단거리(Y)</span> <span className="text-white">{y + l} mm</span></p>
+                            {isTopMost && (
+                                <p className="flex justify-between"><span>최대높이(Z)</span> <span className="text-white">{z + h} mm</span></p>
+                            )}
                         </div>
                     </div>
                 </Html>
@@ -153,6 +174,7 @@ export default function ContainerViewer({ result, highlightedProduct }: Containe
                         item={item}
                         idx={idx}
                         isHighlighted={highlightedProduct === item.product.model_name}
+                        allItems={items}
                     />
                 ))}
 
