@@ -59,7 +59,8 @@ function ProductBox({ item, idx, isHighlighted }: ProductBoxProps) {
                         <div className="flex flex-col gap-1 text-slate-300 font-medium">
                             <p className="flex justify-between border-b border-white/5 pb-1"><span>치수(mm)</span> <span className="text-white">{w} x {l} x {h}</span></p>
                             <p className="flex justify-between border-b border-white/5 pb-1"><span>위치(X,Y,Z)</span> <span className="text-white">{x}, {y}, {z}</span></p>
-                            <p className="flex justify-between"><span>적재타입</span> <span className="text-white uppercase">{item.orientation}</span></p>
+                            <p className="flex justify-between border-b border-white/5 pb-1"><span>적재타입</span> <span className="text-white uppercase">{item.orientation}</span></p>
+                            <p className="flex justify-between"><span>끝단거리(Y)</span> <span className="text-white">{y + l} mm</span></p>
                         </div>
                     </div>
                 </Html>
