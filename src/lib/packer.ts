@@ -86,6 +86,36 @@ function hasSupportAtZ(
     return (supportArea / targetArea) >= 0.75;
 }
 
+function hasSupportAtZInTemp(
+    x: number,
+    yRel: number,
+    w: number,
+    l: number,
+    z: number,
+    tempItems: any[]
+): boolean {
+    if (z === 0) return true; // 바닥은 지탱 검사 불요
+    
+    const targetArea = w * l;
+    let supportArea = 0;
+    
+    for (const item of tempItems) {
+        const itemTop = item.z + item.h;
+        // z축 방향으로 바로 아래에 맞닿아 있는지 확인 (5mm 내외의 오차 허용)
+        if (Math.abs(itemTop - z) <= 5) {
+            // X축 방향으로 겹치는 길이 계산
+            const xOverlap = Math.max(0, Math.min(x + w, item.x + item.w) - Math.max(x, item.x));
+            // YRel축 방향으로 겹치는 길이 계산
+            const yOverlap = Math.max(0, Math.min(yRel + l, item.yRel + item.l) - Math.max(yRel, item.yRel));
+            
+            supportArea += xOverlap * yOverlap;
+        }
+    }
+    
+    // 지탱 비율 75% 이상 확보 검증
+    return (supportArea / targetArea) >= 0.75;
+}
+
 function hasValidBaseForLowProduct(
     x: number,
     y: number,
@@ -905,11 +935,17 @@ function blockPackShelf(W: number, H: number, D: number, allProducts: Product[],
                                             for (let riW = 0; riW < fitCountW && placedCount < rowCount; riW++) {
                                                 const currentItem = identicalProducts[currentIdx];
                                                 
-                                                // 추가: 이 격자 위치에 이 토퍼를 배치할 때 누적 단수가 10단을 넘는지 검사
+                                                const targetX = currentX + (riW * to.w);
+                                                const targetYRel = riL * to.l;
+                                                
+                                                // 1. 공중 부양 방지 지탱면 검사
+                                                if (!hasSupportAtZInTemp(targetX, targetYRel, to.w, to.l, curZ, tempItems)) {
+                                                    continue;
+                                                }
+
+                                                // 2. 이 격자 위치에 이 토퍼를 배치할 때 누적 단수가 10단을 넘는지 검사
                                                 const isCurrLow = isLowHeightProduct(currentItem.p, to.h);
                                                 if (isCurrLow) {
-                                                    const targetX = currentX + (riW * to.w);
-                                                    const targetYRel = riL * to.l;
                                                     const stacked = getStackedCountInTemp(targetX, targetYRel, to.w, to.l, tempItems);
                                                     if (stacked >= 10) {
                                                         continue; // 10단 초과하므로 이 셀에는 배치하지 않고 건너뜀
