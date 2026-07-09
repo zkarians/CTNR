@@ -225,7 +225,17 @@ function doTwoPhasePacking(container: any, normalProducts: Product[], smallProdu
     const normalUnpacked = new Map<string, number>();
     normalProducts.forEach(p => normalUnpacked.set(p.id, p.quantity));
 
-    const runNormal = pIdx > 0 ? [...normalProducts].sort(() => Math.random() - 0.5) : normalProducts;
+    const hasSmall = allProducts.some(isSmallProduct);
+    const runNormal = [...normalProducts].sort((a, b) => {
+        if (hasSmall) {
+            const aIsBig = Number(a.height) >= 500;
+            const bIsBig = Number(b.height) >= 500;
+            if (aIsBig && !bIsBig) return -1;
+            if (!aIsBig && bIsBig) return 1;
+        }
+        if (pIdx > 0) return Math.random() - 0.5;
+        return (b.width * b.height) - (a.width * a.height);
+    });
     let currentY = 0;
 
     // Track walls for Phase 2 (small items on top)
@@ -291,8 +301,15 @@ function doTwoPhasePacking(container: any, normalProducts: Product[], smallProdu
 
     // ---- PHASE 2: Fill headroom of ALL walls with ANY remaining unpacked items ----
     // This catches items that didn't fit in Phase 1's block evaluation
-    const allRemainingProducts = allProducts.filter(p => (unpacked.get(p.id) || 0) > 0 && !isSmallProduct(p));
-    const runPhase2 = pIdx > 0 ? [...allRemainingProducts].sort(() => Math.random() - 0.5) : allRemainingProducts;
+    const allRemainingProducts = allProducts.filter(p => (unpacked.get(p.id) || 0) > 0);
+    const runPhase2 = [...allRemainingProducts].sort((a, b) => {
+        const aIsLow = isLowHeightProduct(a);
+        const bIsLow = isLowHeightProduct(b);
+        if (aIsLow && !bIsLow) return -1;
+        if (!aIsLow && bIsLow) return 1;
+        if (pIdx > 0) return Math.random() - 0.5;
+        return (b.width * b.length * b.height) - (a.width * a.length * a.height);
+    });
 
     for (const wall of walls) {
         let wallMaxZ = 0;
@@ -390,7 +407,16 @@ function doTwoPhasePacking(container: any, normalProducts: Product[], smallProdu
     if (remainingNormal.length > 0) {
         const floorUnpacked = new Map<string, number>();
         remainingNormal.forEach(p => floorUnpacked.set(p.id, p.quantity));
-        const runFloor = pIdx > 0 ? [...remainingNormal].sort(() => Math.random() - 0.5) : remainingNormal;
+        const runFloor = [...remainingNormal].sort((a, b) => {
+            if (hasSmall) {
+                const aIsBig = Number(a.height) >= 500;
+                const bIsBig = Number(b.height) >= 500;
+                if (aIsBig && !bIsBig) return -1;
+                if (!aIsBig && bIsBig) return 1;
+            }
+            if (pIdx > 0) return Math.random() - 0.5;
+            return (b.width * b.height) - (a.width * a.height);
+        });
 
         while (currentY < container.length) {
             const rem = runFloor.filter(p => floorUnpacked.get(p.id)! > 0);
@@ -981,6 +1007,12 @@ function optimizePackResultWithSwaps(container: ContainerDimensions, result: Pac
             for (let pIdx = 0; pIdx < items.length; pIdx++) {
                 const pItem = items[pIdx];
                 if (pItem.product.id === uProd.id) continue;
+
+                // 추가: 스몰 제품이 존재할 때, 바닥(z=0)에 깔린 500mm 이상 대형 베이스는 스왑 제외
+                const hasSmall = items.some(it => isLowHeightProduct(it.product, it.h));
+                if (hasSmall && pItem.z === 0 && Number(pItem.product.height) >= 500) {
+                    continue;
+                }
 
                 // 1. Can we place uProd at pItem's position?
                 const uOrients = getOrients(uProd);
