@@ -19,7 +19,6 @@ function isLowHeightProduct(p: Product, orientedH?: number): boolean {
 }
 
 function getStackedCount(
-    productId: string,
     x: number,
     y: number,
     w: number,
@@ -28,7 +27,7 @@ function getStackedCount(
 ): number {
     let count = 0;
     for (const item of placedItems) {
-        if (item.product.id !== productId) continue;
+        if (!isLowHeightProduct(item.product, item.h)) continue;
         const xOverlap = Math.max(x, item.x) < Math.min(x + w, item.x + item.w) - 0.5;
         const yOverlap = Math.max(y, item.y) < Math.min(y + l, item.y + item.l) - 0.5;
         if (xOverlap && yOverlap) {
@@ -39,7 +38,6 @@ function getStackedCount(
 }
 
 function getStackedCountInTemp(
-    productId: string,
     x: number,
     yRel: number,
     w: number,
@@ -48,7 +46,7 @@ function getStackedCountInTemp(
 ): number {
     let count = 0;
     for (const item of tempItems) {
-        if (item.product.id !== productId) continue;
+        if (!isLowHeightProduct(item.product, item.h)) continue;
         const xOverlap = Math.max(x, item.x) < Math.min(x + w, item.x + item.w) - 0.5;
         const yOverlap = Math.max(yRel, item.yRel) < Math.min(yRel + l, item.yRel + item.l) - 0.5;
         if (xOverlap && yOverlap) {
@@ -330,7 +328,7 @@ function doTwoPhasePacking(container: any, normalProducts: Product[], smallProdu
                         const targetY = wall.y;
                         
                         if (isTopperLow) {
-                            const stacked = getStackedCount(sp.id, targetX, targetY, to.w, to.l, placed);
+                            const stacked = getStackedCount(targetX, targetY, to.w, to.l, placed);
                             if (stacked >= 10) {
                                 continue;
                             }
@@ -528,7 +526,7 @@ function doTwoPhasePacking(container: any, normalProducts: Product[], smallProdu
                                     continue;
                                 }
                                 // 2. 10단 누적 제한 체크
-                                const stacked = getStackedCount(sp.id, targetX, targetY, to.w, to.l, placed);
+                                const stacked = getStackedCount(targetX, targetY, to.w, to.l, placed);
                                 if (stacked >= 10) {
                                     continue;
                                 }
@@ -838,7 +836,7 @@ function blockPackShelf(W: number, H: number, D: number, allProducts: Product[],
                                                 if (isCurrLow) {
                                                     const targetX = currentX + (riW * to.w);
                                                     const targetYRel = riL * to.l;
-                                                    const stacked = getStackedCountInTemp(currentItem.p.id, targetX, targetYRel, to.w, to.l, tempItems);
+                                                    const stacked = getStackedCountInTemp(targetX, targetYRel, to.w, to.l, tempItems);
                                                     if (stacked >= 10) {
                                                         continue; // 10단 초과하므로 이 셀에는 배치하지 않고 건너뜀
                                                     }
@@ -992,7 +990,7 @@ function optimizePackResultWithSwaps(container: ContainerDimensions, result: Pac
                     if (isTopperLow) {
                         const otherItems = items.filter((_, idx) => idx !== pIdx);
                         // 1. 10단 누적 제한 체크
-                        const stacked = getStackedCount(uProd.id, pItem.x, pItem.y, o.w, o.l, otherItems);
+                        const stacked = getStackedCount(pItem.x, pItem.y, o.w, o.l, otherItems);
                         if (stacked + 1 > 10) continue;
                         
                         // 2. 베이스 높이 500 이상 체크
@@ -1079,7 +1077,7 @@ function optimizePackResultWithSwaps(container: ContainerDimensions, result: Pac
                                 const isDisplacedLow = isLowHeightProduct(displacedProduct, o.h);
                                 if (isDisplacedLow) {
                                     // 1. 10단 누적 제한 체크
-                                    const stacked = getStackedCount(displacedProduct.id, x, y, o.w, o.l, tempItems);
+                                    const stacked = getStackedCount(x, y, o.w, o.l, tempItems);
                                     if (stacked + 1 > 10) continue;
                                     
                                     // 2. 베이스 높이 500 이상 체크
