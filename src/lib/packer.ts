@@ -56,7 +56,7 @@ function getStackedCountInTemp(
     return count;
 }
 
-function hasValidBaseForLowProduct(
+function hasSupportAtZ(
     x: number,
     y: number,
     w: number,
@@ -66,10 +66,6 @@ function hasValidBaseForLowProduct(
 ): boolean {
     if (z === 0) return true; // 바닥은 항상 지탱됨
     
-    let hasSupport = false;
-    let hasOtherBase = false;
-    let maxBaseHeightOfOther = 0;
-    
     for (const item of placedItems) {
         const itemTop = item.z + item.h;
         // z축 방향으로 바로 아래에 맞닿아 있는지 확인 (5mm 내외의 오차 허용)
@@ -77,30 +73,38 @@ function hasValidBaseForLowProduct(
             // X-Y 수평 영역이 겹치는지 판단 (0.5mm 오차 허용)
             const xOverlap = Math.max(x, item.x) < Math.min(x + w, item.x + item.w) - 0.5;
             const yOverlap = Math.max(y, item.y) < Math.min(y + l, item.y + item.l) - 0.5;
-            
             if (xOverlap && yOverlap) {
-                hasSupport = true;
-                // 받쳐주는 상자가 높이 270mm 초과인 일반/대형 베이스 제품인 경우
-                if (item.h > 270) {
-                    hasOtherBase = true;
-                    if (item.h > maxBaseHeightOfOther) {
-                        maxBaseHeightOfOther = item.h;
-                    }
+                return true; // 지탱 상자 존재
+            }
+        }
+    }
+    return false;
+}
+
+function hasValidBaseForLowProduct(
+    x: number,
+    y: number,
+    w: number,
+    l: number,
+    placedItems: PackedItem[]
+): boolean {
+    let hasOtherBase = false;
+    let maxBaseHeight = 0;
+    for (const item of placedItems) {
+        const xOverlap = Math.max(x, item.x) < Math.min(x + w, item.x + item.w) - 0.5;
+        const yOverlap = Math.max(y, item.y) < Math.min(y + l, item.y + item.l) - 0.5;
+        if (xOverlap && yOverlap) {
+            if (item.h > 270) {
+                hasOtherBase = true;
+                if (item.h > maxBaseHeight) {
+                    maxBaseHeight = item.h;
                 }
             }
         }
     }
-    
-    // 바로 밑에 직접 받쳐주고 있는 상자가 전혀 없다면 적재 차단 (공중 부양 방지)
-    if (!hasSupport) {
-        return false;
-    }
-    
-    // 받쳐주는 베이스 상자 중 높이 270mm 초과인 일반 제품군이 있을 경우, 그 중 최대 높이가 500mm 이상이어야 함
     if (hasOtherBase) {
-        return maxBaseHeightOfOther >= 500;
+        return maxBaseHeight >= 500;
     }
-    
     return true;
 }
 
@@ -365,9 +369,19 @@ function doTwoPhasePacking(container: any, normalProducts: Product[], smallProdu
                         const targetX = ri * to.w;
                         const targetY = wall.y;
                         
+                        // 1. 공중 부양 방지 지탱면 검사
+                        if (!hasSupportAtZ(targetX, targetY, to.w, to.l, curZ, placed)) {
+                            continue;
+                        }
+                        
                         if (isTopperLow) {
+                            // 2. 10단 누적 제한 체크
                             const stacked = getStackedCount(targetX, targetY, to.w, to.l, placed);
                             if (stacked >= 10) {
+                                continue;
+                            }
+                            // 3. 베이스 높이 500 이상 체크
+                            if (!hasValidBaseForLowProduct(targetX, targetY, to.w, to.l, placed)) {
                                 continue;
                             }
                         }
@@ -566,13 +580,18 @@ function doTwoPhasePacking(container: any, normalProducts: Product[], smallProdu
                             const targetX = w_idx * to.w;
                             const targetY = wall.y + (l_idx * to.l);
                             
+                            // 1. 공중 부양 방지 지탱면 검사
+                            if (!hasSupportAtZ(targetX, targetY, to.w, to.l, curZ, placed)) {
+                                continue;
+                            }
+                            
                             const isTopperLow = isLowHeightProduct(sp, to.h);
                             if (isTopperLow) {
-                                // 1. 베이스 높이 500 이상 체크
-                                if (!hasValidBaseForLowProduct(targetX, targetY, to.w, to.l, curZ, placed)) {
+                                // 2. 베이스 높이 500 이상 체크
+                                if (!hasValidBaseForLowProduct(targetX, targetY, to.w, to.l, placed)) {
                                     continue;
                                 }
-                                // 2. 10단 누적 제한 체크
+                                // 3. 10단 누적 제한 체크
                                 const stacked = getStackedCount(targetX, targetY, to.w, to.l, placed);
                                 if (stacked >= 10) {
                                     continue;
@@ -1014,6 +1033,11 @@ function optimizePackResultWithSwaps(container: ContainerDimensions, result: Pac
                     continue;
                 }
 
+                // 추가: 미적재 제품 uProd가 스몰 상자이고, 스왑하려는 위치가 바닥(z=0)인 경우에도 스왑 차단
+                if (isLowHeightProduct(uProd) && pItem.z === 0) {
+                    continue;
+                }
+
                 // 1. Can we place uProd at pItem's position?
                 const uOrients = getOrients(uProd);
                 let validOrient = null;
@@ -1047,7 +1071,7 @@ function optimizePackResultWithSwaps(container: ContainerDimensions, result: Pac
                         if (stacked + 1 > 10) continue;
                         
                         // 2. 베이스 높이 500 이상 체크
-                        if (!hasValidBaseForLowProduct(pItem.x, pItem.y, o.w, o.l, pItem.z, otherItems)) {
+                        if (!hasValidBaseForLowProduct(pItem.x, pItem.y, o.w, o.l, otherItems)) {
                             continue;
                         }
                     }
@@ -1134,7 +1158,7 @@ function optimizePackResultWithSwaps(container: ContainerDimensions, result: Pac
                                     if (stacked + 1 > 10) continue;
                                     
                                     // 2. 베이스 높이 500 이상 체크
-                                    if (!hasValidBaseForLowProduct(x, y, o.w, o.l, z, tempItems)) {
+                                    if (!hasValidBaseForLowProduct(x, y, o.w, o.l, tempItems)) {
                                         continue;
                                     }
                                 }
