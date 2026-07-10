@@ -424,7 +424,7 @@ function doTwoPhasePacking(container: any, normalProducts: Product[], smallProdu
 
                 const orients = getOrients(sp);
                 for (const to of orients) {
-                    if (to.h > (container.height - curZ) + 0.5 || to.l > wallBaseL + 0.5) continue;
+                    if (to.h > (container.height - curZ) + 0.5 || to.l > wallBaseL + 100 || to.w > wallMaxW + 100) continue;
 
                     const baseMaxH = wall.items.reduce((max: number, it: any) => Math.max(max, isSmallProduct(it.product) ? 0 : it.h), 0);
                     if (baseMaxH < 500 && to.h >= 670) continue;
@@ -436,8 +436,8 @@ function doTwoPhasePacking(container: any, normalProducts: Product[], smallProdu
                     const suppL = Math.min(to.l, wallBaseL);
                     if (suppW * suppL < to.w * to.l * 0.66) continue;
 
-                    const fitCountW = Math.floor((wallMaxW + 0.5) / to.w);
-                    const fitCountL = Math.floor((wallBaseL + 0.5) / to.l);
+                    const fitCountW = Math.floor((wallMaxW + 100) / to.w);
+                    const fitCountL = Math.floor((wallBaseL + 100) / to.l);
                     if (fitCountW === 0 || fitCountL === 0) continue;
                     const fitCount = fitCountW * fitCountL;
                     const rowCount = Math.min(fitCount, avail);
@@ -449,6 +449,11 @@ function doTwoPhasePacking(container: any, normalProducts: Product[], smallProdu
                             if (placedCount >= rowCount) break outerLoop;
                             const targetX = ri * to.w;
                             const targetY = wall.y + (li * to.l);
+
+                            // 컨테이너 경계 초과 검사
+                            if (targetX + to.w > container.width + 0.5 || targetY + to.l > container.length + 0.5) {
+                                continue;
+                            }
                         
                             // 1. 공중 부양 방지 지탱면 검사
                             if (!hasSupportAtZ(targetX, targetY, to.w, to.l, curZ, placed)) {
@@ -662,14 +667,14 @@ function doTwoPhasePacking(container: any, normalProducts: Product[], smallProdu
                 if (avail <= 0) continue;
                 const orients = getOrients(sp);
                 for (const to of orients) {
-                    if (to.h > (container.height - curZ) + 0.5 || to.l > wallBaseL + 0.5) continue;
+                    if (to.h > (container.height - curZ) + 0.5 || to.l > wallBaseL + 100 || to.w > wallMaxW + 100) continue;
                     const suppW = Math.min(to.w, wallMaxW);
                     const suppL = Math.min(to.l, wallBaseL);
                     if (suppW * suppL < to.w * to.l * 0.66) continue;
                     
                     // V4.25: Fill in 2D space (Width x Depth) instead of a single 1D strip.
-                    const fitCountW = Math.floor((wallMaxW + 0.5) / to.w);
-                    const fitCountL = Math.floor((wallBaseL + 0.5) / to.l);
+                    const fitCountW = Math.floor((wallMaxW + 100) / to.w);
+                    const fitCountL = Math.floor((wallBaseL + 100) / to.l);
                     if (fitCountW === 0 || fitCountL === 0) continue;
                     
                     const countLimit = Math.min(fitCountW * fitCountL, avail);
@@ -682,6 +687,11 @@ function doTwoPhasePacking(container: any, normalProducts: Product[], smallProdu
                             
                             const targetX = w_idx * to.w;
                             const targetY = wall.y + (l_idx * to.l);
+
+                            // 컨테이너 경계 초과 검사
+                            if (targetX + to.w > container.width + 0.5 || targetY + to.l > container.length + 0.5) {
+                                continue;
+                            }
                             
                             // 1. 공중 부양 방지 지탱면 검사
                             if (!hasSupportAtZ(targetX, targetY, to.w, to.l, curZ, placed)) {
@@ -944,7 +954,17 @@ function blockPackShelf(W: number, H: number, D: number, allProducts: Product[],
                                 let tempU_Col = new Map(unpacked);
                                 tempU_Col.set(p.id, tempU_Col.get(p.id)! - (hCount * bW * bL));
 
-                            const effectiveAllowSmall = allowSmall || (passIdx === 1);
+                                const baseHeight = hCount * o.h;
+                                const remainingBaseQty = unpacked.get(p.id) || 0;
+                                const hasLargeUnpackedTopper = allProducts.some(topP => {
+                                    if (!isLowHeightProduct(topP, topP.height)) return false;
+                                    const avail = tempU_Col.get(topP.id) || 0;
+                                    if (avail < 10) return false;
+                                    const headroom = H - baseHeight;
+                                    return headroom >= Number(topP.height) * 10;
+                                }) && (remainingBaseQty <= 15);
+
+                                const effectiveAllowSmall = allowSmall || (passIdx === 1);
 
                             // ROW-BASED TOPPING (V4.12)
                             // V5.02: No stacking on top of laid down (lay) items
@@ -964,7 +984,12 @@ function blockPackShelf(W: number, H: number, D: number, allProducts: Product[],
                                     const actualOrients = getOrients(topP);
 
                                     for (const to of actualOrients) {
-                                        if (to.w < 1 || to.l > totalL + 0.5 || to.h > (H - curZ) + 0.5) continue;
+                                        if (to.w < 1 || to.l > totalL + 100 || to.w > totalW + 100 || to.h > (H - curZ) + 0.5) continue;
+
+                                        // If we have a large unpacked flat topper, do not block headroom by stacking large items
+                                        if (to.h >= 500 && hasLargeUnpackedTopper) {
+                                            continue;
+                                        }
 
                                         // V4.16: Base h<500 cannot support topper h≥670
                                         if (o.h < 500 && to.h >= 670) continue;
@@ -1011,8 +1036,8 @@ function blockPackShelf(W: number, H: number, D: number, allProducts: Product[],
                                             return 0;
                                         });
 
-                                        const fitCountW = Math.floor((totalW + 0.5) / to.w);
-                                        const fitCountL = Math.floor((totalL + 0.5) / to.l);
+                                        const fitCountW = Math.floor((totalW + 100) / to.w);
+                                        const fitCountL = Math.floor((totalL + 100) / to.l);
                                         const fitCount = fitCountW * fitCountL;
                                         if (fitCount === 0) continue;
                                         const rowCount = Math.min(fitCount, combinedAvail);
@@ -1027,6 +1052,11 @@ function blockPackShelf(W: number, H: number, D: number, allProducts: Product[],
                                                 
                                                 const targetX = currentX + (riW * to.w);
                                                 const targetYRel = riL * to.l;
+
+                                                // 컨테이너 경계 초과 검사
+                                                if (targetX + to.w > W + 0.5 || targetYRel + to.l > D + 0.5) {
+                                                    continue;
+                                                }
                                                 
                                                 // 1. 공중 부양 방지 지탱면 검사
                                                 if (!hasSupportAtZInTemp(targetX, targetYRel, to.w, to.l, curZ, tempItems)) {
@@ -1108,8 +1138,11 @@ function blockPackShelf(W: number, H: number, D: number, allProducts: Product[],
                                 else layPenalty = 0.8; // Small penalty even if near top
                             }
 
-                            // V4.30: Increase widthFillRatio weight to 1.5 to favor high-width-utilization blocks
-                            const score = (((vol + lookAheadVol + widthFillBonus) / totalL + totalL + volBonus) * (1 + widthFillRatio * 1.5)) * layPenalty;
+                            let score = (((vol + lookAheadVol + widthFillBonus) / totalL + totalL + volBonus) * (1 + widthFillRatio * 1.5)) * layPenalty;
+
+                            if (o.h >= 500 && hCount === 1 && hasLargeUnpackedTopper) {
+                                score *= 2.0; // Give a 100% score bonus to promote 1-high base
+                            }
 
                             if (score > bestBlockScore) {
                                     bestBlockScore = score;
