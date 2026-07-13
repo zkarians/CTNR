@@ -83,11 +83,16 @@ function getTopZAt(
     placedItems: PackedItem[]
 ): number {
     let maxZ = 0;
-    for (const item of placedItems) {
-        const xOverlap = Math.max(x, item.x) < Math.min(x + w, item.x + item.w) - 0.5;
-        const yOverlap = Math.max(y, item.y) < Math.min(y + l, item.y + item.l) - 0.5;
-        if (xOverlap && yOverlap) {
-            maxZ = Math.max(maxZ, item.z + item.h);
+    const xMax = x + w;
+    const yMax = y + l;
+    for (let i = 0; i < placedItems.length; i++) {
+        const item = placedItems[i];
+        if (item.x >= xMax - 0.5 || item.x + item.w <= x + 0.5) continue;
+        if (item.y >= yMax - 0.5 || item.y + item.l <= y + 0.5) continue;
+        
+        const itemTop = item.z + item.h;
+        if (itemTop > maxZ) {
+            maxZ = itemTop;
         }
     }
     return maxZ;
@@ -106,17 +111,21 @@ function hasSupportAtZ(
     const targetArea = w * l;
     let supportArea = 0;
     
-    for (const item of placedItems) {
+    const xMax = x + w;
+    const yMax = y + l;
+    
+    for (let i = 0; i < placedItems.length; i++) {
+        const item = placedItems[i];
         const itemTop = item.z + item.h;
-        // z축 방향으로 바로 아래에 맞닿아 있는지 확인 (5mm 내외의 오차 허용)
-        if (Math.abs(itemTop - z) <= 5) {
-            // X축 방향으로 겹치는 길이 계산
-            const xOverlap = Math.max(0, Math.min(x + w, item.x + item.w) - Math.max(x, item.x));
-            // Y축 방향으로 겹치는 길이 계산
-            const yOverlap = Math.max(0, Math.min(y + l, item.y + item.l) - Math.max(y, item.y));
-            
-            supportArea += xOverlap * yOverlap;
-        }
+        if (Math.abs(itemTop - z) > 5) continue;
+        
+        if (item.x >= xMax || item.x + item.w <= x) continue;
+        if (item.y >= yMax || item.y + item.l <= y) continue;
+        
+        const xOverlap = Math.min(xMax, item.x + item.w) - Math.max(x, item.x);
+        const yOverlap = Math.min(yMax, item.y + item.l) - Math.max(y, item.y);
+        
+        supportArea += xOverlap * yOverlap;
     }
     
     // 지탱해 주는 하단 면적의 총합이 상자 밑면 면적의 75% 이상을 차지해야 적재 가능
@@ -451,21 +460,40 @@ function doTwoPhasePacking(container: any, normalProducts: Product[], smallProdu
 
             // 2층 이상에 적재된 품목(topper)인 경우 Y축 앞방향으로 밀착(Sliding) 처리
             if (targetZ > 0) {
+                const targetXMax = targetX + wi.w;
+                const targetZMax = targetZ + wi.h;
+                
+                // 1. Overlap 후보군 필터링 (X축 및 Z축 모두 겹쳐야 함)
+                const overlapCandidates = [];
+                // 2. getTopZAt/hasSupportAtZ 후보군 필터링 (X축이 겹쳐야 함)
+                const xOverlapCandidates = [];
+                
+                for (let i = 0; i < placed.length; i++) {
+                    const other = placed[i];
+                    const xOverlap = Math.max(targetX, other.x) < Math.min(targetXMax, other.x + other.w) - 0.5;
+                    if (xOverlap) {
+                        xOverlapCandidates.push(other);
+                        const zOverlap = Math.max(targetZ, other.z) < Math.min(targetZMax, other.z + other.h) - 0.5;
+                        if (zOverlap) {
+                            overlapCandidates.push(other);
+                        }
+                    }
+                }
+
                 let slidY = targetY;
                 for (let candidateY = targetY - 1; candidateY >= 0; candidateY--) {
-                    const candidateZ = getTopZAt(targetX, candidateY, wi.w, wi.l, placed);
+                    const candidateZ = getTopZAt(targetX, candidateY, wi.w, wi.l, xOverlapCandidates);
                     if (candidateZ !== targetZ) {
                         continue; // 높이(Z)가 다르면 단차가 있으므로 건너뜀
                     }
-                    if (!hasSupportAtZ(targetX, candidateY, wi.w, wi.l, targetZ, placed)) {
+                    if (!hasSupportAtZ(targetX, candidateY, wi.w, wi.l, targetZ, xOverlapCandidates)) {
                         continue; // 지탱해주는 바닥 제품이 없으면 건너뜀
                     }
                     let overlap = false;
-                    for (const other of placed) {
-                        const xOverlap = Math.max(targetX, other.x) < Math.min(targetX + wi.w, other.x + other.w) - 0.5;
+                    for (let i = 0; i < overlapCandidates.length; i++) {
+                        const other = overlapCandidates[i];
                         const yOverlap = Math.max(candidateY, other.y) < Math.min(candidateY + wi.l, other.y + other.l) - 0.5;
-                        const zOverlap = Math.max(targetZ, other.z) < Math.min(targetZ + wi.h, other.z + other.h) - 0.5;
-                        if (xOverlap && yOverlap && zOverlap) {
+                        if (yOverlap) {
                             overlap = true;
                             break;
                         }
@@ -562,24 +590,43 @@ function doTwoPhasePacking(container: any, normalProducts: Product[], smallProdu
                                 continue;
                             }
 
-                            const targetZ = getTopZAt(targetX, targetY, to.w, to.l, placed);
+                            const targetXMax = targetX + to.w;
+                            // 1. getTopZAt/hasSupportAtZ 후보군 필터링 (X축이 겹쳐야 함)
+                            const xOverlapCandidates = [];
+                            for (let i = 0; i < placed.length; i++) {
+                                const other = placed[i];
+                                if (Math.max(targetX, other.x) < Math.min(targetXMax, other.x + other.w) - 0.5) {
+                                    xOverlapCandidates.push(other);
+                                }
+                            }
+
+                            const targetZ = getTopZAt(targetX, targetY, to.w, to.l, xOverlapCandidates);
+                            const targetZMax = targetZ + to.h;
+
+                            // 2. Overlap 후보군 필터링 (X축이 겹치고 Z축도 겹쳐야 함)
+                            const overlapCandidates = [];
+                            for (let i = 0; i < xOverlapCandidates.length; i++) {
+                                const other = xOverlapCandidates[i];
+                                if (Math.max(targetZ, other.z) < Math.min(targetZMax, other.z + other.h) - 0.5) {
+                                    overlapCandidates.push(other);
+                                }
+                            }
 
                             // Y축 슬라이딩 탐색 (앞쪽으로 바짝 당겨 배치)
                             let slidY = targetY;
                             for (let candidateY = targetY - 1; candidateY >= 0; candidateY--) {
-                                const candidateZ = getTopZAt(targetX, candidateY, to.w, to.l, placed);
+                                const candidateZ = getTopZAt(targetX, candidateY, to.w, to.l, xOverlapCandidates);
                                 if (candidateZ !== targetZ) {
                                     break; // 높이가 다르면 단차가 발생하므로 슬라이딩 불가
                                 }
-                                if (!hasSupportAtZ(targetX, candidateY, to.w, to.l, targetZ, placed)) {
+                                if (!hasSupportAtZ(targetX, candidateY, to.w, to.l, targetZ, xOverlapCandidates)) {
                                     break; // 지탱 공간이 확보되지 않으면 슬라이딩 불가
                                 }
                                 let overlap = false;
-                                for (const other of placed) {
-                                    const xOverlap = Math.max(targetX, other.x) < Math.min(targetX + to.w, other.x + other.w) - 0.5;
+                                for (let i = 0; i < overlapCandidates.length; i++) {
+                                    const other = overlapCandidates[i];
                                     const yOverlap = Math.max(candidateY, other.y) < Math.min(candidateY + to.l, other.y + other.l) - 0.5;
-                                    const zOverlap = Math.max(targetZ, other.z) < Math.min(targetZ + to.h, other.z + other.h) - 0.5;
-                                    if (xOverlap && yOverlap && zOverlap) {
+                                    if (yOverlap) {
                                         overlap = true;
                                         break;
                                     }
@@ -1021,7 +1068,13 @@ function doTwoPhasePacking(container: any, normalProducts: Product[], smallProdu
     return { container: { ...container, id: '40hc' }, items: placed, efficiency: (vol / (container.width * container.length * container.height)) * 100, unpacked: unpackedList };
 }
 
+const orientsCache = new Map<string, any[]>();
+
 function getOrients(p: Product): any[] {
+    const key = `${p.id}_${p.width}_${p.length}_${p.height}_${p.allow_rotate}_${p.allow_lay_down}`;
+    const cached = orientsCache.get(key);
+    if (cached) return cached;
+
     // V5.01: Safety Shutoff. Prevent infinite loops caused by zero-dimension items (curZ += 0 loops).
     if (p.width < 1 || p.length < 1 || p.height < 1) return [];
 
@@ -1040,10 +1093,12 @@ function getOrients(p: Product): any[] {
     const filtered = all.filter(o => isStableBottom(p, o.w, o.l));
 
     // V4.19: Fallback - if everything was filtered out, allow the standard orientation
+    let result = filtered;
     if (filtered.length === 0 && all.length > 0) {
-        return [all[0]];
+        result = [all[0]];
     }
-    return filtered;
+    orientsCache.set(key, result);
+    return result;
 }
 
 function blockPackShelf(W: number, H: number, D: number, allProducts: Product[], unpacked: Map<string, number>, allowSmall: boolean, isMixedWidthSpecialJob: boolean): any[] {
