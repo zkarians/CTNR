@@ -1354,7 +1354,7 @@ function blockPackShelf(W: number, H: number, D: number, allProducts: Product[],
                             const currentRemainW = W - currentX;
                             const widthFillBonus = remainW < 50 ? (totalW / currentRemainW) * 100000 : 0;
                             const volBonus = vol * 0.0000001;
-                            const widthFillRatio = isMixedWidthSpecialJob ? (totalW + lookAheadW) / currentRemainW : totalW / currentRemainW;
+                            const widthFillRatio = (totalW + lookAheadW) / currentRemainW;
                             
                             // V5.02: Penalize 'lay' orientations that leave too much headroom to force them to the top
                             let layPenalty = 1.0;
