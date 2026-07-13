@@ -57,6 +57,42 @@ function getStackedCountInTemp(
     return count;
 }
 
+function getMinTopZOfWall(wall: any, placedItems: PackedItem[]): number {
+    let minZ = Infinity;
+    const step = 50;
+    const maxW = wall.maxW || 2352;
+    for (let x = 25; x < maxW; x += step) {
+        let maxZAtX = 0;
+        for (const item of placedItems) {
+            const xOverlap = x >= item.x && x < item.x + item.w;
+            const yOverlap = (wall.y + wall.depth / 2) >= item.y && (wall.y + wall.depth / 2) < item.y + item.l;
+            if (xOverlap && yOverlap) {
+                maxZAtX = Math.max(maxZAtX, item.z + item.h);
+            }
+        }
+        minZ = Math.min(minZ, maxZAtX);
+    }
+    return minZ === Infinity ? 0 : minZ;
+}
+
+function getTopZAt(
+    x: number,
+    y: number,
+    w: number,
+    l: number,
+    placedItems: PackedItem[]
+): number {
+    let maxZ = 0;
+    for (const item of placedItems) {
+        const xOverlap = Math.max(x, item.x) < Math.min(x + w, item.x + item.w) - 0.5;
+        const yOverlap = Math.max(y, item.y) < Math.min(y + l, item.y + item.l) - 0.5;
+        if (xOverlap && yOverlap) {
+            maxZ = Math.max(maxZ, item.z + item.h);
+        }
+    }
+    return maxZ;
+}
+
 function hasSupportAtZ(
     x: number,
     y: number,
@@ -125,49 +161,59 @@ function hasValidBaseForLowProduct(
     placedItems: PackedItem[],
     curZ: number
 ): boolean {
-    let hasDirectBase = false;
-    let maxDirectBaseH = 0;
+    const queue: { x: number; y: number; w: number; l: number; z: number }[] = [
+        { x, y, w, l, z: curZ }
+    ];
+    const visited = new Set<string>();
 
-    for (const item of placedItems) {
-        const xOverlap = Math.max(x, item.x) < Math.min(x + w, item.x + item.w) - 0.5;
-        const yOverlap = Math.max(y, item.y) < Math.min(y + l, item.y + item.l) - 0.5;
+    while (queue.length > 0) {
+        const curr = queue.shift()!;
+        if (curr.z === 0) return true;
 
-        if (xOverlap && yOverlap) {
-            // 바로 아래에 맞닿아 있는 베이스만 인정 (5mm 오차 허용)
-            const isDirectBase = Math.abs((item.z + item.h) - curZ) <= 5;
-            if (isDirectBase && item.h > 270) {
-                hasDirectBase = true;
-                if (item.h > maxDirectBaseH) {
-                    maxDirectBaseH = item.h;
+        for (const item of placedItems) {
+            const xOverlap = Math.max(curr.x, item.x) < Math.min(curr.x + curr.w, item.x + item.w) - 0.5;
+            const yOverlap = Math.max(curr.y, item.y) < Math.min(curr.y + curr.l, item.y + item.l) - 0.5;
+            if (xOverlap && yOverlap) {
+                const isDirectBase = Math.abs((item.z + item.h) - curr.z) <= 5;
+                if (isDirectBase) {
+                    if (item.h >= 500) return true;
+                    if (item.z === 0) return true;
+                    const key = `${item.x},${item.y},${item.z}`;
+                    if (!visited.has(key)) {
+                        visited.add(key);
+                        queue.push({ x: item.x, y: item.y, w: item.w, l: item.l, z: item.z });
+                    }
                 }
             }
         }
     }
-
-    // 바로 아래 베이스가 없거나 높이가 500mm 미만이면 불가
-    if (!hasDirectBase) return false;
-    return maxDirectBaseH >= 500;
+    return false;
 }
 
-function isBaseLowProduct(
+function isValidHeightStack(
     x: number,
     y: number,
     w: number,
     l: number,
     placedItems: PackedItem[],
-    curZ: number
+    curZ: number,
+    topperH: number
 ): boolean {
     for (const item of placedItems) {
         const xOverlap = Math.max(x, item.x) < Math.min(x + w, item.x + item.w) - 0.5;
         const yOverlap = Math.max(y, item.y) < Math.min(y + l, item.y + item.l) - 0.5;
         if (xOverlap && yOverlap) {
             const isDirectBase = Math.abs((item.z + item.h) - curZ) <= 5;
-            if (isDirectBase && isLowHeightProduct(item.product, item.h)) {
-                return true;
+            if (isDirectBase) {
+                if (item.h <= 500) {
+                    if (topperH > item.h + 50) {
+                        return false;
+                    }
+                }
             }
         }
     }
-    return false;
+    return true;
 }
 
 function hasItemsOnTop(item: PackedItem, allItems: PackedItem[]): boolean {
@@ -213,7 +259,7 @@ function isStableBottom(p: Product, orientedW: number, orientedL: number): boole
  * V4.24: Evaluate the value of a generated wall block. 
  * Combines packed volume density (volume / depth) and width utilization.
  */
-function evaluateWallScore(wallItems: any[], containerWidth: number): number {
+function evaluateWallScore(wallItems: any[], containerWidth: number, isMixedWidthSpecialJob?: boolean): number {
     if (!wallItems || wallItems.length === 0) return 0;
     
     let vol = 0;
@@ -229,6 +275,10 @@ function evaluateWallScore(wallItems: any[], containerWidth: number): number {
     if (maxD <= 0) return 0;
     
     const widthRatio = containerWidth > 0 ? maxW / containerWidth : 0;
+    if (isMixedWidthSpecialJob) {
+        // V4.31: Favor high width-utilization walls using cubic power
+        return (vol / maxD) * (1 + Math.pow(widthRatio, 3) * 5.0);
+    }
     // V4.30: Increase width utilization bonus to favor 3-column refrigerator walls (775mm wide)
     return (vol / maxD) * (1 + widthRatio * 2.5);
 }
@@ -265,18 +315,30 @@ export function packContainer(
 
     const totalQty = products.reduce((acc, p) => acc + p.quantity, 0);
 
+    // V6.15: Detect 750mm/800mm mixed width special scenario to conditionally enable optimized packing rules
+    const qty750 = products
+        .filter(p => p.width >= 740 && p.width <= 760)
+        .reduce((sum, p) => sum + p.quantity, 0);
+    const qty800 = products
+        .filter(p => p.width >= 790 && p.width <= 810)
+        .reduce((sum, p) => sum + p.quantity, 0);
+    const isMixedWidthSpecialJob = qty750 > 0 && qty800 > 0 && (qty750 / qty800 >= 1.5) && (qty750 / qty800 <= 2.5);
+
     // Separate normal and small products
     const normalProducts = products.filter(p => !isSmallProduct(p));
     const smallProducts = products.filter(p => isSmallProduct(p));
 
-    const sortedNormal = [...normalProducts].sort((a, b) => (b.width * b.height) - (a.width * a.height));
+    const sortedNormal = [...normalProducts].sort((a, b) => {
+        if (b.height !== a.height) return b.height - a.height;
+        return (b.width * b.length) - (a.width * a.length);
+    });
     const sortedSmall = [...smallProducts].sort((a, b) => (b.width * b.length * b.height) - (a.width * a.length * a.height));
 
     let bestRes: PackingResult | null = null;
     const passes = Math.max(numPasses, 30);
 
     for (let pIdx = 0; pIdx < passes; pIdx++) {
-        let res = doTwoPhasePacking(container, sortedNormal, sortedSmall, products, pIdx);
+        let res = doTwoPhasePacking(container, sortedNormal, sortedSmall, products, pIdx, isMixedWidthSpecialJob);
         
         // V5.03: Append invalid 0-dimension products to the unpacked list so user sees them as failed
         if (invalidProducts.length > 0) {
@@ -293,10 +355,11 @@ export function packContainer(
         }
         if (bestRes.items.length === totalQty) break;
     }
+
     return bestRes!;
 }
 
-function doTwoPhasePacking(container: any, normalProducts: Product[], smallProducts: Product[], allProducts: Product[], pIdx: number): PackingResult {
+function doTwoPhasePacking(container: any, normalProducts: Product[], smallProducts: Product[], allProducts: Product[], pIdx: number, isMixedWidthSpecialJob: boolean): PackingResult {
     const unpacked = new Map<string, number>();
     allProducts.forEach(p => unpacked.set(p.id, p.quantity));
     const placed: PackedItem[] = [];
@@ -307,11 +370,14 @@ function doTwoPhasePacking(container: any, normalProducts: Product[], smallProdu
 
     const hasSmall = allProducts.some(isSmallProduct);
     const runNormal = [...normalProducts].sort((a, b) => {
-        if (hasSmall) {
-            const aIsBig = Number(a.height) >= 500;
-            const bIsBig = Number(b.height) >= 500;
-            if (aIsBig && !bIsBig) return -1;
-            if (!aIsBig && bIsBig) return 1;
+        // V6.17: 1350mm 이상의 대형 제품은 무작위 탐색 시에도 항상 최우선 정렬하여 안쪽(y=0)부터 적재되도록 강제
+        const aTall = a.height >= 1350;
+        const bTall = b.height >= 1350;
+        if (aTall && !bTall) return -1;
+        if (!aTall && bTall) return 1;
+
+        if (b.height !== a.height) {
+            return b.height - a.height;
         }
         if (pIdx > 0) return Math.random() - 0.5;
         return (b.width * b.height) - (a.width * a.height);
@@ -325,21 +391,30 @@ function doTwoPhasePacking(container: any, normalProducts: Product[], smallProdu
         const rem = runNormal.filter(p => normalUnpacked.get(p.id)! > 0);
         if (rem.length === 0) break;
 
-        const p1 = rem[0];
-        // V4.23: Include rotated dimensions in depth candidates to allow better width-fill orientation
-        const depthCandidates = p1.allow_rotate 
-            ? [p1.length, p1.width, p1.height] 
-            : [p1.length, p1.height];
-        
-        // V4.27 Depth Expansion: Include small product orientations to allow scavenging best rotations
-        const smallRem = allProducts.filter(p => (unpacked.get(p.id) || 0) > 0 && isSmallProduct(p));
-        for (const sp of smallRem) {
-            depthCandidates.push(sp.length, sp.width);
+        const depthCandidates: number[] = [];
+        if (isMixedWidthSpecialJob) {
+            for (const rp of rem) {
+                depthCandidates.push(rp.length);
+                if (rp.allow_rotate) {
+                    depthCandidates.push(rp.width, rp.height);
+                } else {
+                    depthCandidates.push(rp.height);
+                }
+            }
+        } else {
+            const p1 = rem[0];
+            depthCandidates.push(...(p1.allow_rotate ? [p1.length, p1.width, p1.height] : [p1.length, p1.height]));
+            const smallRem = allProducts.filter(p => (unpacked.get(p.id) || 0) > 0 && isSmallProduct(p));
+            for (const sp of smallRem) {
+                depthCandidates.push(sp.length, sp.width);
+            }
         }
 
-        const depths = Array.from(new Set(depthCandidates))
-            .filter(d => d > 0 && d <= (container.length - currentY) + 0.5)
-            .sort((a, b) => b - a);
+        let depths = Array.from(new Set(depthCandidates))
+            .filter(d => d > 0 && d <= (container.length - currentY) + 0.5);
+        if (!isMixedWidthSpecialJob) {
+            depths.sort((a, b) => b - a);
+        }
 
         let bestWItems: any[] = [];
         let bestActualDepth = 0;
@@ -348,9 +423,12 @@ function doTwoPhasePacking(container: any, normalProducts: Product[], smallProdu
         for (const limitD of depths) {
             // V4.26: Pass global unpacked and allProducts so blockPackShelf can scavenge small items for side gaps
             const tempU = new Map(unpacked);
-            const wallItems = blockPackShelf(container.width, container.height, limitD, allProducts, tempU, false);
+            const wallItems = blockPackShelf(container.width, container.height, limitD, allProducts, tempU, false, isMixedWidthSpecialJob);
 
-            const score = evaluateWallScore(wallItems, container.width);
+            let score = evaluateWallScore(wallItems, container.width, isMixedWidthSpecialJob);
+            if (isMixedWidthSpecialJob && pIdx > 0) {
+                score *= (0.9 + Math.random() * 0.2); // ±10% random noise to explore other wall options in random trials
+            }
             if (score > bestWallScore) {
                 bestWallScore = score;
                 bestWItems = wallItems;
@@ -365,8 +443,42 @@ function doTwoPhasePacking(container: any, normalProducts: Product[], smallProdu
         }
 
         const wallPlaced: PackedItem[] = [];
-        for (const wi of bestWItems) {
-            const pi = { ...wi, y: currentY + (wi.yRel || 0), product: { ...wi.product, quantity: 1 } };
+        const sortedWItems = [...bestWItems].sort((a, b) => a.z - b.z);
+        for (const wi of sortedWItems) {
+            let targetY = currentY + (wi.yRel || 0);
+            const targetX = wi.x;
+            const targetZ = wi.z;
+
+            // 2층 이상에 적재된 품목(topper)인 경우 Y축 앞방향으로 밀착(Sliding) 처리
+            if (targetZ > 0) {
+                let slidY = targetY;
+                for (let candidateY = targetY - 1; candidateY >= 0; candidateY--) {
+                    const candidateZ = getTopZAt(targetX, candidateY, wi.w, wi.l, placed);
+                    if (candidateZ !== targetZ) {
+                        continue; // 높이(Z)가 다르면 단차가 있으므로 건너뜀
+                    }
+                    if (!hasSupportAtZ(targetX, candidateY, wi.w, wi.l, targetZ, placed)) {
+                        continue; // 지탱해주는 바닥 제품이 없으면 건너뜀
+                    }
+                    let overlap = false;
+                    for (const other of placed) {
+                        const xOverlap = Math.max(targetX, other.x) < Math.min(targetX + wi.w, other.x + other.w) - 0.5;
+                        const yOverlap = Math.max(candidateY, other.y) < Math.min(candidateY + wi.l, other.y + other.l) - 0.5;
+                        const zOverlap = Math.max(targetZ, other.z) < Math.min(targetZ + wi.h, other.z + other.h) - 0.5;
+                        if (xOverlap && yOverlap && zOverlap) {
+                            overlap = true;
+                            break;
+                        }
+                    }
+                    if (overlap) {
+                        continue; // 다른 상자와 충돌 시 건너뜀
+                    }
+                    slidY = candidateY;
+                }
+                targetY = slidY;
+            }
+
+            const pi = { ...wi, y: targetY, product: { ...wi.product, quantity: 1 } };
             placed.push(pi);
             wallPlaced.push(pi);
             unpacked.set(wi.product.id, unpacked.get(wi.product.id)! - 1);
@@ -379,16 +491,10 @@ function doTwoPhasePacking(container: any, normalProducts: Product[], smallProdu
         currentY += bestActualDepth;
     }
 
-    // ---- PHASE 2: Fill headroom of ALL walls with ANY remaining unpacked items ----
-    // This catches items that didn't fit in Phase 1's block evaluation
     const allRemainingProducts = allProducts.filter(p => (unpacked.get(p.id) || 0) > 0);
     const runPhase2 = [...allRemainingProducts].sort((a, b) => {
-        const aIsLow = isLowHeightProduct(a);
-        const bIsLow = isLowHeightProduct(b);
-        if (aIsLow && !bIsLow) return -1;
-        if (!aIsLow && bIsLow) return 1;
-        if (pIdx > 0) return Math.random() - 0.5;
-        return (b.width * b.length * b.height) - (a.width * a.length * a.height);
+        if (b.height !== a.height) return b.height - a.height;
+        return (b.width * b.length) - (a.width * a.length);
     });
 
     for (const wall of walls) {
@@ -410,9 +516,10 @@ function doTwoPhasePacking(container: any, normalProducts: Product[], smallProdu
             if (rightEdge > wallMaxW) wallMaxW = rightEdge;
         }
 
-        let curZ = wallMaxZ;
+        let curZ = getMinTopZOfWall(wall, placed);
         let filled = !isTopLay; // V5.02: Block filling if top item is laid down
-        while (filled && curZ < container.height) {
+        let safetyCounter = 0;
+        while (filled && curZ < container.height && safetyCounter++ < 200) {
             filled = false;
             let bestRowScore = -Infinity;
             let bestRowItems: any[] = [];
@@ -424,7 +531,7 @@ function doTwoPhasePacking(container: any, normalProducts: Product[], smallProdu
 
                 const orients = getOrients(sp);
                 for (const to of orients) {
-                    if (to.h > (container.height - curZ) + 0.5 || to.l > wallBaseL + 100 || to.w > wallMaxW + 100) continue;
+                    if (to.h > (container.height - curZ) + 0.5 || to.l > wallBaseL || to.w > wallMaxW + 100) continue;
 
                     const baseMaxH = wall.items.reduce((max: number, it: any) => Math.max(max, isSmallProduct(it.product) ? 0 : it.h), 0);
                     if (baseMaxH < 500 && to.h >= 670) continue;
@@ -448,15 +555,47 @@ function doTwoPhasePacking(container: any, normalProducts: Product[], smallProdu
                         for (let ri = 0; ri < fitCountW; ri++) {
                             if (placedCount >= rowCount) break outerLoop;
                             const targetX = ri * to.w;
-                            const targetY = wall.y + (li * to.l);
+                            let targetY = wall.y + (li * to.l);
 
                             // 컨테이너 경계 초과 검사
                             if (targetX + to.w > container.width + 0.5 || targetY + to.l > container.length + 0.5) {
                                 continue;
                             }
+
+                            const targetZ = getTopZAt(targetX, targetY, to.w, to.l, placed);
+
+                            // Y축 슬라이딩 탐색 (앞쪽으로 바짝 당겨 배치)
+                            let slidY = targetY;
+                            for (let candidateY = targetY - 1; candidateY >= 0; candidateY--) {
+                                const candidateZ = getTopZAt(targetX, candidateY, to.w, to.l, placed);
+                                if (candidateZ !== targetZ) {
+                                    break; // 높이가 다르면 단차가 발생하므로 슬라이딩 불가
+                                }
+                                if (!hasSupportAtZ(targetX, candidateY, to.w, to.l, targetZ, placed)) {
+                                    break; // 지탱 공간이 확보되지 않으면 슬라이딩 불가
+                                }
+                                let overlap = false;
+                                for (const other of placed) {
+                                    const xOverlap = Math.max(targetX, other.x) < Math.min(targetX + to.w, other.x + other.w) - 0.5;
+                                    const yOverlap = Math.max(candidateY, other.y) < Math.min(candidateY + to.l, other.y + other.l) - 0.5;
+                                    const zOverlap = Math.max(targetZ, other.z) < Math.min(targetZ + to.h, other.z + other.h) - 0.5;
+                                    if (xOverlap && yOverlap && zOverlap) {
+                                        overlap = true;
+                                        break;
+                                    }
+                                }
+                                if (overlap) {
+                                    break; // 다른 상자와 충돌 시 슬라이딩 불가
+                                }
+                                slidY = candidateY;
+                            }
+                            targetY = slidY;
+                            if (targetZ + to.h > container.height + 0.5) {
+                                continue;
+                            }
                         
                             // 1. 공중 부양 방지 지탱면 검사
-                            if (!hasSupportAtZ(targetX, targetY, to.w, to.l, curZ, placed)) {
+                            if (!hasSupportAtZ(targetX, targetY, to.w, to.l, targetZ, placed)) {
                                 continue;
                             }
 
@@ -465,7 +604,7 @@ function doTwoPhasePacking(container: any, normalProducts: Product[], smallProdu
                             for (const other of placed) {
                                 const xOverlap = Math.max(targetX, other.x) < Math.min(targetX + to.w, other.x + other.w) - 0.5;
                                 const yOverlap = Math.max(targetY, other.y) < Math.min(targetY + to.l, other.y + other.l) - 0.5;
-                                const zOverlap = Math.max(curZ, other.z) < Math.min(curZ + to.h, other.z + other.h) - 0.5;
+                                const zOverlap = Math.max(targetZ, other.z) < Math.min(targetZ + to.h, other.z + other.h) - 0.5;
                                 if (xOverlap && yOverlap && zOverlap) {
                                     overlap = true;
                                     break;
@@ -479,18 +618,18 @@ function doTwoPhasePacking(container: any, normalProducts: Product[], smallProdu
                                 continue;
                             }
 
-                            // 3. 바로 아래가 낮은 제품(h <= 270)인 경우 위에 적재 금지 (단, z=0 바닥인 경우는 허용)
-                            if (curZ > 0 && isBaseLowProduct(targetX, targetY, to.w, to.l, placed, curZ)) {
+                            // 3. 아래 제품의 높이가 500mm 이하일 때, 새로 쌓으려는 제품의 높이가 기존 제품 높이 + 50mm를 초과하면 적재 제한
+                            if (targetZ > 0 && !isValidHeightStack(targetX, targetY, to.w, to.l, placed, targetZ, to.h)) {
                                 continue;
                             }
 
                             if (isTopperLow) {
                                 // 4. 베이스 높이 500 이상 체크 (바로 아래 베이스 기준)
-                                if (!hasValidBaseForLowProduct(targetX, targetY, to.w, to.l, placed, curZ)) {
+                                if (!hasValidBaseForLowProduct(targetX, targetY, to.w, to.l, placed, targetZ)) {
                                     continue;
                                 }
                             }
-                            rowItems.push({ product: sp, x: targetX, y: targetY, z: curZ, w: to.w, l: to.l, h: to.h, orientation: to.type });
+                            rowItems.push({ product: sp, x: targetX, y: targetY, z: targetZ, w: to.w, l: to.l, h: to.h, orientation: to.type });
                             placedCount++;
                         }
                     }
@@ -500,7 +639,19 @@ function doTwoPhasePacking(container: any, normalProducts: Product[], smallProdu
                     const potentialL = fitCountL * to.l;
                     const potentialUtil = (potentialW * potentialL) / (wallMaxW * wallBaseL);
                     const rowVol = rowCount * to.w * to.l * to.h;
-                    const rowScore = fitCount * 1_000_000 + rowVol * potentialUtil;
+                    
+                    let penalty = 0;
+                    if (to.h > baseMaxH) {
+                        penalty = 5_000_000; // 역순 적재 패널티
+                    }
+                    // V6.16: baseMaxH가 1350mm 이상인 경우, 10단 이상 적재 가능한 제품(isLowHeightProduct)에 가중치 부여
+                    let bonus = 0;
+                    if (baseMaxH >= 1350) {
+                        if (isLowHeightProduct(sp, to.h)) {
+                            bonus = 100_000_000_000;
+                        }
+                    }
+                    const rowScore = fitCount * 1_000_000 + rowVol * potentialUtil - penalty + bonus;
 
                     if (rowScore > bestRowScore) {
                         bestRowScore = rowScore;
@@ -517,7 +668,7 @@ function doTwoPhasePacking(container: any, normalProducts: Product[], smallProdu
                     wall.items.push(pi);
                     unpacked.set(ri.product.id, unpacked.get(ri.product.id)! - 1);
                 }
-                curZ += bestRowH;
+                curZ = getMinTopZOfWall(wall, placed);
                 // V5.04: If the stacked item is laid down, stop filling on top of it.
                 filled = bestRowItems[0].orientation !== 'lay';
             }
@@ -566,9 +717,12 @@ function doTwoPhasePacking(container: any, normalProducts: Product[], smallProdu
             for (const limitD of depths) {
                 // V4.26 Scavenge side gaps in Phase 3 as well
                 const tempU = new Map(unpacked);
-                const wallItems = blockPackShelf(container.width, container.height, limitD, allProducts, tempU, false);
+                const wallItems = blockPackShelf(container.width, container.height, limitD, allProducts, tempU, false, isMixedWidthSpecialJob);
 
-                const score = evaluateWallScore(wallItems, container.width);
+                let score = evaluateWallScore(wallItems, container.width, isMixedWidthSpecialJob);
+                if (pIdx > 0) {
+                    score *= (0.9 + Math.random() * 0.2);
+                }
                 if (score > bestWallScore) {
                     bestWallScore = score;
                     bestWItems = wallItems;
@@ -654,9 +808,10 @@ function doTwoPhasePacking(container: any, normalProducts: Product[], smallProdu
         let wallMaxW = wall.maxW;
         let wallBaseL = wall.depth;
 
-        let curZ = wallMaxZ;
+        let curZ = getMinTopZOfWall(wall, placed);
         let filled = !wall.isTopLay; // V5.02: Block filling if top item is laid down
-        while (filled && curZ < container.height) {
+        let safetyCounter = 0;
+        while (filled && curZ < container.height && safetyCounter++ < 200) {
             filled = false;
             let bestRowScore = -Infinity;
             let bestRowItems: any[] = [];
@@ -692,9 +847,14 @@ function doTwoPhasePacking(container: any, normalProducts: Product[], smallProdu
                             if (targetX + to.w > container.width + 0.5 || targetY + to.l > container.length + 0.5) {
                                 continue;
                             }
+
+                            const targetZ = getTopZAt(targetX, targetY, to.w, to.l, placed);
+                            if (targetZ + to.h > container.height + 0.5) {
+                                continue;
+                            }
                             
                             // 1. 공중 부양 방지 지탱면 검사
-                            if (!hasSupportAtZ(targetX, targetY, to.w, to.l, curZ, placed)) {
+                            if (!hasSupportAtZ(targetX, targetY, to.w, to.l, targetZ, placed)) {
                                 continue;
                             }
 
@@ -703,7 +863,7 @@ function doTwoPhasePacking(container: any, normalProducts: Product[], smallProdu
                             for (const other of placed) {
                                 const xOverlap = Math.max(targetX, other.x) < Math.min(targetX + to.w, other.x + other.w) - 0.5;
                                 const yOverlap = Math.max(targetY, other.y) < Math.min(targetY + to.l, other.y + other.l) - 0.5;
-                                const zOverlap = Math.max(curZ, other.z) < Math.min(curZ + to.h, other.z + other.h) - 0.5;
+                                const zOverlap = Math.max(targetZ, other.z) < Math.min(targetZ + to.h, other.z + other.h) - 0.5;
                                 if (xOverlap && yOverlap && zOverlap) {
                                     overlap = true;
                                     break;
@@ -719,14 +879,14 @@ function doTwoPhasePacking(container: any, normalProducts: Product[], smallProdu
                                 continue;
                             }
 
-                            // 3. 바로 아래가 낮은 제품(h <= 270)인 경우 위에 적재 금지 (단, z=0 바닥인 경우는 허용)
-                            if (curZ > 0 && isBaseLowProduct(targetX, targetY, to.w, to.l, placed, curZ)) {
+                            // 3. 아래 제품의 높이가 500mm 이하일 때, 새로 쌓으려는 제품의 높이가 기존 제품 높이 + 50mm를 초과하면 적재 제한
+                            if (targetZ > 0 && !isValidHeightStack(targetX, targetY, to.w, to.l, placed, targetZ, to.h)) {
                                 continue;
                             }
 
                             if (isTopperLow) {
                                 // 4. 베이스 높이 500 이상 체크 (바로 아래 베이스 기준)
-                                if (!hasValidBaseForLowProduct(targetX, targetY, to.w, to.l, placed, curZ)) {
+                                if (!hasValidBaseForLowProduct(targetX, targetY, to.w, to.l, placed, targetZ)) {
                                     continue;
                                 }
                             }
@@ -735,7 +895,7 @@ function doTwoPhasePacking(container: any, normalProducts: Product[], smallProdu
                                 product: sp, 
                                 x: targetX, 
                                 y: targetY, 
-                                z: curZ, 
+                                z: targetZ, 
                                 w: to.w, l: to.l, h: to.h, 
                                 orientation: to.type 
                             });
@@ -759,7 +919,7 @@ function doTwoPhasePacking(container: any, normalProducts: Product[], smallProdu
                     placed.push({ ...ri, product: { ...ri.product, quantity: 1 } });
                     unpacked.set(ri.product.id, unpacked.get(ri.product.id)! - 1);
                 }
-                curZ += bestRowH;
+                curZ = getMinTopZOfWall(wall, placed);
                 // V5.04: If the stacked item is laid down, stop filling on top of it.
                 filled = bestRowItems[0].orientation !== 'lay';
             }
@@ -792,9 +952,9 @@ function doTwoPhasePacking(container: any, normalProducts: Product[], smallProdu
 
             for (const limitD of depths) {
                 const tempU = new Map(floorUnpacked);
-                const wallItems = blockPackShelf(container.width, container.height, limitD, runSmallFloor, tempU, true);
+                const wallItems = blockPackShelf(container.width, container.height, limitD, runSmallFloor, tempU, true, isMixedWidthSpecialJob);
                 
-                const score = evaluateWallScore(wallItems, container.width);
+                const score = evaluateWallScore(wallItems, container.width, isMixedWidthSpecialJob);
                 if (score > bestWallScore) {
                     bestWallScore = score;
                     bestWItems = wallItems;
@@ -886,7 +1046,7 @@ function getOrients(p: Product): any[] {
     return filtered;
 }
 
-function blockPackShelf(W: number, H: number, D: number, allProducts: Product[], unpacked: Map<string, number>, allowSmall: boolean): any[] {
+function blockPackShelf(W: number, H: number, D: number, allProducts: Product[], unpacked: Map<string, number>, allowSmall: boolean, isMixedWidthSpecialJob: boolean): any[] {
     const wallItems: any[] = [];
     let currentX = 0;
 
@@ -984,27 +1144,19 @@ function blockPackShelf(W: number, H: number, D: number, allProducts: Product[],
                                     const actualOrients = getOrients(topP);
 
                                     for (const to of actualOrients) {
-                                        if (to.w < 1 || to.l > totalL + 100 || to.w > totalW + 100 || to.h > (H - curZ) + 0.5) continue;
+                                        if (to.w < 1 || to.l > totalL + 100 || to.w > totalW + 300 || to.h > (H - curZ) + 0.5) continue;
 
                                         // If we have a large unpacked flat topper, do not block headroom by stacking large items
                                         if (to.h >= 500 && hasLargeUnpackedTopper) {
                                             continue;
                                         }
 
-                                        // V4.16: Base h<500 cannot support topper h≥670
-                                        if (o.h < 500 && to.h >= 670) continue;
-
-                                        // 만약 토퍼가 낮은 제품인 경우, 아래에서 받쳐주는 베이스(o)의 높이가 500 이상이어야 함
-                                        // 단, 베이스(p)가 이미 낮은 제품인 경우에는 연속해서 쌓는 것이므로 제외
-                                        const isTopperLow = isLowHeightProduct(topP, to.h);
-                                        if (isTopperLow) {
-                                            const isBaseLow = isLowHeightProduct(p, o.h);
-                                            if (!isBaseLow && o.h < 500) continue;
-                                        } else {
-                                            // 토퍼가 대형(height >= 500)인 경우, 아래 베이스가 낮은 제품이면 적재 금지
-                                            const isBaseLow = isLowHeightProduct(p, o.h);
-                                            if (isBaseLow) continue;
-                                        }
+                                         // 아래 제품의 높이(o.h)가 500mm 이하인 경우, 위에 적재할 토퍼의 높이(to.h)가 아래 제품 높이 + 50mm를 초과하면 적재 금지
+                                         if (o.h <= 500) {
+                                             if (to.h > o.h + 50) {
+                                                 continue;
+                                             }
+                                         }
 
                                         const suppW = Math.min(to.w, totalW);
                                         const suppL = Math.min(to.l, totalL);
@@ -1036,9 +1188,12 @@ function blockPackShelf(W: number, H: number, D: number, allProducts: Product[],
                                             return 0;
                                         });
 
-                                        const fitCountW = Math.floor((totalW + 100) / to.w);
-                                        const fitCountL = Math.floor((totalL + 100) / to.l);
-                                        const fitCount = fitCountW * fitCountL;
+                                         const isLastBlock = (W - currentX - totalW) <= 50;
+                                         const topperWLimit = (isMixedWidthSpecialJob && !isLastBlock) ? 0 : 300;
+                                         const maxAllowedW = Math.min(totalW + topperWLimit, W - currentX);
+                                         const fitCountW = Math.floor(maxAllowedW / to.w);
+                                         const fitCountL = Math.floor(Math.min(totalL + 100, D) / to.l);
+                                         const fitCount = fitCountW * fitCountL;
                                         if (fitCount === 0) continue;
                                         const rowCount = Math.min(fitCount, combinedAvail);
 
@@ -1063,6 +1218,7 @@ function blockPackShelf(W: number, H: number, D: number, allProducts: Product[],
                                                     continue;
                                                 }
 
+
                                                 // 2. 이 격자 위치에 이 토퍼를 배치할 때 누적 단수가 10단을 넘는지 검사 (모든 제품에 적용)
                                                 const stacked = getStackedCountInTemp(targetX, targetYRel, to.w, to.l, tempItems);
                                                 if (stacked >= 10) {
@@ -1084,7 +1240,18 @@ function blockPackShelf(W: number, H: number, D: number, allProducts: Product[],
                                         const potentialL = fitCountL * to.l;
                                         const potentialUtil = (potentialW * potentialL) / (totalW * totalL);
                                         const rowVol = rowCount * to.w * to.l * to.h;
-                                        const rowScore = fitCount * 1_000_000 + rowVol * potentialUtil;
+                                        let penalty = 0;
+                                        if (to.h > o.h) {
+                                            penalty = 5_000_000; // 큰 제품이 작은 제품 위에 올라가는 것에 대한 패널티
+                                        }
+                                        // V6.16: o.h가 1350mm 이상인 경우, 10단 이상 적재 가능한 제품(isLowHeightProduct)에 가중치 부여
+                                        let bonus = 0;
+                                        if (curZ >= 1350) {
+                                            if (isLowHeightProduct(topP, to.h)) {
+                                                bonus = 100_000_000_000;
+                                            }
+                                        }
+                                        const rowScore = fitCount * 1_000_000 + rowVol * potentialUtil - penalty + bonus;
 
                                         if (rowScore > bestRowScore) {
                                             bestRowScore = rowScore;
@@ -1110,6 +1277,7 @@ function blockPackShelf(W: number, H: number, D: number, allProducts: Product[],
                             // V4.18: Look-ahead - estimate how many more items fit in remaining width
                             const remainW = W - currentX - totalW;
                             let lookAheadVol = 0;
+                            let lookAheadW = 0;
                             if (remainW > 50) {
                                 for (const rp of rem) {
                                     const rpAvail = tempU_Col.get(rp.id) || 0;
@@ -1118,16 +1286,20 @@ function blockPackShelf(W: number, H: number, D: number, allProducts: Product[],
                                     for (const ro of rpOrients) {
                                         const bwFit = Math.floor((remainW + 0.5) / ro.w);
                                         const hcFit = Math.floor((H + 0.5) / ro.h);
-                                        const lFit = Math.floor((totalL + 0.5) / ro.l);
+                                        const lFit = Math.floor(((isMixedWidthSpecialJob ? D : totalL) + 0.5) / ro.l);
                                         const countFit = Math.min(bwFit * hcFit * lFit, rpAvail);
                                         const fitVol = countFit * ro.w * ro.l * ro.h;
-                                        if (fitVol > lookAheadVol) lookAheadVol = fitVol;
+                                         if (fitVol > lookAheadVol) {
+                                             lookAheadVol = fitVol;
+                                             lookAheadW = bwFit * ro.w;
+                                         }
                                     }
                                 }
                             }
-                            const widthFillBonus = remainW < 50 ? (totalW / W) * 100000 : 0;
+                            const currentRemainW = W - currentX;
+                            const widthFillBonus = remainW < 50 ? (totalW / currentRemainW) * 100000 : 0;
                             const volBonus = vol * 0.0000001;
-                            const widthFillRatio = totalW / W;
+                            const widthFillRatio = isMixedWidthSpecialJob ? (totalW + lookAheadW) / currentRemainW : totalW / currentRemainW;
                             
                             // V5.02: Penalize 'lay' orientations that leave too much headroom to force them to the top
                             let layPenalty = 1.0;
@@ -1142,6 +1314,10 @@ function blockPackShelf(W: number, H: number, D: number, allProducts: Product[],
 
                             if (o.h >= 500 && hCount === 1 && hasLargeUnpackedTopper) {
                                 score *= 2.0; // Give a 100% score bonus to promote 1-high base
+                            }
+
+                            if (o.h * 2 > H) {
+                                score *= 2.5;
                             }
 
                             if (score > bestBlockScore) {
@@ -1239,8 +1415,8 @@ function optimizePackResultWithSwaps(container: ContainerDimensions, result: Pac
                     const stacked = getStackedCount(pItem.x, pItem.y, o.w, o.l, otherItems);
                     if (stacked + 1 > 10) continue;
 
-                    // 3. 바로 아래가 낮은 제품(h <= 270)인 경우 위에 적재 금지 (단, z=0 바닥인 경우는 허용)
-                    if (pItem.z > 0 && isBaseLowProduct(pItem.x, pItem.y, o.w, o.l, otherItems, pItem.z)) {
+                    // 3. 아래 제품의 높이가 500mm 이하일 때, 새로 쌓으려는 제품의 높이가 기존 제품 높이 + 50mm를 초과하면 적재 제한
+                    if (pItem.z > 0 && !isValidHeightStack(pItem.x, pItem.y, o.w, o.l, otherItems, pItem.z, o.h)) {
                         continue;
                     }
 
@@ -1260,7 +1436,7 @@ function optimizePackResultWithSwaps(container: ContainerDimensions, result: Pac
                             if (k === pIdx) continue;
                             const other = items[k];
                             const otherTop = other.z + other.h;
-                            if (Math.abs(otherTop - pItem.z) < 1) {
+                            if (Math.abs(otherTop - pItem.z) <= 5) {
                                 const xOverlap = Math.max(0, Math.min(pItem.x + o.w, other.x + other.w) - Math.max(pItem.x, other.x));
                                 const yOverlap = Math.max(0, Math.min(pItem.y + o.l, other.y + other.l) - Math.max(pItem.y, other.y));
                                 supportArea += xOverlap * yOverlap;
@@ -1337,8 +1513,8 @@ function optimizePackResultWithSwaps(container: ContainerDimensions, result: Pac
                                 const stacked = getStackedCount(x, y, o.w, o.l, tempItems);
                                 if (stacked + 1 > 10) continue;
 
-                                // 3. 바로 아래가 낮은 제품(h <= 270)인 경우 위에 적재 금지 (단, z=0 바닥인 경우는 허용)
-                                if (z > 0 && isBaseLowProduct(x, y, o.w, o.l, tempItems, z)) {
+                                // 3. 아래 제품의 높이가 500mm 이하일 때, 새로 쌓으려는 제품의 높이가 기존 제품 높이 + 50mm를 초과하면 적재 제한
+                                if (z > 0 && !isValidHeightStack(x, y, o.w, o.l, tempItems, z, o.h)) {
                                     continue;
                                 }
 
@@ -1355,7 +1531,7 @@ function optimizePackResultWithSwaps(container: ContainerDimensions, result: Pac
                                     const itemArea = o.w * o.l;
                                     for (const other of tempItems) {
                                         const otherTop = other.z + other.h;
-                                        if (Math.abs(otherTop - z) < 1) {
+                                        if (Math.abs(otherTop - z) <= 5) {
                                             const xOverlap = Math.max(0, Math.min(x + o.w, other.x + other.w) - Math.max(x, other.x));
                                             const yOverlap = Math.max(0, Math.min(y + o.l, other.y + other.l) - Math.max(y, other.y));
                                             supportArea += xOverlap * yOverlap;
@@ -1392,17 +1568,14 @@ function optimizePackResultWithSwaps(container: ContainerDimensions, result: Pac
                             const zOverlap = Math.max(itemA.z, itemB.z) < Math.min(itemA.z + itemA.h, itemB.z + itemB.h) - 0.5;
                             if (xOverlap && yOverlap && zOverlap) {
                                 testOverlap = true;
-                                console.log(`[SWAP ERROR DETECTED!]`);
-                                console.log(`  Attempting swap: uProd ${uProd.id} with pItem ${pItem.product.id} at (${pItem.x},${pItem.y},${pItem.z})`);
-                                console.log(`  swappedItem: ${swappedItem.product.id} at (${swappedItem.x},${swappedItem.y},${swappedItem.z}) Size: ${swappedItem.w}x${swappedItem.l}x${swappedItem.h}`);
-                                console.log(`  newPlacement (displaced): ${newPlacement.product.id} at (${newPlacement.x},${newPlacement.y},${newPlacement.z}) Size: ${newPlacement.w}x${newPlacement.l}x${newPlacement.h}`);
-                                console.log(`  Overlapping pair in result:`);
-                                console.log(`    A: ${itemA.product.id} at (${itemA.x},${itemA.y},${itemA.z}) Size: ${itemA.w}x${itemA.l}x${itemA.h}`);
-                                console.log(`    B: ${itemB.product.id} at (${itemB.x},${itemB.y},${itemB.z}) Size: ${itemB.w}x${itemB.l}x${itemB.h}`);
                                 break;
                             }
                         }
                         if (testOverlap) break;
+                    }
+
+                    if (testOverlap) {
+                        continue;
                     }
 
                     items = tempItems;

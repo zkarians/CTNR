@@ -52,10 +52,7 @@ export default function LoginPage() {
                 />
             </div>
 
-            <motion.div
-                initial={{ opacity: 0, y: 24 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, ease: "easeOut" }}
+            <div
                 className="w-full max-w-sm relative z-10"
             >
                 {/* Logo */}
@@ -145,21 +142,19 @@ export default function LoginPage() {
 
                         {/* Error */}
                         {error && (
-                            <motion.div
-                                initial={{ opacity: 0, y: -8 }}
-                                animate={{ opacity: 1, y: 0 }}
+                            <div
                                 className="flex items-center gap-2 px-4 py-3 bg-rose-500/10 border border-rose-500/20 rounded-xl text-rose-400 text-sm"
                             >
                                 <AlertCircle className="w-4 h-4 shrink-0" />
                                 <span>{error}</span>
-                            </motion.div>
+                            </div>
                         )}
 
                         {/* Submit */}
                         <button
-                            type="submit"
-                            disabled={isLoading}
-                            className="w-full py-3.5 rounded-xl bg-sky-500 hover:bg-sky-400 disabled:opacity-60 disabled:hover:bg-sky-500 text-white font-black text-sm transition-all flex items-center justify-center gap-2.5 shadow-[0_8px_32px_rgba(56,189,248,0.25)] group mt-2"
+                             type="submit"
+                             disabled={isLoading}
+                             className="w-full py-3.5 rounded-xl bg-sky-500 hover:bg-sky-400 disabled:opacity-60 disabled:hover:bg-sky-500 text-white font-black text-sm transition-all flex items-center justify-center gap-2.5 shadow-[0_8px_32px_rgba(56,189,248,0.25)] group mt-2"
                         >
                             {isLoading ? (
                                 <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
@@ -176,7 +171,7 @@ export default function LoginPage() {
                 <p className="text-center text-slate-600 text-[11px] mt-6">
                     계정이 없으시면 관리자에게 문의하세요.
                 </p>
-            </motion.div>
+            </div>
         </main>
     );
 }

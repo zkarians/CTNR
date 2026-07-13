@@ -3,6 +3,18 @@
 import { cookies } from "next/headers";
 import { pool } from "./db";
 import bcrypt from "bcryptjs";
+import fs from "fs";
+import path from "path";
+
+function debugLog(message: string) {
+    try {
+        const logPath = path.resolve(process.cwd(), 'login_debug.log');
+        const timestamp = new Date().toISOString();
+        fs.appendFileSync(logPath, `[${timestamp}] ${message}\n`);
+    } catch (e) {
+        // ignore
+    }
+}
 
 export interface SessionUser {
     id: string;
@@ -30,25 +42,33 @@ export async function login(
     password: string,
     rememberMe: boolean = false
 ): Promise<{ success: boolean; error?: string; user?: SessionUser }> {
+    debugLog(`login called with username: "${username}", rememberMe: ${rememberMe}`);
     try {
+        debugLog(`connecting to DB pool...`);
         const client = await pool.connect();
+        debugLog(`DB connection established`);
         const res = await client.query(
             `SELECT id, username, name, role, password, "isApproved" FROM "User" WHERE username = $1 LIMIT 1`,
             [username]
         );
         client.release();
+        debugLog(`DB query finished. Rows found: ${res.rows.length}`);
 
         if (res.rows.length === 0) {
+            debugLog(`Login failed: user not found`);
             return { success: false, error: "아이디 또는 비밀번호가 올바르지 않습니다." };
         }
 
         const user = res.rows[0];
 
         if (!user.isApproved) {
+            debugLog(`Login failed: user "${username}" is not approved`);
             return { success: false, error: "관리자 승인이 필요한 계정입니다." };
         }
 
+        debugLog(`comparing bcrypt passwords...`);
         const passwordMatch = await bcrypt.compare(password, user.password);
+        debugLog(`password match: ${passwordMatch}`);
         if (!passwordMatch) {
             return { success: false, error: "아이디 또는 비밀번호가 올바르지 않습니다." };
         }
@@ -61,32 +81,42 @@ export async function login(
         };
 
         const cookieStore = await cookies();
-        cookieStore.set(SESSION_COOKIE, encodeSession(sessionUser), {
+        const cookieVal = encodeSession(sessionUser);
+        debugLog(`setting cookie "${SESSION_COOKIE}"...`);
+        cookieStore.set(SESSION_COOKIE, cookieVal, {
             httpOnly: true,
-            secure: process.env.NODE_ENV === "production",
+            secure: false, // Explicitly set to false for local debugging
             maxAge: rememberMe ? 60 * 60 * 24 * 30 : 60 * 60 * 24, // 30 days if rememberMe, else 1 day
             path: "/",
         });
+        debugLog(`cookie set successfully`);
 
         return { success: true, user: sessionUser };
-    } catch (error) {
+    } catch (error: any) {
+        debugLog(`Login error: ${error?.message || error}`);
         console.error("Login error:", error);
         return { success: false, error: "서버 오류가 발생했습니다." };
     }
 }
 
 export async function logout(): Promise<void> {
+    debugLog(`logout called`);
     const cookieStore = await cookies();
     cookieStore.delete(SESSION_COOKIE);
 }
 
 export async function getSession(): Promise<SessionUser | null> {
+    debugLog(`getSession called`);
     try {
         const cookieStore = await cookies();
         const token = cookieStore.get(SESSION_COOKIE)?.value;
+        debugLog(`getSession token present: ${!!token}`);
         if (!token) return null;
-        return decodeSession(token);
-    } catch {
+        const decoded = decodeSession(token);
+        debugLog(`getSession decoded user: ${decoded ? decoded.username : "null"}`);
+        return decoded;
+    } catch (error: any) {
+        debugLog(`getSession error: ${error?.message || error}`);
         return null;
     }
 }
