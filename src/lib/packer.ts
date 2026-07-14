@@ -484,10 +484,10 @@ function doTwoPhasePacking(container: any, normalProducts: Product[], smallProdu
                 for (let candidateY = targetY - 1; candidateY >= 0; candidateY--) {
                     const candidateZ = getTopZAt(targetX, candidateY, wi.w, wi.l, xOverlapCandidates);
                     if (candidateZ !== targetZ) {
-                        continue; // 높이(Z)가 다르면 단차가 있으므로 건너뜀
+                        break; // 높이(Z)가 다르면 단차가 발생하므로 슬라이딩 불가
                     }
                     if (!hasSupportAtZ(targetX, candidateY, wi.w, wi.l, targetZ, xOverlapCandidates)) {
-                        continue; // 지탱해주는 바닥 제품이 없으면 건너뜀
+                        break; // 지탱 공간이 확보되지 않으면 슬라이딩 불가
                     }
                     let overlap = false;
                     for (let i = 0; i < overlapCandidates.length; i++) {
@@ -499,7 +499,7 @@ function doTwoPhasePacking(container: any, normalProducts: Product[], smallProdu
                         }
                     }
                     if (overlap) {
-                        continue; // 다른 상자와 충돌 시 건너뜀
+                        break; // 다른 상자와 충돌 시 슬라이딩 불가
                     }
                     slidY = candidateY;
                 }
@@ -1165,6 +1165,24 @@ function blockPackShelf(W: number, H: number, D: number, allProducts: Product[],
                                     }
                                 }
 
+                                // 3D overlap check between tempItems (current base) and wallItems (previous blocks)
+                                let baseOverlap = false;
+                                for (const item of tempItems) {
+                                    for (const other of wallItems) {
+                                        const xOverlap = Math.max(item.x, other.x) < Math.min(item.x + item.w, other.x + other.w) - 0.5;
+                                        const yOverlap = Math.max(item.yRel, other.yRel || 0) < Math.min(item.yRel + item.l, (other.yRel || 0) + other.l) - 0.5;
+                                        const zOverlap = Math.max(item.z, other.z) < Math.min(item.z + item.h, other.z + other.h) - 0.5;
+                                        if (xOverlap && yOverlap && zOverlap) {
+                                            baseOverlap = true;
+                                            break;
+                                        }
+                                    }
+                                    if (baseOverlap) break;
+                                }
+                                if (baseOverlap) {
+                                    continue;
+                                }
+
                                 let curZ = hCount * o.h;
                                 let tempU_Col = new Map(unpacked);
                                 tempU_Col.set(p.id, tempU_Col.get(p.id)! - (hCount * bW * bL));
@@ -1280,7 +1298,22 @@ function blockPackShelf(W: number, H: number, D: number, allProducts: Product[],
                                                     continue; // 10단 초과하므로 이 셀에는 배치하지 않고 건너뜀
                                                 }
                                                 
-                                                rowItems.push({ product: currentItem.p, x: currentX + (riW * to.w), yRel: riL * to.l, z: curZ, w: to.w, l: to.l, h: to.h, orientation: to.type });
+                                                 // 3. 기존 wallItems와 겹치는지 검사
+                                                 let overlap = false;
+                                                 for (const other of wallItems) {
+                                                     const xOverlap = Math.max(targetX, other.x) < Math.min(targetX + to.w, other.x + other.w) - 0.5;
+                                                     const yOverlap = Math.max(targetYRel, other.yRel || 0) < Math.min(targetYRel + to.l, (other.yRel || 0) + other.l) - 0.5;
+                                                     const zOverlap = Math.max(curZ, other.z) < Math.min(curZ + to.h, other.z + other.h) - 0.5;
+                                                     if (xOverlap && yOverlap && zOverlap) {
+                                                         overlap = true;
+                                                         break;
+                                                     }
+                                                 }
+                                                 if (overlap) {
+                                                     continue;
+                                                 }
+
+                                                 rowItems.push({ product: currentItem.p, x: currentX + (riW * to.w), yRel: riL * to.l, z: curZ, w: to.w, l: to.l, h: to.h, orientation: to.type });
                                                 placedCount++;
                                                 qtyUsed++;
                                                 if (qtyUsed >= currentItem.qty) {
@@ -1334,15 +1367,43 @@ function blockPackShelf(W: number, H: number, D: number, allProducts: Product[],
                             let lookAheadVol = 0;
                             let lookAheadW = 0;
                             if (remainW > 50) {
+                                // 현재 블록의 상단(Z > 0) 제품이 우측으로 삐져나온 최대 X 좌표(Overhang) 확인
+                                let topperMaxX = 0;
+                                for (const it of tempItems) {
+                                    if (it.z > 0) {
+                                        topperMaxX = Math.max(topperMaxX, it.x + it.w);
+                                    }
+                                }
+                                const baseMaxX = currentX + totalW;
+                                const baseHeight = tempItems.reduce((max: number, it: any) => it.z === 0 ? Math.max(max, it.h) : max, 0);
+
                                 for (const rp of rem) {
                                     const rpAvail = tempU_Col.get(rp.id) || 0;
                                     if (rpAvail <= 0) continue;
                                     const rpOrients = getOrients(rp).filter(ro => ro.w <= remainW + 0.5 && ro.l <= D + 0.5 && ro.h <= H + 0.5);
                                     for (const ro of rpOrients) {
                                         const bwFit = Math.floor((remainW + 0.5) / ro.w);
-                                        const hcFit = Math.floor((H + 0.5) / ro.h);
                                         const lFit = Math.floor(((isMixedWidthSpecialJob ? D : totalL) + 0.5) / ro.l);
-                                        const countFit = Math.min(bwFit * hcFit * lFit, rpAvail);
+                                        
+                                        // 각 열(Column) 단위로 상단 오버행 침범 여부에 따른 높이 단수(hcFit) 계산
+                                        let colHcFitSum = 0;
+                                        for (let colIdx = 0; colIdx < bwFit; colIdx++) {
+                                            const colStartX = baseMaxX + colIdx * ro.w;
+                                            const colEndX = colStartX + ro.w;
+                                            
+                                            // 이 열이 상단 오버행(baseMaxX ~ topperMaxX) 영역과 X축 상에서 겹치는지 체크
+                                            const isOverlappedWithOverhang = topperMaxX > baseMaxX && Math.max(colStartX, baseMaxX) < Math.min(colEndX, topperMaxX) - 0.5;
+                                            
+                                            if (isOverlappedWithOverhang) {
+                                                // 겹친다면 이 열의 상단 적재 가능 높이는 하단 베이스 높이(baseHeight)로 제한됨
+                                                colHcFitSum += Math.floor((baseHeight + 0.5) / ro.h);
+                                            } else {
+                                                // 겹치지 않는다면 컨테이너 전체 높이(H)까지 적재 가능
+                                                colHcFitSum += Math.floor((H + 0.5) / ro.h);
+                                            }
+                                        }
+
+                                        const countFit = Math.min(colHcFitSum * lFit, rpAvail);
                                         const fitVol = countFit * ro.w * ro.l * ro.h;
                                          if (fitVol > lookAheadVol) {
                                              lookAheadVol = fitVol;
