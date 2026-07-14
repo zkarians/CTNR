@@ -480,15 +480,9 @@ function doTwoPhasePacking(container: any, normalProducts: Product[], smallProdu
                     }
                 }
 
-                let slidY = targetY;
+                let bestY = targetY;
                 for (let candidateY = targetY - 1; candidateY >= 0; candidateY--) {
-                    const candidateZ = getTopZAt(targetX, candidateY, wi.w, wi.l, xOverlapCandidates);
-                    if (candidateZ !== targetZ) {
-                        break; // 높이(Z)가 다르면 단차가 발생하므로 슬라이딩 불가
-                    }
-                    if (!hasSupportAtZ(targetX, candidateY, wi.w, wi.l, targetZ, xOverlapCandidates)) {
-                        break; // 지탱 공간이 확보되지 않으면 슬라이딩 불가
-                    }
+                    // 1. 다른 상자와의 물리적 충돌(Overlap) 검사 - 충돌 시 루프 완전 종료 (Hard Stop)
                     let overlap = false;
                     for (let i = 0; i < overlapCandidates.length; i++) {
                         const other = overlapCandidates[i];
@@ -499,11 +493,19 @@ function doTwoPhasePacking(container: any, normalProducts: Product[], smallProdu
                         }
                     }
                     if (overlap) {
-                        break; // 다른 상자와 충돌 시 슬라이딩 불가
+                        break; // 충돌 발생 시에는 더 이상 앞으로 전진 불가
                     }
-                    slidY = candidateY;
+
+                    // 2. 해당 후보 위치에서 안정적인 지탱이 가능한지 검사 (최종 안착 가능 여부)
+                    const candidateZ = getTopZAt(targetX, candidateY, wi.w, wi.l, xOverlapCandidates);
+                    const isHeightMatch = candidateZ === targetZ;
+                    const isSupported = hasSupportAtZ(targetX, candidateY, wi.w, wi.l, targetZ, xOverlapCandidates);
+
+                    if (isHeightMatch && isSupported) {
+                        bestY = candidateY; // 지탱 가능하고 단차가 맞다면 이 위치를 최선으로 저장
+                    }
                 }
-                targetY = slidY;
+                targetY = bestY;
             }
 
             const pi = { ...wi, y: targetY, product: { ...wi.product, quantity: 1 } };
