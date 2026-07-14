@@ -76,6 +76,14 @@ export async function getJobsFromDB(filters?: JobFilters): Promise<Job[]> {
     try {
         const client = await pool.connect();
         try {
+            // 외부 ERP/엑셀 연동 시 누락될 수 있는 job_id 연결 고리를 자동으로 복구
+            await client.query(`
+                UPDATE container_results r
+                SET job_id = j.id
+                FROM container_jobs j
+                WHERE r.job_name = j.job_name AND r.job_id IS NULL
+            `);
+
             let whereClauses: string[] = [];
             let params: any[] = [];
             let paramIdx = 1;
