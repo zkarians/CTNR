@@ -54,7 +54,28 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
     const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
     const [isTrashView, setIsTrashView] = useState(false);
 
-    const imageRef = React.useRef<HTMLImageElement>(null);
+    // Callback ref to attach wheel listener to image with passive: false to prevent default page scrolling
+    const imageRefCallback = React.useCallback((node: HTMLImageElement | null) => {
+        if (!node) return;
+
+        const handleWheel = (e: WheelEvent) => {
+            e.preventDefault();
+            const zoomStep = 0.15;
+            setScale(prev => {
+                if (e.deltaY < 0) {
+                    return Math.min(prev + zoomStep, 5); // Max 5x zoom
+                } else {
+                    const newScale = Math.max(prev - zoomStep, 1);
+                    if (newScale === 1) {
+                        setPosition({ x: 0, y: 0 }); // Reset position when zooming out to 1x
+                    }
+                    return newScale;
+                }
+            });
+        };
+
+        node.addEventListener('wheel', handleWheel, { passive: false });
+    }, []);
 
     // Reset zoom and positions
     const resetZoom = () => {
@@ -90,28 +111,6 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
         setSelectedFolders([]);
     };
 
-    // Attach wheel listener to image with passive: false to prevent default page scrolling
-    React.useEffect(() => {
-        const imgEl = imageRef.current;
-        if (!imgEl) return;
-
-        const handleWheel = (e: WheelEvent) => {
-            e.preventDefault();
-            const zoomStep = 0.15;
-            setScale(prev => {
-                if (e.deltaY < 0) {
-                    return Math.min(prev + zoomStep, 5); // Max 5x zoom
-                } else {
-                    return Math.max(prev - zoomStep, 1); // Min 1x zoom
-                }
-            });
-        };
-
-        imgEl.addEventListener('wheel', handleWheel, { passive: false });
-        return () => {
-            imgEl.removeEventListener('wheel', handleWheel);
-        };
-    }, [activePhotoIdx]); // Re-attach when photo changes
     
     // Folder State
     const [selectedContainerFolder, setSelectedContainerFolder] = useState<string | null>(null);
@@ -1104,49 +1103,53 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
 
                                 {/* Image */}
                                 <div className="max-w-[90%] max-h-[80vh] flex items-center justify-center relative overflow-hidden select-none">
-                                    <motion.img 
-                                        ref={imageRef}
+                                    <motion.div
                                         key={photos[activePhotoIdx].id}
-                                        initial={{ scale: 0.95, opacity: 0 }}
+                                        initial={{ scale: 0.98, opacity: 0 }}
                                         animate={{ scale: 1, opacity: 1 }}
-                                        exit={{ scale: 0.95, opacity: 0 }}
+                                        exit={{ scale: 0.98, opacity: 0 }}
                                         transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-                                        src={`/api/photos/view?filename=${encodeURIComponent(photos[activePhotoIdx].photo_path)}`}
-                                        alt={photos[activePhotoIdx].cntr_no}
-                                        className="max-w-full max-h-[75vh] object-contain rounded-2xl border border-white/10 shadow-2xl select-none"
-                                        style={{
-                                            transform: `translate(${position.x}px, ${position.y}px) scale(${scale})`,
-                                            transformOrigin: 'center center',
-                                            cursor: scale > 1 ? (isDragging ? 'grabbing' : 'grab') : 'zoom-in',
-                                            transition: isDragging ? 'none' : 'transform 0.15s ease-out'
-                                        }}
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            if (scale > 1) {
-                                                resetZoom();
-                                            } else {
-                                                setScale(2.5); // Zoom to 2.5x on click
-                                            }
-                                        }}
-                                        onMouseDown={(e) => {
-                                            if (scale > 1) {
-                                                e.preventDefault();
-                                                setIsDragging(true);
-                                                setDragStart({ x: e.clientX - position.x, y: e.clientY - position.y });
-                                            }
-                                        }}
-                                        onMouseMove={(e) => {
-                                            if (isDragging && scale > 1) {
-                                                e.preventDefault();
-                                                setPosition({
-                                                    x: e.clientX - dragStart.x,
-                                                    y: e.clientY - dragStart.y
-                                                });
-                                            }
-                                        }}
-                                        onMouseUp={() => setIsDragging(false)}
-                                        onMouseLeave={() => setIsDragging(false)}
-                                    />
+                                        className="w-full h-full flex items-center justify-center"
+                                    >
+                                        <img 
+                                            ref={imageRefCallback}
+                                            src={`/api/photos/view?filename=${encodeURIComponent(photos[activePhotoIdx].photo_path)}`}
+                                            alt={photos[activePhotoIdx].cntr_no}
+                                            className="max-w-full max-h-[75vh] object-contain rounded-2xl border border-white/10 shadow-2xl select-none"
+                                            style={{
+                                                transform: `translate(${position.x}px, ${position.y}px) scale(${scale})`,
+                                                transformOrigin: 'center center',
+                                                cursor: scale > 1 ? (isDragging ? 'grabbing' : 'grab') : 'zoom-in',
+                                                transition: isDragging ? 'none' : 'transform 0.15s ease-out'
+                                            }}
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                if (scale > 1) {
+                                                    resetZoom();
+                                                } else {
+                                                    setScale(2.5); // Zoom to 2.5x on click
+                                                }
+                                            }}
+                                            onMouseDown={(e) => {
+                                                if (scale > 1) {
+                                                    e.preventDefault();
+                                                    setIsDragging(true);
+                                                    setDragStart({ x: e.clientX - position.x, y: e.clientY - position.y });
+                                                }
+                                            }}
+                                            onMouseMove={(e) => {
+                                                if (isDragging && scale > 1) {
+                                                    e.preventDefault();
+                                                    setPosition({
+                                                        x: e.clientX - dragStart.x,
+                                                        y: e.clientY - dragStart.y
+                                                    });
+                                                }
+                                            }}
+                                            onMouseUp={() => setIsDragging(false)}
+                                            onMouseLeave={() => setIsDragging(false)}
+                                        />
+                                    </motion.div>
                                 </div>
 
                                 {/* Right arrow */}
