@@ -42,9 +42,47 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
     const [users, setUsers] = useState<UserOption[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     
+    // Sort State
+    const [sortBy, setSortBy] = useState<'UPLOAD_DESC' | 'UPLOAD_ASC' | 'CREATION_DESC' | 'CREATION_ASC' | 'NAME_ASC' | 'NAME_DESC'>('UPLOAD_DESC');
+    
     // Lightbox State
     const [activePhotoIdx, setActivePhotoIdx] = useState<number | null>(null);
-    const [isZoomed, setIsZoomed] = useState(false);
+    const [scale, setScale] = useState(1);
+    const [position, setPosition] = useState({ x: 0, y: 0 });
+    const [isDragging, setIsDragging] = useState(false);
+    const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+
+    const imageRef = React.useRef<HTMLImageElement>(null);
+
+    // Reset zoom and positions
+    const resetZoom = () => {
+        setScale(1);
+        setPosition({ x: 0, y: 0 });
+        setIsDragging(false);
+    };
+
+    // Attach wheel listener to image with passive: false to prevent default page scrolling
+    React.useEffect(() => {
+        const imgEl = imageRef.current;
+        if (!imgEl) return;
+
+        const handleWheel = (e: WheelEvent) => {
+            e.preventDefault();
+            const zoomStep = 0.15;
+            setScale(prev => {
+                if (e.deltaY < 0) {
+                    return Math.min(prev + zoomStep, 5); // Max 5x zoom
+                } else {
+                    return Math.max(prev - zoomStep, 1); // Min 1x zoom
+                }
+            });
+        };
+
+        imgEl.addEventListener('wheel', handleWheel, { passive: false });
+        return () => {
+            imgEl.removeEventListener('wheel', handleWheel);
+        };
+    }, [activePhotoIdx]); // Re-attach when photo changes
     
     // Folder State
     const [selectedContainerFolder, setSelectedContainerFolder] = useState<string | null>(null);
@@ -72,8 +110,30 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
 
     const folderPhotos = React.useMemo(() => {
         if (!selectedContainerFolder) return [];
-        return photos.filter(p => p.cntr_no === selectedContainerFolder);
-    }, [photos, selectedContainerFolder]);
+        const filtered = photos.filter(p => p.cntr_no === selectedContainerFolder);
+        
+        // Apply sorting
+        return [...filtered].sort((a, b) => {
+            if (sortBy === 'UPLOAD_DESC') {
+                return new Date(b.uploaded_at).getTime() - new Date(a.uploaded_at).getTime();
+            } else if (sortBy === 'UPLOAD_ASC') {
+                return new Date(a.uploaded_at).getTime() - new Date(b.uploaded_at).getTime();
+            } else if (sortBy === 'CREATION_DESC') {
+                const dateA = new Date((a as any).file_created_at || a.uploaded_at).getTime();
+                const dateB = new Date((b as any).file_created_at || b.uploaded_at).getTime();
+                return dateB - dateA;
+            } else if (sortBy === 'CREATION_ASC') {
+                const dateA = new Date((a as any).file_created_at || a.uploaded_at).getTime();
+                const dateB = new Date((b as any).file_created_at || b.uploaded_at).getTime();
+                return dateA - dateB;
+            } else if (sortBy === 'NAME_ASC') {
+                return a.photo_path.localeCompare(b.photo_path);
+            } else if (sortBy === 'NAME_DESC') {
+                return b.photo_path.localeCompare(a.photo_path);
+            }
+            return 0;
+        });
+    }, [photos, selectedContainerFolder, sortBy]);
 
     const currentPhotoIndex = React.useMemo(() => {
         if (activePhotoIdx === null) return -1;
@@ -323,15 +383,16 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
 
     const handlePrevPhoto = (e: React.MouseEvent) => {
         e.stopPropagation();
-        setIsZoomed(false);
+        resetZoom();
         if (activePhotoIdx === null || photos.length === 0) return;
         
         if (selectedContainerFolder) {
-            const folderPhotos = photos.map((p, i) => ({ p, i })).filter(item => item.p.cntr_no === selectedContainerFolder);
-            const currentItemIdx = folderPhotos.findIndex(item => item.i === activePhotoIdx);
-            if (currentItemIdx !== -1) {
-                const prevItemIdx = currentItemIdx > 0 ? currentItemIdx - 1 : folderPhotos.length - 1;
-                setActivePhotoIdx(folderPhotos[prevItemIdx].i);
+            if (currentPhotoIndex !== -1 && folderPhotos.length > 0) {
+                const prevItemIdx = currentPhotoIndex > 0 ? currentPhotoIndex - 1 : folderPhotos.length - 1;
+                const globalIdx = photos.findIndex(p => p.id === folderPhotos[prevItemIdx].id);
+                if (globalIdx !== -1) {
+                    setActivePhotoIdx(globalIdx);
+                }
             }
         } else {
             setActivePhotoIdx(prev => (prev !== null && prev > 0 ? prev - 1 : photos.length - 1));
@@ -340,15 +401,16 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
 
     const handleNextPhoto = (e: React.MouseEvent) => {
         e.stopPropagation();
-        setIsZoomed(false);
+        resetZoom();
         if (activePhotoIdx === null || photos.length === 0) return;
         
         if (selectedContainerFolder) {
-            const folderPhotos = photos.map((p, i) => ({ p, i })).filter(item => item.p.cntr_no === selectedContainerFolder);
-            const currentItemIdx = folderPhotos.findIndex(item => item.i === activePhotoIdx);
-            if (currentItemIdx !== -1) {
-                const nextItemIdx = currentItemIdx < folderPhotos.length - 1 ? currentItemIdx + 1 : 0;
-                setActivePhotoIdx(folderPhotos[nextItemIdx].i);
+            if (currentPhotoIndex !== -1 && folderPhotos.length > 0) {
+                const nextItemIdx = currentPhotoIndex < folderPhotos.length - 1 ? currentPhotoIndex + 1 : 0;
+                const globalIdx = photos.findIndex(p => p.id === folderPhotos[nextItemIdx].id);
+                if (globalIdx !== -1) {
+                    setActivePhotoIdx(globalIdx);
+                }
             }
         } else {
             setActivePhotoIdx(prev => (prev !== null && prev < photos.length - 1 ? prev + 1 : 0));
@@ -571,28 +633,48 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                     ) : (
                         /* PHOTO GRID VIEW (INSIDE SELECTED FOLDER) */
                         <div>
-                            {/* Back Header */}
-                            <div className="mb-6 flex items-center justify-between">
-                                <button 
-                                    onClick={() => setSelectedContainerFolder(null)}
-                                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-slate-300 hover:text-white transition-all text-xs font-black cursor-pointer"
-                                >
-                                    <ArrowLeft className="w-3.5 h-3.5" /> 폴더 목록
-                                </button>
-                                <div className="text-xs font-black text-sky-400 uppercase tracking-widest bg-sky-500/10 border border-sky-500/20 px-4 py-2 rounded-xl">
-                                    폴더: {selectedContainerFolder} ({photos.filter(p => p.cntr_no === selectedContainerFolder).length}장)
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 shrink-0">
+                                <div className="flex items-center gap-3">
+                                    <button 
+                                        onClick={() => setSelectedContainerFolder(null)}
+                                        className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-slate-300 hover:text-white transition-all text-xs font-black cursor-pointer"
+                                    >
+                                        <ArrowLeft className="w-3.5 h-3.5" /> 폴더 목록
+                                    </button>
+                                    <div className="text-xs font-black text-sky-400 uppercase tracking-widest bg-sky-500/10 border border-sky-500/20 px-4 py-2 rounded-xl">
+                                        폴더: {selectedContainerFolder} ({folderPhotos.length}장)
+                                    </div>
+                                </div>
+
+                                {/* Sort Options */}
+                                <div className="flex items-center gap-2">
+                                    <span className="text-[11px] font-bold text-slate-500">정렬:</span>
+                                    <select 
+                                        value={sortBy} 
+                                        onChange={(e) => setSortBy(e.target.value as any)}
+                                        className="bg-[#11111a] border border-white/5 rounded-xl px-3 py-1.5 text-xs text-slate-300 focus:outline-none focus:border-sky-500 transition-colors cursor-pointer"
+                                    >
+                                        <option value="UPLOAD_DESC">업로드순 (최신)</option>
+                                        <option value="UPLOAD_ASC">업로드순 (과거)</option>
+                                        <option value="CREATION_DESC">파일제작순 (최신)</option>
+                                        <option value="CREATION_ASC">파일제작순 (과거)</option>
+                                        <option value="NAME_ASC">파일이름순 (오름차순)</option>
+                                        <option value="NAME_DESC">파일이름순 (내림차순)</option>
+                                    </select>
                                 </div>
                             </div>
 
                             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-                                {photos
-                                    .map((photo, idx) => ({ photo, originalIdx: idx }))
-                                    .filter(item => item.photo.cntr_no === selectedContainerFolder)
-                                    .map(({ photo, originalIdx }) => (
-                                        <motion.div 
-                                            key={photo.id}
-                                            whileHover={{ y: -3, scale: 1.02 }}
-                                            onClick={() => setActivePhotoIdx(originalIdx)}
+                                {folderPhotos.map((photo) => (
+                                    <motion.div 
+                                        key={photo.id}
+                                        whileHover={{ y: -3, scale: 1.02 }}
+                                        onClick={() => {
+                                            const globalIdx = photos.findIndex(p => p.id === photo.id);
+                                            if (globalIdx !== -1) {
+                                                setActivePhotoIdx(globalIdx);
+                                            }
+                                        }}
                                             className="group relative flex flex-col bg-[#11111a] border border-white/5 rounded-2xl overflow-hidden cursor-pointer shadow-lg hover:shadow-xl hover:border-white/10 transition-all duration-300"
                                         >
                                             {/* Aspect Ratio container for Image */}
@@ -692,7 +774,7 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                                         <Download className="w-4 h-4" /> <span className="hidden sm:inline">다운로드</span>
                                     </button>
                                     <button 
-                                        onClick={() => setActivePhotoIdx(null)}
+                                        onClick={() => { setActivePhotoIdx(null); resetZoom(); }}
                                         className="p-3 rounded-2xl bg-white/5 border border-white/5 text-slate-300 hover:text-white hover:bg-white/10 transition-all"
                                         title="닫기"
                                     >
@@ -712,12 +794,9 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                                 </button>
 
                                 {/* Image */}
-                                <div className={`max-w-[90%] max-h-[80vh] relative select-none ${
-                                    isZoomed 
-                                        ? "overflow-auto custom-scrollbar block p-4" 
-                                        : "flex items-center justify-center"
-                                }`}>
+                                <div className="max-w-[90%] max-h-[80vh] flex items-center justify-center relative overflow-hidden select-none">
                                     <motion.img 
+                                        ref={imageRef}
                                         key={photos[activePhotoIdx].id}
                                         initial={{ scale: 0.95, opacity: 0 }}
                                         animate={{ scale: 1, opacity: 1 }}
@@ -725,15 +804,39 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                                         transition={{ type: 'spring', damping: 25, stiffness: 200 }}
                                         src={`/api/photos/view?filename=${encodeURIComponent(photos[activePhotoIdx].photo_path)}`}
                                         alt={photos[activePhotoIdx].cntr_no}
-                                        className={`rounded-2xl border border-white/10 shadow-2xl transition-all duration-300 ${
-                                            isZoomed 
-                                                ? "max-w-none max-h-none cursor-zoom-out" 
-                                                : "max-w-full max-h-[75vh] object-contain cursor-zoom-in"
-                                        }`}
+                                        className="max-w-full max-h-[75vh] object-contain rounded-2xl border border-white/10 shadow-2xl select-none"
+                                        style={{
+                                            transform: `translate(${position.x}px, ${position.y}px) scale(${scale})`,
+                                            transformOrigin: 'center center',
+                                            cursor: scale > 1 ? (isDragging ? 'grabbing' : 'grab') : 'zoom-in',
+                                            transition: isDragging ? 'none' : 'transform 0.15s ease-out'
+                                        }}
                                         onClick={(e) => {
                                             e.stopPropagation();
-                                            setIsZoomed(!isZoomed);
+                                            if (scale > 1) {
+                                                resetZoom();
+                                            } else {
+                                                setScale(2.5); // Zoom to 2.5x on click
+                                            }
                                         }}
+                                        onMouseDown={(e) => {
+                                            if (scale > 1) {
+                                                e.preventDefault();
+                                                setIsDragging(true);
+                                                setDragStart({ x: e.clientX - position.x, y: e.clientY - position.y });
+                                            }
+                                        }}
+                                        onMouseMove={(e) => {
+                                            if (isDragging && scale > 1) {
+                                                e.preventDefault();
+                                                setPosition({
+                                                    x: e.clientX - dragStart.x,
+                                                    y: e.clientY - dragStart.y
+                                                });
+                                            }
+                                        }}
+                                        onMouseUp={() => setIsDragging(false)}
+                                        onMouseLeave={() => setIsDragging(false)}
                                     />
                                 </div>
 

@@ -180,9 +180,29 @@ export async function GET(req: NextRequest) {
         const client = await pool.connect();
         try {
             const res = await client.query(query, params);
+            
+            // Get local file creation/modification times for "file creation date" sorting
+            const uploadsDir = path.join(process.cwd(), 'uploads');
+            const photosWithStats = res.rows.map(row => {
+                let fileCreatedAt = row.uploaded_at;
+                try {
+                    const filePath = path.join(uploadsDir, row.photo_path);
+                    if (fs.existsSync(filePath)) {
+                        const stats = fs.statSync(filePath);
+                        fileCreatedAt = stats.mtime || stats.birthtime || row.uploaded_at;
+                    }
+                } catch (e) {
+                    // Ignore error and fallback to database time
+                }
+                return {
+                    ...row,
+                    file_created_at: fileCreatedAt
+                };
+            });
+
             return NextResponse.json({
                 success: true,
-                photos: res.rows
+                photos: photosWithStats
             });
         } finally {
             client.release();
