@@ -163,36 +163,18 @@ export async function GET(req: NextRequest) {
             console.error('[Auto-Cleanup] Error cleaning up expired photos:', cleanupErr);
         }
 
-        let query = `
-            SELECT 
-                p.id, 
-                p.job_id, 
-                p.cntr_no, 
-                p.photo_path, 
-                p.remark, 
-                p.uploaded_at, 
-                p.uploaded_by, 
-                u.name as uploader_name, 
-                u.username as uploader_username, 
-                j.job_name,
-                r.transporter
-            FROM container_photos p
-            LEFT JOIN "User" u ON p.uploaded_by = u.id
-            LEFT JOIN container_jobs j ON p.job_id = j.id
-            LEFT JOIN container_results r ON r.job_id = p.job_id AND r.cntr_no = p.cntr_no
-            WHERE ${showTrash ? 'p.is_deleted = true' : '(p.is_deleted IS NULL OR p.is_deleted = false)'}
-        `;
-        
+        // Build WHERE conditions as a suffix to inject into the inner subquery
         const params: any[] = [];
         let paramIdx = 1;
+        let whereSuffix = `WHERE ${showTrash ? 'p.is_deleted = true' : '(p.is_deleted IS NULL OR p.is_deleted = false)'}`;
 
         if (startDate) {
-            query += ` AND p.uploaded_at >= $${paramIdx++}`;
+            whereSuffix += ` AND p.uploaded_at >= $${paramIdx++}`;
             params.push(new Date(startDate + 'T00:00:00.000Z'));
         }
 
         if (endDate) {
-            query += ` AND p.uploaded_at <= $${paramIdx++}`;
+            whereSuffix += ` AND p.uploaded_at <= $${paramIdx++}`;
             params.push(new Date(endDate + 'T23:59:59.999Z'));
         }
 
@@ -204,16 +186,40 @@ export async function GET(req: NextRequest) {
         }
 
         if (targetUserId) {
-            query += ` AND p.uploaded_by = $${paramIdx++}`;
+            whereSuffix += ` AND p.uploaded_by = $${paramIdx++}`;
             params.push(targetUserId);
         }
 
         if (cntrNo) {
-            query += ` AND p.cntr_no ILIKE $${paramIdx++}`;
+            whereSuffix += ` AND p.cntr_no ILIKE $${paramIdx++}`;
             params.push(`%${cntrNo}%`);
         }
 
-        query += ` ORDER BY p.uploaded_at DESC`;
+        // Wrap with subquery: inner DISTINCT ON deduplicates rows from 1:N join,
+        // outer ORDER BY applies final sort by uploaded_at DESC
+        const query = `
+            SELECT * FROM (
+                SELECT DISTINCT ON (p.id)
+                    p.id, 
+                    p.job_id, 
+                    p.cntr_no, 
+                    p.photo_path, 
+                    p.remark, 
+                    p.uploaded_at, 
+                    p.uploaded_by, 
+                    u.name as uploader_name, 
+                    u.username as uploader_username, 
+                    j.job_name,
+                    r.transporter
+                FROM container_photos p
+                LEFT JOIN "User" u ON p.uploaded_by = u.id
+                LEFT JOIN container_jobs j ON p.job_id = j.id
+                LEFT JOIN container_results r ON r.job_id = p.job_id AND r.cntr_no = p.cntr_no
+                ${whereSuffix}
+                ORDER BY p.id
+            ) sub
+            ORDER BY sub.uploaded_at DESC
+        `;
 
         const client = await pool.connect();
         try {
