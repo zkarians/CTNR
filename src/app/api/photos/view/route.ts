@@ -17,9 +17,13 @@ export async function GET(req: NextRequest) {
             return new NextResponse('Filename is required', { status: 400 });
         }
 
-        // Prevent directory traversal
-        const safeFilename = path.basename(filename);
-        const filePath = path.join(process.cwd(), 'uploads', safeFilename);
+        // Prevent directory traversal by resolving the path and checking prefix
+        const uploadsDir = path.join(process.cwd(), 'uploads');
+        const filePath = path.resolve(uploadsDir, filename);
+
+        if (!filePath.startsWith(uploadsDir)) {
+            return new NextResponse('Forbidden', { status: 403 });
+        }
 
         if (!fs.existsSync(filePath)) {
             return new NextResponse('File not found', { status: 404 });
@@ -28,9 +32,9 @@ export async function GET(req: NextRequest) {
         const fileBuffer = fs.readFileSync(filePath);
         
         let contentType = 'image/jpeg';
-        if (safeFilename.toLowerCase().endsWith('.png')) contentType = 'image/png';
-        else if (safeFilename.toLowerCase().endsWith('.webp')) contentType = 'image/webp';
-        else if (safeFilename.toLowerCase().endsWith('.gif')) contentType = 'image/gif';
+        if (filePath.toLowerCase().endsWith('.png')) contentType = 'image/png';
+        else if (filePath.toLowerCase().endsWith('.webp')) contentType = 'image/webp';
+        else if (filePath.toLowerCase().endsWith('.gif')) contentType = 'image/gif';
 
         return new NextResponse(fileBuffer, {
             headers: {

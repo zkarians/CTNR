@@ -28,10 +28,13 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: '유효하지 않은 Job ID입니다.' }, { status: 400 });
         }
 
-        // Create uploads folder if it doesn't exist
+        const sanitizedCntrNo = cntrNo.replace(/[^a-zA-Z0-9]/g, '_').toUpperCase();
+
+        // Create container-specific folder inside uploads
         const uploadsDir = path.join(process.cwd(), 'uploads');
-        if (!fs.existsSync(uploadsDir)) {
-            fs.mkdirSync(uploadsDir, { recursive: true });
+        const containerDir = path.join(uploadsDir, sanitizedCntrNo);
+        if (!fs.existsSync(containerDir)) {
+            fs.mkdirSync(containerDir, { recursive: true });
         }
 
         // Save metadata to database and determine name sequentially
@@ -53,7 +56,6 @@ export async function POST(req: NextRequest) {
 
             const originalName = file.name;
             let ext = (path.extname(originalName) || '.jpg').toLowerCase();
-            const sanitizedCntrNo = cntrNo.replace(/[^a-zA-Z0-9]/g, '_').toUpperCase();
 
             // Determine if the uploaded file is in HEIC/HEIF format
             const isHeic = ext === '.heic' || ext === '.heif';
@@ -63,13 +65,13 @@ export async function POST(req: NextRequest) {
 
             let seqNum = existingCount + 1;
             let filename = `${dateStr}_${sanitizedCntrNo}_${seqNum.toString().padStart(2, '0')}${ext}`;
-            let filePath = path.join(uploadsDir, filename);
+            let filePath = path.join(containerDir, filename);
 
             // Prevent filesystem overwrite by incrementing sequence if file already exists
             while (fs.existsSync(filePath)) {
                 seqNum++;
                 filename = `${dateStr}_${sanitizedCntrNo}_${seqNum.toString().padStart(2, '0')}${ext}`;
-                filePath = path.join(uploadsDir, filename);
+                filePath = path.join(containerDir, filename);
             }
 
             // Convert file to buffer and write to disk (converting HEIC to JPEG if needed)
@@ -94,12 +96,14 @@ export async function POST(req: NextRequest) {
 
             fs.writeFileSync(filePath, buffer);
 
+            const relativeDbPath = `${sanitizedCntrNo}/${filename}`;
+
             const query = `
                 INSERT INTO container_photos (job_id, cntr_no, photo_path, remark, uploaded_by)
                 VALUES ($1, $2, $3, $4, $5)
                 RETURNING id, job_id, cntr_no, photo_path, remark, uploaded_at
             `;
-            const values = [jobId, cntrNo, filename, remark || '', session.id];
+            const values = [jobId, cntrNo, relativeDbPath, remark || '', session.id];
             const res = await client.query(query, values);
             
             return NextResponse.json({
@@ -216,7 +220,13 @@ export async function DELETE(req: NextRequest) {
                 }
 
                 const filename = res.rows[0].photo_path;
-                const filePath = path.join(process.cwd(), 'uploads', path.basename(filename));
+                const uploadsDir = path.join(process.cwd(), 'uploads');
+                const filePath = path.resolve(uploadsDir, filename);
+
+                // Prevent directory traversal
+                if (!filePath.startsWith(uploadsDir)) {
+                    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+                }
 
                 // Delete from database
                 await client.query('DELETE FROM container_photos WHERE id = $1', [id]);
@@ -275,9 +285,10 @@ export async function DELETE(req: NextRequest) {
 
                 // 3. Delete files from disk
                 let deletedFilesCount = 0;
+                const uploadsDir = path.join(process.cwd(), 'uploads');
                 for (const filename of filePaths) {
-                    const filePath = path.join(process.cwd(), 'uploads', path.basename(filename));
-                    if (fs.existsSync(filePath)) {
+                    const filePath = path.resolve(uploadsDir, filename);
+                    if (filePath.startsWith(uploadsDir) && fs.existsSync(filePath)) {
                         fs.unlinkSync(filePath);
                         deletedFilesCount++;
                     }
