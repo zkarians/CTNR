@@ -164,7 +164,9 @@ export async function GET(req: NextRequest) {
         }
 
         let targetUserId = userId;
-        if (session.role !== 'admin') {
+        const sessionRole = session.role?.toUpperCase();
+        const isAdmin = sessionRole === 'ADMIN' || sessionRole === 'MANAGER';
+        if (!isAdmin) {
             targetUserId = session.id;
         }
 
@@ -200,7 +202,9 @@ export async function DELETE(req: NextRequest) {
         }
 
         // Only admin is allowed to delete photos
-        if (session.role !== 'admin') {
+        const sessionRole = session.role?.toUpperCase();
+        const isAdmin = sessionRole === 'ADMIN' || sessionRole === 'MANAGER';
+        if (!isAdmin) {
             return NextResponse.json({ error: '삭제 권한이 없습니다. 관리자만 삭제할 수 있습니다.' }, { status: 403 });
         }
 

@@ -35,6 +35,8 @@ interface PhotoGalleryProps {
 }
 
 export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProps) {
+    const isAdmin = user && (user.role.toUpperCase() === 'ADMIN' || user.role.toUpperCase() === 'MANAGER');
+
     const [photos, setPhotos] = useState<Photo[]>([]);
     const [users, setUsers] = useState<UserOption[]>([]);
     const [isLoading, setIsLoading] = useState(false);
@@ -50,7 +52,7 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
     // Load users (uploaders) once on mount
     useEffect(() => {
         const loadUsers = async () => {
-            if (user.role === 'admin') {
+            if (isAdmin) {
                 try {
                     const data = await fetchUsers();
                     setUsers(data);
@@ -68,16 +70,16 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
         
         setEndDate(today.toISOString().split('T')[0]);
         setStartDate(lastWeek.toISOString().split('T')[0]);
-    }, [user]);
+    }, [user, isAdmin]);
 
     // Force non-admins to only see their own uploads
     useEffect(() => {
         if (isOpen && user) {
-            if (user.role !== 'admin') {
+            if (!isAdmin) {
                 setSelectedUserId(user.id);
             }
         }
-    }, [isOpen, user]);
+    }, [isOpen, user, isAdmin]);
 
     // Load photos
     const loadPhotos = async () => {
@@ -282,7 +284,7 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                             </div>
 
                             {/* Uploader (User) - Admin Only */}
-                            {user.role === 'admin' && (
+                            {isAdmin && (
                                 <div className="space-y-1 col-span-2 md:w-48">
                                     <label className="text-[10px] text-slate-500 font-bold tracking-wider uppercase flex items-center gap-1">
                                         <User className="w-3 h-3 text-sky-400" /> 업로드 작업자
@@ -303,7 +305,7 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
 
                         {/* Reset / Search Buttons */}
                         <div className="flex gap-2 items-center shrink-0">
-                            {user.role === 'admin' && photos.length > 0 && (
+                            {isAdmin && photos.length > 0 && (
                                 <button 
                                     onClick={handleBulkDelete}
                                     className="px-4 py-2.5 rounded-xl bg-rose-500/10 border border-rose-500/20 hover:bg-rose-600 text-rose-400 hover:text-white font-black text-xs transition-all cursor-pointer flex items-center gap-1.5"
@@ -355,7 +357,7 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                                         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-60 group-hover:opacity-80 transition-opacity" />
                                         
                                         {/* Download trigger overlay - Admin Only */}
-                                        {user.role === 'admin' && (
+                                        {isAdmin && (
                                             <button 
                                                 onClick={(e) => handleDownload(photo, e)}
                                                 className="absolute top-2.5 right-2.5 p-2 rounded-xl bg-black/60 backdrop-blur-md border border-white/10 text-slate-300 hover:text-white hover:bg-black/90 transition-all opacity-0 group-hover:opacity-100"
@@ -415,7 +417,7 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                                     </p>
                                 </div>
                                 <div className="flex items-center gap-3">
-                                    {user.role === 'admin' && (
+                                    {isAdmin && (
                                         <>
                                             <button 
                                                 onClick={(e) => { e.stopPropagation(); handleDelete(photos[activePhotoIdx], e); }}

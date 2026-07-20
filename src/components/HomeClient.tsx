@@ -19,6 +19,8 @@ import { SessionUser } from '@/lib/auth';
 import { DbConfig } from '@/lib/types';
 
 export default function Home({ user }: { user: SessionUser }) {
+    const isAdmin = user && (user.role.toUpperCase() === 'ADMIN' || user.role.toUpperCase() === 'MANAGER');
+
     const [selectedContainer, setSelectedContainer] = useState<ContainerType>('40hc');
     const [products, setProducts] = useState<Product[]>([]);
     const [result, setResult] = useState<PackingResult | null>(null);
@@ -776,16 +778,16 @@ export default function Home({ user }: { user: SessionUser }) {
                                 </div>
                                 <div>
                                     <h2 className="text-xl font-black text-white">
-                                        {user.role === 'admin' ? "DB 연결 설정" : "사용자 설정"}
+                                        {isAdmin ? "DB 연결 설정" : "사용자 설정"}
                                     </h2>
                                     <p className="text-xs text-slate-500 font-bold uppercase tracking-widest">
-                                        {user.role === 'admin' ? "Database Configuration" : "User Settings"}
+                                        {isAdmin ? "Database Configuration" : "User Settings"}
                                     </p>
                                 </div>
                             </div>
 
                             <div className="overflow-y-auto custom-scrollbar flex-1 pr-1 space-y-6">
-                                {user.role === 'admin' && (
+                                {isAdmin && (
                                     <>
                                         <div className="space-y-4">
                                             <div className="space-y-2">
