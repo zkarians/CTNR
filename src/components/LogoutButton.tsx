@@ -24,8 +24,8 @@ export default function LogoutButton({ username, name, role }: LogoutButtonProps
     return (
         <div className="flex items-center gap-2 ml-auto">
             <div className="text-right">
-                <p className="text-xs font-bold text-slate-200">{name || username}</p>
-                <p className="text-[10px] text-slate-500">{roleLabel}</p>
+                <p className="text-xs font-bold text-slate-200 whitespace-nowrap">{name || username}</p>
+                <p className="text-[10px] text-slate-500 whitespace-nowrap">{roleLabel}</p>
             </div>
             <button
                 onClick={handleLogout}
