@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { 
     X, Calendar, User, Download, Search, Image as ImageIcon, 
     ChevronLeft, ChevronRight, Loader2, ArrowLeft, Trash2, Folder,
-    ExternalLink, RotateCw, RotateCcw
+    ExternalLink, RotateCw, RotateCcw, Grid, LayoutGrid
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { fetchUsers } from '@/lib/actions';
@@ -45,6 +45,7 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
     
     // Sort State
     const [sortBy, setSortBy] = useState<'UPLOAD_DESC' | 'UPLOAD_ASC' | 'CREATION_DESC' | 'CREATION_ASC' | 'NAME_ASC' | 'NAME_DESC'>('UPLOAD_DESC');
+    const [viewMode, setViewMode] = useState<'GRID' | 'LARGE'>('GRID');
     
     // Lightbox State
     const [activePhotoIdx, setActivePhotoIdx] = useState<number | null>(null);
@@ -109,6 +110,7 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
         setIsTrashView(false);
         setSelectedContainerFolder(null);
         setSelectedFolders([]);
+        setViewMode('GRID');
     };
 
     
@@ -914,25 +916,63 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                                     </div>
                                 </div>
 
-                                {/* Sort Options */}
-                                <div className="flex items-center gap-2">
-                                    <span className="text-[11px] font-bold text-slate-500">정렬:</span>
-                                    <select 
-                                        value={sortBy} 
-                                        onChange={(e) => setSortBy(e.target.value as any)}
-                                        className="bg-[#11111a] border border-white/5 rounded-xl px-3 py-1.5 text-xs text-slate-300 focus:outline-none focus:border-sky-500 transition-colors cursor-pointer"
-                                    >
-                                        <option value="UPLOAD_DESC">업로드순 (최신)</option>
-                                        <option value="UPLOAD_ASC">업로드순 (과거)</option>
-                                        <option value="CREATION_DESC">파일제작순 (최신)</option>
-                                        <option value="CREATION_ASC">파일제작순 (과거)</option>
-                                        <option value="NAME_ASC">파일이름순 (오름차순)</option>
-                                        <option value="NAME_DESC">파일이름순 (내림차순)</option>
-                                    </select>
+                                {/* Sort & View Mode Options */}
+                                <div className="flex items-center gap-4">
+                                    {/* View Mode Toggle */}
+                                    <div className="flex items-center gap-1.5">
+                                        <span className="text-[11px] font-bold text-slate-500">보기:</span>
+                                        <div className="flex bg-[#11111a] border border-white/5 p-0.5 rounded-lg gap-0.5">
+                                            <button
+                                                onClick={() => setViewMode('GRID')}
+                                                className={`p-1 rounded transition-all flex items-center gap-1 text-[11px] font-bold cursor-pointer ${
+                                                    viewMode === 'GRID' 
+                                                        ? 'bg-sky-500 text-white shadow-sm' 
+                                                        : 'text-slate-400 hover:text-white'
+                                                }`}
+                                                title="일반 바둑판 보기 (5열)"
+                                            >
+                                                <LayoutGrid className="w-3 h-3" />
+                                                <span className="hidden sm:inline">바둑판</span>
+                                            </button>
+                                            <button
+                                                onClick={() => setViewMode('LARGE')}
+                                                className={`p-1 rounded transition-all flex items-center gap-1 text-[11px] font-bold cursor-pointer ${
+                                                    viewMode === 'LARGE' 
+                                                        ? 'bg-sky-500 text-white shadow-sm' 
+                                                        : 'text-slate-400 hover:text-white'
+                                                }`}
+                                                title="크게 보기 (원본 비율, 3-4열)"
+                                            >
+                                                <Grid className="w-3 h-3" />
+                                                <span className="hidden sm:inline">크게 보기</span>
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    {/* Sort dropdown */}
+                                    <div className="flex items-center gap-1.5">
+                                        <span className="text-[11px] font-bold text-slate-500">정렬:</span>
+                                        <select 
+                                            value={sortBy} 
+                                            onChange={(e) => setSortBy(e.target.value as any)}
+                                            className="bg-[#11111a] border border-white/5 rounded-xl px-3 py-1.5 text-xs text-slate-300 focus:outline-none focus:border-sky-500 transition-colors cursor-pointer"
+                                        >
+                                            <option value="UPLOAD_DESC">업로드순 (최신)</option>
+                                            <option value="UPLOAD_ASC">업로드순 (과거)</option>
+                                            <option value="CREATION_DESC">파일제작순 (최신)</option>
+                                            <option value="CREATION_ASC">파일제작순 (과거)</option>
+                                            <option value="NAME_ASC">파일이름순 (오름차순)</option>
+                                            <option value="NAME_DESC">파일이름순 (내림차순)</option>
+                                        </select>
+                                    </div>
                                 </div>
                             </div>
 
-                            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                            <div className={
+                                viewMode === 'GRID'
+                                    ? "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4"
+                                    : "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"
+                            }>
                                 {folderPhotos.map((photo) => (
                                     <motion.div 
                                         key={photo.id}
@@ -943,17 +983,25 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                                                 setActivePhotoIdx(globalIdx);
                                             }
                                         }}
-                                            className="group relative flex flex-col bg-[#11111a] border border-white/5 rounded-2xl overflow-hidden cursor-pointer shadow-lg hover:shadow-xl hover:border-white/10 transition-all duration-300"
-                                        >
-                                            {/* Aspect Ratio container for Image */}
-                                            <div className="relative aspect-[4/3] bg-black overflow-hidden border-b border-white/5">
-                                                <img 
-                                                    src={`/api/photos/view?filename=${encodeURIComponent(photo.photo_path)}`}
-                                                    alt={photo.cntr_no}
-                                                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                                                    loading="lazy"
-                                                />
-                                                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-60 group-hover:opacity-80 transition-opacity" />
+                                        className="group relative flex flex-col bg-[#11111a] border border-white/5 rounded-2xl overflow-hidden cursor-pointer shadow-lg hover:shadow-xl hover:border-white/10 transition-all duration-300"
+                                    >
+                                        {/* Aspect Ratio container for Image */}
+                                        <div className={
+                                            viewMode === 'GRID'
+                                                ? "relative aspect-[4/3] bg-black overflow-hidden border-b border-white/5"
+                                                : "relative w-full bg-black/40 flex items-center justify-center overflow-hidden border-b border-white/5 aspect-auto min-h-[200px]"
+                                        }>
+                                            <img 
+                                                src={`/api/photos/view?filename=${encodeURIComponent(photo.photo_path)}`}
+                                                alt={photo.cntr_no}
+                                                className={
+                                                    viewMode === 'GRID'
+                                                        ? "w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                                                        : "w-full h-auto object-contain max-h-[60vh] group-hover:scale-[1.02] transition-transform duration-500"
+                                                }
+                                                loading="lazy"
+                                            />
+                                            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-60 group-hover:opacity-80 transition-opacity" />
                                                 
                                                 {/* Trash/Active actions overlay */}
                                                 <div className="absolute top-2.5 right-2.5 flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-all" onClick={(e) => e.stopPropagation()}>
