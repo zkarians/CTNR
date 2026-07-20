@@ -281,3 +281,16 @@ export async function syncDb(): Promise<{ success: boolean; message: string; sta
     }
 }
 
+export async function fetchUsers(): Promise<{ id: string; name: string; username: string }[]> {
+    try {
+        const client = await pool.connect();
+        const res = await client.query('SELECT id, name, username FROM "User" ORDER BY name');
+        client.release();
+        return res.rows;
+    } catch (error) {
+        console.error("fetchUsers Error:", error);
+        return [];
+    }
+}
+
+

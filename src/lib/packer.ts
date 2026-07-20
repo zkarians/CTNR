@@ -104,7 +104,8 @@ function hasSupportAtZ(
     w: number,
     l: number,
     z: number,
-    placedItems: PackedItem[]
+    placedItems: PackedItem[],
+    threshold: number = 0.75
 ): boolean {
     if (z === 0) return true; // 바닥은 항상 지탱됨
     
@@ -128,8 +129,8 @@ function hasSupportAtZ(
         supportArea += xOverlap * yOverlap;
     }
     
-    // 지탱해 주는 하단 면적의 총합이 상자 밑면 면적의 75% 이상을 차지해야 적재 가능
-    return (supportArea / targetArea) >= 0.75;
+    // 지탱해 주는 하단 면적의 총합이 상자 밑면 면적의 지정된 비율 이상을 차지해야 적재 가능
+    return (supportArea / targetArea) >= threshold;
 }
 
 function hasSupportAtZInTemp(
@@ -496,10 +497,10 @@ function doTwoPhasePacking(container: any, normalProducts: Product[], smallProdu
                         break; // 충돌 발생 시에는 더 이상 앞으로 전진 불가
                     }
 
-                    // 2. 해당 후보 위치에서 안정적인 지탱이 가능한지 검사 (최종 안착 가능 여부)
+                    // 2. 해당 후보 위치에서 안정적인 지탱이 가능한지 검사 (최종 안착 가능 여부) - 슬라이딩 시에는 100% 지탱만 허용하여 계단식 돌출 적재 방지
                     const candidateZ = getTopZAt(targetX, candidateY, wi.w, wi.l, xOverlapCandidates);
                     const isHeightMatch = candidateZ === targetZ;
-                    const isSupported = hasSupportAtZ(targetX, candidateY, wi.w, wi.l, targetZ, xOverlapCandidates);
+                    const isSupported = hasSupportAtZ(targetX, candidateY, wi.w, wi.l, targetZ, xOverlapCandidates, 0.99);
 
                     if (isHeightMatch && isSupported) {
                         bestY = candidateY; // 지탱 가능하고 단차가 맞다면 이 위치를 최선으로 저장
@@ -621,7 +622,8 @@ function doTwoPhasePacking(container: any, normalProducts: Product[], smallProdu
                                 if (candidateZ !== targetZ) {
                                     break; // 높이가 다르면 단차가 발생하므로 슬라이딩 불가
                                 }
-                                if (!hasSupportAtZ(targetX, candidateY, to.w, to.l, targetZ, xOverlapCandidates)) {
+                                // 슬라이딩 시에는 100% 지탱만 허용하여 계단식 돌출 적재 방지
+                                if (!hasSupportAtZ(targetX, candidateY, to.w, to.l, targetZ, xOverlapCandidates, 0.99)) {
                                     break; // 지탱 공간이 확보되지 않으면 슬라이딩 불가
                                 }
                                 let overlap = false;

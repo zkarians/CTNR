@@ -3,11 +3,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
     Search, Box, Package, Truck, RotateCw, Plus, Trash2,
-    Settings2, ChevronRight, Filter, Calendar, Briefcase, Move3d, X
+    Settings2, ChevronRight, Filter, Calendar, Briefcase, Move3d, X,
+    Camera, Upload, Loader2, Image as ImageIcon
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import ContainerViewer from '@/components/ContainerViewer';
 import LogoutButton from '@/components/LogoutButton';
+import PhotoGallery from '@/components/PhotoGallery';
 import {
     Product, PackingResult, ContainerType, CONTAINER_DATA, Job, JobFilters
 } from '@/lib/types';
@@ -36,6 +38,14 @@ export default function Home({ user }: { user: SessionUser }) {
     const [isPasswordUpdating, setIsPasswordUpdating] = useState(false);
     const [isSyncing, setIsSyncing] = useState(false);
     const controlPanelRef = useRef<HTMLDivElement>(null);
+
+    // Photo Upload States
+    const [isGalleryOpen, setIsGalleryOpen] = useState(false);
+    const [uploadFiles, setUploadFiles] = useState<File[]>([]);
+    const [uploadRemark, setUploadRemark] = useState('');
+    const [uploadCntrNo, setUploadCntrNo] = useState('');
+    const [isUploading, setIsUploading] = useState(false);
+    const [uploadProgressText, setUploadProgressText] = useState('');
 
     // V4.22: Auto Real-time Search with Debounce
     useEffect(() => {
@@ -193,16 +203,72 @@ export default function Home({ user }: { user: SessionUser }) {
         // Reset results and products immediately for UI responsiveness
         setResult(null);
         setProducts([]);
+        setUploadFiles([]);
+        setUploadRemark('');
 
         try {
             const data = await fetchProductsByJob(jobId);
             setProducts(data);
             const job = jobs.find(j => j.id === jobId);
-            if (job) setSelectedContainer(job.container_type);
+            if (job) {
+                setSelectedContainer(job.container_type);
+                setUploadCntrNo(job.cntr_no || '');
+            }
         } catch (error) {
             console.error("Error selecting job:", error);
         } finally {
             setIsLoading(false);
+        }
+    };
+
+    const handlePhotoUpload = async () => {
+        if (uploadFiles.length === 0) {
+            alert("업로드할 사진을 선택해 주세요.");
+            return;
+        }
+        if (!selectedJobId) {
+            alert("선택된 작업이 없습니다.");
+            return;
+        }
+        if (!uploadCntrNo.trim()) {
+            alert("컨테이너 번호를 입력해 주세요.");
+            return;
+        }
+
+        setIsUploading(true);
+        let successCount = 0;
+        try {
+            for (let i = 0; i < uploadFiles.length; i++) {
+                const file = uploadFiles[i];
+                setUploadProgressText(`업로드 중... (${i + 1}/${uploadFiles.length})`);
+                
+                const formData = new FormData();
+                formData.append('file', file);
+                formData.append('jobId', selectedJobId.toString());
+                formData.append('cntrNo', uploadCntrNo.trim());
+                formData.append('remark', uploadRemark.trim());
+
+                const res = await fetch('/api/photos', {
+                    method: 'POST',
+                    body: formData,
+                });
+
+                const data = await res.json();
+                if (data.success) {
+                    successCount++;
+                } else {
+                    console.error(`Failed to upload file ${file.name}:`, data.error);
+                }
+            }
+            alert(`성공적으로 ${successCount}장의 사진을 업로드했습니다.`);
+            setUploadFiles([]);
+            setUploadRemark('');
+        } catch (error) {
+            console.error("Upload error:", error);
+            alert("사진 업로드 중 오류가 발생했습니다.");
+        } finally {
+            setIsUploading(false);
+            setUploadProgressText('');
         }
     };
 
@@ -247,7 +313,10 @@ export default function Home({ user }: { user: SessionUser }) {
                     CTNR <span className="text-sky-500">Optimizer</span>
                 </h1>
                 <div className="flex items-center gap-1">
-                    <button onClick={() => setIsSettingsOpen(true)} className="p-2 hover:bg-white/5 rounded-full text-slate-400 hover:text-sky-400 transition-all">
+                    <button onClick={() => setIsGalleryOpen(true)} className="p-2 hover:bg-white/5 rounded-full text-slate-400 hover:text-sky-400 transition-all" title="사진 보관함">
+                        <ImageIcon className="w-5 h-5" />
+                    </button>
+                    <button onClick={() => setIsSettingsOpen(true)} className="p-2 hover:bg-white/5 rounded-full text-slate-400 hover:text-sky-400 transition-all" title="설정">
                         <Settings2 className="w-5 h-5" />
                     </button>
                     <LogoutButton username={user.username} name={user.name} role={user.role} />
@@ -322,6 +391,99 @@ export default function Home({ user }: { user: SessionUser }) {
                     )}
                 </div>
             </section>
+
+            {/* Photo Upload Section */}
+            <AnimatePresence>
+                {selectedJobId && (
+                    <motion.section 
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: 10 }}
+                        className="space-y-3 shrink-0"
+                    >
+                        <div className="flex items-center justify-between px-1">
+                            <div className="flex items-center gap-2 text-[13px] md:text-xs font-bold text-slate-500 uppercase tracking-widest">
+                                <Camera className="w-4 h-4 md:w-3.5 md:h-3.5 text-sky-500" />
+                                작업 완료 사진 등록
+                            </div>
+                        </div>
+
+                        <div className="p-4 md:p-3 rounded-2xl md:rounded-xl bg-white/5 border border-white/5 space-y-3">
+                            <input 
+                                type="file" 
+                                accept="image/*" 
+                                capture="environment" 
+                                className="hidden" 
+                                id="photo-upload-input" 
+                                multiple
+                                onChange={(e) => {
+                                    if (e.target.files && e.target.files.length > 0) {
+                                        setUploadFiles(Array.from(e.target.files));
+                                    }
+                                }} 
+                            />
+                            
+                            <label htmlFor="photo-upload-input" className="flex flex-col items-center justify-center border-2 border-dashed border-white/10 rounded-2xl p-4 hover:border-sky-500 hover:bg-sky-500/5 transition-all cursor-pointer">
+                                {uploadFiles.length > 0 ? (
+                                    <div className="flex flex-col items-center text-center">
+                                        <ImageIcon className="w-8 h-8 text-sky-400 mb-2 animate-pulse" />
+                                        <p className="text-xs font-bold text-slate-200 truncate max-w-[200px]">선택된 사진: {uploadFiles.length}장</p>
+                                        <p className="text-[10px] text-slate-500">
+                                            총 용량: {(uploadFiles.reduce((sum, f) => sum + f.size, 0) / 1024 / 1024).toFixed(2)} MB
+                                        </p>
+                                    </div>
+                                ) : (
+                                    <div className="flex flex-col items-center text-center text-slate-500">
+                                        <Camera className="w-8 h-8 mb-2" />
+                                        <p className="text-xs font-bold">사진 촬영 또는 파일 선택</p>
+                                        <p className="text-[10px] mt-0.5">카메라로 적재 완료된 컨테이너 촬영 (다중선택 가능)</p>
+                                    </div>
+                                )}
+                            </label>
+
+                            {uploadFiles.length > 0 && (
+                                <div className="space-y-3 pt-1 animate-in fade-in duration-300">
+                                    <div className="space-y-1.5">
+                                        <label className="text-[10px] md:text-[9px] text-slate-500 font-bold ml-1 block">컨테이너 번호</label>
+                                        <input 
+                                            value={uploadCntrNo} 
+                                            onChange={e => setUploadCntrNo(e.target.value)}
+                                            className="w-full bg-black/40 border border-white/10 rounded-xl md:rounded-lg px-3 py-2.5 md:py-1.5 text-xs md:text-[11px] outline-none focus:border-sky-500 transition-colors uppercase font-bold text-slate-200"
+                                            placeholder="컨테이너 번호 입력"
+                                        />
+                                    </div>
+                                    <div className="space-y-1.5">
+                                        <label className="text-[10px] md:text-[9px] text-slate-500 font-bold ml-1 block">작업자 메모</label>
+                                        <input 
+                                            value={uploadRemark} 
+                                            onChange={e => setUploadRemark(e.target.value)}
+                                            className="w-full bg-black/40 border border-white/10 rounded-xl md:rounded-lg px-3 py-2.5 md:py-1.5 text-xs md:text-[11px] outline-none focus:border-sky-500 transition-colors"
+                                            placeholder="메모 입력 (예: 적재 완료, 상단 파손 등)"
+                                        />
+                                    </div>
+                                    <button 
+                                        onClick={handlePhotoUpload} 
+                                        disabled={isUploading}
+                                        className="w-full py-3 md:py-2.5 rounded-2xl md:rounded-xl bg-sky-500 hover:bg-sky-400 text-white text-xs md:text-[11px] font-black transition-all border border-sky-400/20 shadow-lg flex items-center justify-center gap-1.5 active:scale-[0.98] disabled:opacity-50 cursor-pointer"
+                                    >
+                                        {isUploading ? (
+                                            <>
+                                                <Loader2 className="w-4 h-4 animate-spin" />
+                                                {uploadProgressText || "업로드 중..."}
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Upload className="w-4 h-4" />
+                                                사진 저장하기
+                                            </>
+                                        )}
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    </motion.section>
+                )}
+            </AnimatePresence>
 
             {/* Container Selection & Manual Add */}
             <section className="space-y-4 shrink-0">
@@ -539,6 +701,9 @@ export default function Home({ user }: { user: SessionUser }) {
                         </h1>
                     </div>
                     <div className="flex items-center gap-1">
+                        <button onClick={() => setIsGalleryOpen(true)} className="p-2 hover:bg-white/5 rounded-full text-slate-400" title="사진 보관함">
+                            <ImageIcon className="w-5 h-5" />
+                        </button>
                         <button onClick={() => setIsSettingsOpen(true)} className="p-2 hover:bg-white/5 rounded-full text-slate-400">
                             <Settings2 className="w-5 h-5" />
                         </button>
@@ -734,6 +899,8 @@ export default function Home({ user }: { user: SessionUser }) {
                     </div>
                 )}
             </AnimatePresence>
+
+            <PhotoGallery user={user} isOpen={isGalleryOpen} onClose={() => setIsGalleryOpen(false)} />
         </>
     );
 }

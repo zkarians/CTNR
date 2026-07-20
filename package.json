@@ -18,6 +18,7 @@
     "clsx": "latest",
     "dotenv": "^17.3.1",
     "framer-motion": "latest",
+    "heic-convert": "^2.1.0",
     "lucide-react": "latest",
     "next": "latest",
     "pg": "^8.11.3",
