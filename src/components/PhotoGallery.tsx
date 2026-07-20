@@ -43,6 +43,7 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
     
     // Folder State
     const [selectedContainerFolder, setSelectedContainerFolder] = useState<string | null>(null);
+    const [selectedFolders, setSelectedFolders] = useState<string[]>([]);
     
     // Group photos by container number
     const folders = React.useMemo(() => {
@@ -117,6 +118,7 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
             const data = await res.json();
             if (data.success) {
                 setPhotos(data.photos);
+                setSelectedFolders([]);
             } else {
                 console.error("Error fetching photos:", data.error);
             }
@@ -133,6 +135,7 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
             loadPhotos();
         } else {
             setSelectedContainerFolder(null);
+            setSelectedFolders([]);
         }
     }, [isOpen, startDate, endDate, selectedUserId]);
 
@@ -231,6 +234,47 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
         } catch (error) {
             console.error("Delete folder error:", error);
             alert("폴더 삭제 중 오류가 발생했습니다.");
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const handleSelectAllFolders = () => {
+        if (selectedFolders.length === folders.length) {
+            setSelectedFolders([]);
+        } else {
+            setSelectedFolders(folders.map(f => f.cntrNo));
+        }
+    };
+
+    const handleDownloadSelectedFoldersZip = async () => {
+        if (selectedFolders.length === 0) {
+            alert("다운로드할 폴더를 하나 이상 선택해 주세요.");
+            return;
+        }
+
+        setIsLoading(true);
+        try {
+            const params = new URLSearchParams();
+            params.append('cntrNos', selectedFolders.join(','));
+            if (startDate) params.append('startDate', startDate);
+            if (endDate) params.append('endDate', endDate);
+            if (selectedUserId) params.append('userId', selectedUserId);
+
+            const downloadUrl = `/api/photos/download?${params.toString()}`;
+            
+            const a = document.createElement('a');
+            a.href = downloadUrl;
+            
+            const todayStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+            a.download = `container_photos_${todayStr}.zip`;
+            
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+        } catch (error) {
+            console.error("ZIP download failed:", error);
+            alert("압축 파일 다운로드 중 오류가 발생했습니다.");
         } finally {
             setIsLoading(false);
         }
@@ -415,25 +459,66 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                         </div>
                     ) : selectedContainerFolder === null ? (
                         /* FOLDER GRID VIEW */
-                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6">
-                            {folders.map(folder => (
-                                <motion.div
-                                    key={folder.cntrNo}
-                                    whileHover={{ y: -4, scale: 1.02 }}
-                                    onClick={() => setSelectedContainerFolder(folder.cntrNo)}
-                                    className="group relative flex flex-col bg-[#121422]/80 border border-white/5 rounded-3xl p-5 cursor-pointer shadow-lg hover:shadow-2xl hover:border-sky-500/30 hover:bg-[#15182e]/90 transition-all duration-300"
-                                >
-                                    {/* Folder Shape Icon Container */}
-                                    <div className="relative aspect-[4/3] w-full flex items-center justify-center bg-sky-950/20 border border-sky-500/10 rounded-2xl mb-4 group-hover:bg-sky-500/10 transition-colors">
-                                        <div className="text-sky-400 group-hover:scale-110 transition-transform duration-300">
-                                            <Folder className="w-16 h-16" />
+                        <div className="space-y-4">
+                            {/* Selection Actions Bar */}
+                            <div className="flex flex-wrap gap-3 items-center justify-between bg-white/[0.02] border border-white/5 rounded-2xl p-4 shrink-0">
+                                <div className="flex items-center gap-3">
+                                    <button
+                                        onClick={handleSelectAllFolders}
+                                        className="px-3.5 py-2 rounded-xl bg-white/5 border border-white/5 hover:bg-white/10 text-slate-300 hover:text-white transition-all text-xs font-black cursor-pointer"
+                                    >
+                                        {selectedFolders.length === folders.length ? "선택 전체 해제" : "전체 선택"}
+                                    </button>
+                                    <span className="text-xs font-bold text-slate-400">
+                                        총 {folders.length}개 폴더 중 <strong className="text-sky-400">{selectedFolders.length}개</strong> 선택됨
+                                    </span>
+                                </div>
+                                
+                                {selectedFolders.length > 0 && (
+                                    <button
+                                        onClick={handleDownloadSelectedFoldersZip}
+                                        className="flex items-center gap-2 px-4 py-2 rounded-xl bg-sky-500 hover:bg-sky-400 border border-sky-600 text-white font-black text-xs transition-all shadow-lg shadow-sky-500/10 cursor-pointer"
+                                    >
+                                        <Download className="w-3.5 h-3.5" /> 선택 폴더 압축 다운로드 (.ZIP)
+                                    </button>
+                                )}
+                            </div>
+
+                            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6">
+                                {folders.map(folder => (
+                                    <motion.div
+                                        key={folder.cntrNo}
+                                        whileHover={{ y: -4, scale: 1.02 }}
+                                        onClick={() => setSelectedContainerFolder(folder.cntrNo)}
+                                        className="group relative flex flex-col bg-[#121422]/80 border border-white/5 rounded-3xl p-5 cursor-pointer shadow-lg hover:shadow-2xl hover:border-sky-500/30 hover:bg-[#15182e]/90 transition-all duration-300"
+                                    >
+                                        {/* Checkbox overlay */}
+                                        <div className="absolute top-4 left-4 z-10" onClick={(e) => e.stopPropagation()}>
+                                            <input 
+                                                type="checkbox"
+                                                checked={selectedFolders.includes(folder.cntrNo)}
+                                                onChange={(e) => {
+                                                    setSelectedFolders(prev => 
+                                                        prev.includes(folder.cntrNo) 
+                                                            ? prev.filter(name => name !== folder.cntrNo)
+                                                            : [...prev, folder.cntrNo]
+                                                    );
+                                                }}
+                                                className="w-4 h-4 rounded border-white/20 bg-black/40 text-sky-500 focus:ring-sky-500 cursor-pointer"
+                                            />
                                         </div>
-                                        
-                                        {/* Floating Photo Count Badge */}
-                                        <div className="absolute top-3 right-3 px-2.5 py-1 rounded-xl bg-sky-500 text-white text-[10px] font-black tracking-wider">
-                                            {folder.photos.length}장
+
+                                        {/* Folder Shape Icon Container */}
+                                        <div className="relative aspect-[4/3] w-full flex items-center justify-center bg-sky-950/20 border border-sky-500/10 rounded-2xl mb-4 group-hover:bg-sky-500/10 transition-colors">
+                                            <div className="text-sky-400 group-hover:scale-110 transition-transform duration-300">
+                                                <Folder className="w-16 h-16" />
+                                            </div>
+                                            
+                                            {/* Floating Photo Count Badge */}
+                                            <div className="absolute top-3 right-3 px-2.5 py-1 rounded-xl bg-sky-500 text-white text-[10px] font-black tracking-wider">
+                                                {folder.photos.length}장
+                                            </div>
                                         </div>
-                                    </div>
 
                                     {/* Folder Details */}
                                     <div className="space-y-1 flex-1 flex flex-col justify-between">
@@ -466,6 +551,7 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                                 </motion.div>
                             ))}
                         </div>
+                    </div>
                     ) : (
                         /* PHOTO GRID VIEW (INSIDE SELECTED FOLDER) */
                         <div>
