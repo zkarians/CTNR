@@ -3,7 +3,8 @@
 import React, { useState, useEffect } from 'react';
 import { 
     X, Calendar, User, Download, Search, Image as ImageIcon, 
-    ChevronLeft, ChevronRight, Loader2, ArrowLeft, Trash2, Folder 
+    ChevronLeft, ChevronRight, Loader2, ArrowLeft, Trash2, Folder,
+    ExternalLink
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { fetchUsers } from '@/lib/actions';
@@ -589,16 +590,14 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                                                 />
                                                 <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-60 group-hover:opacity-80 transition-opacity" />
                                                 
-                                                {/* Download trigger overlay - Admin Only */}
-                                                {isAdmin && (
-                                                    <button 
-                                                        onClick={(e) => handleDownload(photo, e)}
-                                                        className="absolute top-2.5 right-2.5 p-2 rounded-xl bg-black/60 backdrop-blur-md border border-white/10 text-slate-300 hover:text-white hover:bg-black/90 transition-all opacity-0 group-hover:opacity-100"
-                                                        title="다운로드"
-                                                    >
-                                                        <Download className="w-3.5 h-3.5" />
-                                                    </button>
-                                                )}
+                                                {/* Download trigger overlay */}
+                                                <button 
+                                                    onClick={(e) => handleDownload(photo, e)}
+                                                    className="absolute top-2.5 right-2.5 p-2 rounded-xl bg-black/60 backdrop-blur-md border border-white/10 text-slate-300 hover:text-white hover:bg-black/90 transition-all opacity-0 group-hover:opacity-100"
+                                                    title="다운로드"
+                                                >
+                                                    <Download className="w-3.5 h-3.5" />
+                                                </button>
                                             </div>
 
                                             {/* Description */}
@@ -652,23 +651,31 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                                 </div>
                                 <div className="flex items-center gap-3">
                                     {isAdmin && (
-                                        <>
-                                            <button 
-                                                onClick={(e) => { e.stopPropagation(); handleDelete(photos[activePhotoIdx], e); }}
-                                                className="p-3 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-400 hover:text-white hover:bg-rose-600 transition-all flex items-center gap-2 text-xs font-bold"
-                                                title="사진 삭제"
-                                            >
-                                                <Trash2 className="w-4 h-4" /> <span className="hidden sm:inline">삭제</span>
-                                            </button>
-                                            <button 
-                                                onClick={(e) => { e.stopPropagation(); handleDownload(photos[activePhotoIdx]); }}
-                                                className="p-3 rounded-2xl bg-white/5 border border-white/5 text-slate-300 hover:text-white hover:bg-white/10 transition-all flex items-center gap-2 text-xs font-bold"
-                                                title="다운로드"
-                                            >
-                                                <Download className="w-4 h-4" /> <span className="hidden sm:inline">다운로드</span>
-                                            </button>
-                                        </>
+                                        <button 
+                                            onClick={(e) => { e.stopPropagation(); handleDelete(photos[activePhotoIdx], e); }}
+                                            className="p-3 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-400 hover:text-white hover:bg-rose-600 transition-all flex items-center gap-2 text-xs font-bold"
+                                            title="사진 삭제"
+                                        >
+                                            <Trash2 className="w-4 h-4" /> <span className="hidden sm:inline">삭제</span>
+                                        </button>
                                     )}
+                                    <a 
+                                        href={`/api/photos/view?filename=${encodeURIComponent(photos[activePhotoIdx].photo_path)}`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        onClick={(e) => e.stopPropagation()}
+                                        className="p-3 rounded-2xl bg-[#030712] border border-white/10 text-sky-400 hover:bg-sky-500 hover:text-white transition-all flex items-center gap-2 text-xs font-bold"
+                                        title="새 탭에서 원본 화질과 크기로 보기"
+                                    >
+                                        <ExternalLink className="w-4 h-4" /> <span className="hidden sm:inline">원본 보기</span>
+                                    </a>
+                                    <button 
+                                        onClick={(e) => { e.stopPropagation(); handleDownload(photos[activePhotoIdx]); }}
+                                        className="p-3 rounded-2xl bg-white/5 border border-white/5 text-slate-300 hover:text-white hover:bg-white/10 transition-all flex items-center gap-2 text-xs font-bold"
+                                        title="다운로드"
+                                    >
+                                        <Download className="w-4 h-4" /> <span className="hidden sm:inline">다운로드</span>
+                                    </button>
                                     <button 
                                         onClick={() => setActivePhotoIdx(null)}
                                         className="p-3 rounded-2xl bg-white/5 border border-white/5 text-slate-300 hover:text-white hover:bg-white/10 transition-all"
