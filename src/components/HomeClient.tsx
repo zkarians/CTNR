@@ -414,7 +414,6 @@ export default function Home({ user }: { user: SessionUser }) {
                             <input 
                                 type="file" 
                                 accept="image/*" 
-                                capture="environment" 
                                 className="hidden" 
                                 id="photo-upload-input" 
                                 multiple
