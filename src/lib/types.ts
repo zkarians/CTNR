@@ -69,6 +69,7 @@ export interface Job {
     cntr_no?: string;
     transporter?: string;
     work_date?: string;
+    photo_count?: number;
 }
 
 export interface JobFilters {

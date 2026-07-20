@@ -117,7 +117,8 @@ export async function getJobsFromDB(filters?: JobFilters): Promise<Job[]> {
                         j.saved_at,
                         r.cntr_no,
                         r.transporter,
-                        r.cntr_type
+                        r.cntr_type,
+                        (SELECT COUNT(*)::integer FROM container_photos p WHERE p.job_id = j.id AND (r.cntr_no IS NULL OR p.cntr_no = r.cntr_no)) as photo_count
                     FROM container_jobs j
                     LEFT JOIN container_results r ON r.job_id = j.id
                     ${whereSql}
@@ -135,6 +136,7 @@ export async function getJobsFromDB(filters?: JobFilters): Promise<Job[]> {
                 etd: row.etd,
                 cntr_no: row.cntr_no,
                 transporter: row.transporter,
+                photo_count: Number(row.photo_count) || 0,
                 work_date: (() => {
                     const savedAt = row.saved_at ? new Date(row.saved_at) : null;
                     if (savedAt && !isNaN(savedAt.getTime())) {

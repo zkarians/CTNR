@@ -268,6 +268,7 @@ export default function Home({ user }: { user: SessionUser }) {
             setUploadFiles([]);
             setUploadRemark('');
             setUploadJob(null);
+            refreshJobs();
         } catch (error) {
             console.error("Upload error:", error);
             alert("사진 업로드 중 오류가 발생했습니다.");
@@ -400,10 +401,17 @@ export default function Home({ user }: { user: SessionUser }) {
                                             setUploadFiles([]);
                                             setUploadRemark('');
                                         }}
-                                        className="p-1.5 hover:bg-white/10 text-slate-500 hover:text-sky-400 rounded-lg transition-colors"
-                                        title="사진 등록"
+                                        className={`p-1.5 hover:bg-white/10 rounded-lg transition-all flex items-center gap-1 ${
+                                            job.photo_count && job.photo_count > 0 
+                                                ? "text-sky-400 bg-sky-500/10 border border-sky-500/20" 
+                                                : "text-slate-500 hover:text-sky-400 border border-transparent"
+                                        }`}
+                                        title={job.photo_count && job.photo_count > 0 ? `사진 등록 (현재 ${job.photo_count}장 등록됨)` : "사진 등록"}
                                     >
                                         <Camera className="w-4 h-4 md:w-3.5 md:h-3.5" />
+                                        {job.photo_count && job.photo_count > 0 ? (
+                                            <span className="text-[10px] md:text-[9px] font-black">{job.photo_count}</span>
+                                        ) : null}
                                     </button>
                                 </div>
                             </div>
@@ -946,7 +954,7 @@ export default function Home({ user }: { user: SessionUser }) {
                 )}
             </AnimatePresence>
 
-            <PhotoGallery user={user} isOpen={isGalleryOpen} onClose={() => setIsGalleryOpen(false)} />
+            <PhotoGallery user={user} isOpen={isGalleryOpen} onClose={() => { setIsGalleryOpen(false); refreshJobs(); }} />
         </>
     );
 }
