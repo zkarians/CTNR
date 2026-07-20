@@ -26,6 +26,61 @@ export async function GET(req: NextRequest) {
         }
 
         if (!fs.existsSync(filePath)) {
+            // Fallback: Attempt to fetch from remote server if not present locally
+            const remoteHosts = [
+                'http://idlezero.iptime.org:4000',
+                'http://ungdong.iptime.org:4000',
+                'http://ungdong.iptime.org',
+                'http://idlezero.iptime.org'
+            ];
+
+            let remoteBuffer: Buffer | null = null;
+            let fetchedContentType = '';
+
+            const cookieHeader = req.headers.get('cookie') || '';
+
+            for (const host of remoteHosts) {
+                try {
+                    const remoteUrl = `${host}/api/photos/view?filename=${encodeURIComponent(filename)}`;
+                    const res = await fetch(remoteUrl, {
+                        headers: {
+                            'Cookie': cookieHeader
+                        },
+                        signal: AbortSignal.timeout(3000) // 3 second timeout per attempt
+                    });
+
+                    if (res.ok) {
+                        const arrayBuffer = await res.arrayBuffer();
+                        remoteBuffer = Buffer.from(arrayBuffer);
+                        fetchedContentType = res.headers.get('content-type') || 'image/jpeg';
+                        
+                        // Cache it locally so subsequent requests are served instantly from disk
+                        try {
+                            const dir = path.dirname(filePath);
+                            if (!fs.existsSync(dir)) {
+                                fs.mkdirSync(dir, { recursive: true });
+                            }
+                            fs.writeFileSync(filePath, remoteBuffer);
+                            console.log(`[Cache] Successfully downloaded and cached photo locally at: ${filePath}`);
+                        } catch (cacheError) {
+                            console.error('Failed to cache remote photo locally:', cacheError);
+                        }
+                        break;
+                    }
+                } catch (err) {
+                    // Fail silently and try the next host
+                }
+            }
+
+            if (remoteBuffer) {
+                return new NextResponse(remoteBuffer as any, {
+                    headers: {
+                        'Content-Type': fetchedContentType,
+                        'Cache-Control': 'public, max-age=31536000, immutable',
+                    },
+                });
+            }
+
             return new NextResponse('File not found', { status: 404 });
         }
 
