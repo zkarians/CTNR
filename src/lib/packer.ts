@@ -360,6 +360,11 @@ export function packContainer(
             res = optimizePackResultWithSwaps(container, res);
         }
 
+        // V6.12: Run Y-compaction on the final optimized result
+        compactItemsAlongY(res.items, container);
+        const vol = res.items.reduce((s, i) => s + (i.w * i.l * i.h), 0);
+        res.efficiency = (vol / (container.width * container.length * container.height)) * 100;
+
         if (!bestRes || res.items.length > bestRes.items.length) {
             bestRes = res;
         }
@@ -1067,6 +1072,9 @@ function doTwoPhasePacking(container: any, normalProducts: Product[], smallProdu
         }
     }
 
+    // V6.11: Y-Axis Gravity Compaction — Wall 간 Gap 제거 후처리
+    compactItemsAlongY(placed, container);
+
     const unpackedList = allProducts.map(p => ({ ...p, quantity: unpacked.get(p.id)! })).filter(p => p.quantity > 0);
     const vol = placed.reduce((s, i) => s + (i.w * i.l * i.h), 0);
     return { container: { ...container, id: '40hc' }, items: placed, efficiency: (vol / (container.width * container.length * container.height)) * 100, unpacked: unpackedList };
@@ -1432,6 +1440,10 @@ function blockPackShelf(W: number, H: number, D: number, allProducts: Product[],
 
                             let score = (((vol + lookAheadVol + widthFillBonus) / totalL + totalL + volBonus) * (1 + widthFillRatio * 1.5)) * layPenalty;
 
+                            // V6.12: Add height utilization bonus to encourage vertical stacking
+                            const heightUtil = (o.h * hCount) / H;
+                            score *= (1 + heightUtil * 1.6);
+
                             if (o.h >= 500 && hCount === 1 && hasLargeUnpackedTopper) {
                                 score *= 2.0; // Give a 100% score bonus to promote 1-high base
                             }
@@ -1467,6 +1479,131 @@ function blockPackShelf(W: number, H: number, D: number, allProducts: Product[],
  * Try to resolve suboptimal greedy block packing by swapping an unpacked product with a packed product,
  * then trying to place the displaced product in any remaining empty space.
  */
+/**
+ * V6.12 - Y-Axis Stack Group Compaction (후처리)
+ * 적재 완료 후 모든 아이템을 Y=0 방향으로 최대한 밀착시켜 Wall 간 Gap을 제거합니다.
+ * 이때 개별 제품이 아닌, 위아래로 쌓여 있는 스택 그룹(Stack Group)을 하나의 단위로 묶어서
+ * 함께 밀착 처리함으로써 2층 제품이 1층 제품 뒤로 밀려 공중부양되거나, 서로 다른 층간 충돌로 인해
+ * 전체 스택이 가로막혀 갭이 생기는 현상을 해결합니다.
+ */
+function compactItemsAlongY(items: PackedItem[], container: { length: number }): void {
+    const grouped = new Set<PackedItem>();
+    const groups: PackedItem[][] = [];
+
+    // Z 좌표가 낮은 베이스 상자부터 처리하기 위해 정렬
+    const sortedForGrouping = [...items].sort((a, b) => a.z - b.z);
+
+    for (const item of sortedForGrouping) {
+        if (grouped.has(item)) continue;
+
+        // 새로운 스택 그룹 구성
+        const group: PackedItem[] = [item];
+        grouped.add(item);
+
+        // 해당 스택 그룹의 위에 직접/간접적으로 쌓여 있는 모든 제품(dependents)을 재귀적으로 그룹에 추가
+        let added = true;
+        while (added) {
+            added = false;
+            for (const other of items) {
+                if (grouped.has(other)) continue;
+
+                // 그룹 내 어떤 멤버 바로 위에(Z축 방향 밀착) 겹치는 형태인지 검사
+                for (const member of group) {
+                    const memberTop = member.z + member.h;
+                    if (Math.abs(other.z - memberTop) <= 5) {
+                        const xOverlap = Math.max(member.x, other.x) < Math.min(member.x + member.w, other.x + other.w) - 0.5;
+                        const yOverlap = Math.max(member.y, other.y) < Math.min(member.y + member.l, other.y + other.l) - 0.5;
+                        if (xOverlap && yOverlap) {
+                            group.push(other);
+                            grouped.add(other);
+                            added = true;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        groups.push(group);
+    }
+
+    // 그룹들을 앞쪽 Y 좌표 기준으로 오름차순 정렬하여 앞에서부터 순서대로 당김
+    groups.sort((gA, gB) => {
+        const minY_A = Math.min(...gA.map(it => it.y));
+        const minY_B = Math.min(...gB.map(it => it.y));
+        return minY_A - minY_B;
+    });
+
+    // 그룹 단위의 Y 이동 적합성 검사
+    function canShiftGroup(group: PackedItem[], dy: number): boolean {
+        const groupSet = new Set(group);
+        const others = items.filter(it => !groupSet.has(it));
+
+        for (const item of group) {
+            const candidateY = item.y + dy;
+            if (candidateY < 0) return false;
+
+            // 1. 그룹 외부 상자들과의 Overlap 검사
+            for (const other of others) {
+                const xOverlap = Math.max(item.x, other.x) < Math.min(item.x + item.w, other.x + other.w) - 0.5;
+                if (!xOverlap) continue;
+                const zOverlap = Math.max(item.z, other.z) < Math.min(item.z + item.h, other.z + other.h) - 0.5;
+                if (!zOverlap) continue;
+                const yOverlap = Math.max(candidateY, other.y) < Math.min(candidateY + item.l, other.y + other.l) - 0.5;
+                if (yOverlap) return false;
+            }
+
+            // 2. 지탱면 적재 비율 검증 (Z > 0 인 품목들 대상)
+            if (item.z > 0) {
+                const targetZ = item.z;
+                const targetArea = item.w * item.l;
+                let supportArea = 0;
+                const xMax = item.x + item.w;
+                const yMax = candidateY + item.l;
+
+                for (const other of items) {
+                    const otherTop = other.z + other.h;
+                    if (Math.abs(otherTop - targetZ) > 5) continue;
+
+                    // 만약 지탱해 주는 아래 상자도 이 그룹에 포함되어 있다면 같이 Shift된 Y 기준으로 평가
+                    const otherY = groupSet.has(other) ? other.y + dy : other.y;
+
+                    if (other.x >= xMax || other.x + other.w <= item.x) continue;
+                    if (otherY >= yMax || otherY + other.l <= candidateY) continue;
+
+                    const xOverlap = Math.min(xMax, other.x + other.w) - Math.max(item.x, other.x);
+                    const yOverlap = Math.min(yMax, otherY + other.l) - Math.max(candidateY, otherY);
+                    supportArea += xOverlap * yOverlap;
+                }
+
+                if (supportArea / targetArea < 0.75) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    // 각 그룹을 Y=0 방향으로 가능한 최대한 밀착 이동
+    for (const group of groups) {
+        let bestDy = 0;
+        const minGroupY = Math.min(...group.map(it => it.y));
+
+        for (let dy = -1; dy >= -minGroupY; dy--) {
+            if (canShiftGroup(group, dy)) {
+                bestDy = dy;
+            } else {
+                break;
+            }
+        }
+
+        if (bestDy < 0) {
+            for (const item of group) {
+                item.y += bestDy;
+            }
+        }
+    }
+}
+
 function optimizePackResultWithSwaps(container: ContainerDimensions, result: PackingResult): PackingResult {
     let items = result.items.map(it => ({ ...it }));
     let unpacked = result.unpacked.map(p => ({ ...p }));
