@@ -334,6 +334,23 @@ export function packContainer(
         .reduce((sum, p) => sum + p.quantity, 0);
     const isMixedWidthSpecialJob = qty750 > 0 && qty800 > 0 && (qty750 / qty800 >= 1.5) && (qty750 / qty800 <= 2.5);
 
+    // V6.13: Detect 700~760 + 790~850 mixed scenario where (B + A*2) > (A*3) and fits container width
+    // e.g. DLEX8900B(800) + WDP6B(755)*2 = 2310 > WDP6B(755)*3 = 2265, and 2310 <= 2352
+    let shouldForceMixedWidth = false;
+    {
+        const prodA = products.find(p => Number(p.width) >= 700 && Number(p.width) <= 760);
+        const prodB = products.find(p => Number(p.width) >= 790 && Number(p.width) <= 850);
+        if (prodA && prodB) {
+            const wA = Number(prodA.width);
+            const wB = Number(prodB.width);
+            const combinedW = wB + wA * 2;
+            const tripleAW = wA * 3;
+            if (combinedW > tripleAW && combinedW <= container.width) {
+                shouldForceMixedWidth = true;
+            }
+        }
+    }
+
     // Separate normal and small products
     const normalProducts = products.filter(p => !isSmallProduct(p));
     const smallProducts = products.filter(p => isSmallProduct(p));
@@ -345,10 +362,18 @@ export function packContainer(
     const sortedSmall = [...smallProducts].sort((a, b) => (b.width * b.length * b.height) - (a.width * a.length * a.height));
 
     let bestRes: PackingResult | null = null;
-    const passes = Math.max(numPasses, 30);
+    // V6.13: If mixed condition exists, allow extra passes for the force-mixed phase
+    const passes = Math.max(numPasses, shouldForceMixedWidth ? 50 : 30);
 
     for (let pIdx = 0; pIdx < passes; pIdx++) {
-        let res = doTwoPhasePacking(container, sortedNormal, sortedSmall, products, pIdx, isMixedWidthSpecialJob);
+        // V6.13: 2-Pass strategy — first half uses standard logic, second half forces mixed-width
+        // only when unpacked still exist and the dimensional condition is met
+        let currentMixedFlag = isMixedWidthSpecialJob;
+        if (shouldForceMixedWidth && pIdx >= 25 && bestRes && bestRes.unpacked.filter(p => p.id !== 'NONASSET.ITEM').length > 0) {
+            currentMixedFlag = true;
+        }
+
+        let res = doTwoPhasePacking(container, sortedNormal, sortedSmall, products, pIdx, currentMixedFlag);
         
         // V5.03: Append invalid 0-dimension products to the unpacked list so user sees them as failed
         if (invalidProducts.length > 0) {
