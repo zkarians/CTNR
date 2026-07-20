@@ -808,103 +808,91 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                                 )}
                             </div>
 
-                            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
                                 {folders.map(folder => (
                                     <motion.div
                                         key={folder.cntrNo}
-                                        whileHover={{ y: -4, scale: 1.02 }}
+                                        whileHover={{ y: -2, scale: 1.01 }}
                                         onClick={() => setSelectedContainerFolder(folder.cntrNo)}
-                                        className="group relative flex flex-col bg-[#121422]/80 border border-white/5 rounded-3xl p-5 cursor-pointer shadow-lg hover:shadow-2xl hover:border-sky-500/30 hover:bg-[#15182e]/90 transition-all duration-300"
+                                        className="group relative flex flex-col bg-[#121422]/80 border border-white/5 rounded-2xl p-3 cursor-pointer shadow-md hover:shadow-lg hover:border-sky-500/20 hover:bg-[#15182e]/90 transition-all duration-300 select-none"
                                     >
-                                        {/* Checkbox overlay */}
-                                        <div className="absolute top-4 left-4 z-10" onClick={(e) => e.stopPropagation()}>
-                                            <input 
-                                                type="checkbox"
-                                                checked={selectedFolders.includes(folder.cntrNo)}
-                                                onChange={(e) => {
-                                                    setSelectedFolders(prev => 
-                                                        prev.includes(folder.cntrNo) 
-                                                            ? prev.filter(name => name !== folder.cntrNo)
-                                                            : [...prev, folder.cntrNo]
-                                                    );
-                                                }}
-                                                className={`w-4 h-4 rounded border-white/20 bg-black/40 focus:ring-sky-500 cursor-pointer ${isTrashView ? 'text-purple-500 focus:ring-purple-500' : 'text-sky-500 focus:ring-sky-500'}`}
-                                            />
-                                        </div>
-
-                                        {/* Folder Shape Icon Container */}
-                                        <div className={`relative aspect-[4/3] w-full flex items-center justify-center border rounded-2xl mb-4 transition-colors ${
-                                            isTrashView 
-                                                ? "bg-purple-950/20 border-purple-500/10 group-hover:bg-purple-500/10" 
-                                                : "bg-sky-950/20 border-sky-500/10 group-hover:bg-sky-500/10"
-                                        }`}>
-                                            <div className={`group-hover:scale-110 transition-transform duration-300 ${isTrashView ? 'text-purple-400' : 'text-sky-400'}`}>
-                                                <Folder className="w-16 h-16" />
-                                            </div>
-                                            
-                                            {/* Floating Photo Count Badge */}
-                                            <div className={`absolute top-3 right-3 px-2.5 py-1 rounded-xl text-white text-[10px] font-black tracking-wider ${isTrashView ? 'bg-purple-500' : 'bg-sky-500'}`}>
-                                                {folder.photos.length}장
-                                            </div>
-                                        </div>
-
-                                    {/* Folder Details */}
-                                    <div className="space-y-1 flex-1 flex flex-col justify-between">
-                                        <div>
-                                            <h4 className={`text-sm tracking-tight truncate uppercase font-black ${getCarrierColor(folder.transporter)}`}>
-                                                {folder.cntrNo}
-                                                {folder.transporter && (
-                                                    <span className="ml-1.5 text-[9px] font-bold text-slate-600 normal-case tracking-normal">
-                                                        [{folder.transporter.includes("천마") ? "천마" : (folder.transporter.includes("BNI") || folder.transporter.includes("비엔아이") ? "BNI" : folder.transporter.split('(')[0])}]
-                                                    </span>
-                                                )}
-                                            </h4>
-                                            <p className="text-[10px] text-slate-500 font-bold mt-1 line-clamp-1">
-                                                작업자: {folder.uploaderNames}
-                                            </p>
-                                        </div>
-
-                                        <div className="flex items-center justify-between pt-3 border-t border-white/5 mt-3">
-                                            <span className="text-[9px] text-slate-600 font-bold">
-                                                {folder.lastUploadedAt.toLocaleDateString('ko-KR', { month: '2-digit', day: '2-digit' })}
-                                            </span>
-                                            
-                                            {/* Folder Actions (Admin Only) */}
-                                            {isAdmin && (
-                                                <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
-                                                    {isTrashView ? (
-                                                        <>
-                                                            <button
-                                                                onClick={(e) => handleRestoreFolder(folder.cntrNo, e)}
-                                                                className="p-1.5 rounded-lg bg-sky-500/10 border border-sky-500/20 text-sky-400 hover:text-white hover:bg-sky-500 transition-all"
-                                                                title="폴더 복구"
-                                                            >
-                                                                <RotateCw className="w-3 h-3" />
-                                                            </button>
-                                                            <button
-                                                                onClick={(e) => handleDeleteFolderPermanently(folder.cntrNo, folder.photos.length, e)}
-                                                                className="p-1.5 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-400 hover:text-white hover:bg-rose-500 transition-all"
-                                                                title="폴더 영구 삭제"
-                                                            >
-                                                                <Trash2 className="w-3 h-3" />
-                                                            </button>
-                                                        </>
-                                                    ) : (
-                                                        <button
-                                                            onClick={(e) => handleDeleteFolder(folder.cntrNo, folder.photos.length, e)}
-                                                            className="p-1.5 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-400 hover:text-white hover:bg-rose-500 hover:border-rose-600 transition-all shrink-0"
-                                                            title="폴더 삭제 (휴지통으로 이동)"
-                                                        >
-                                                            <Trash2 className="w-3 h-3" />
-                                                        </button>
-                                                    )}
+                                        {/* Top row: Checkbox, Folder icon, Title/Carrier, Count Badge */}
+                                        <div className="flex items-center justify-between gap-2">
+                                            <div className="flex items-center gap-2 min-w-0 flex-1">
+                                                <div onClick={(e) => e.stopPropagation()} className="flex items-center">
+                                                    <input 
+                                                        type="checkbox"
+                                                        checked={selectedFolders.includes(folder.cntrNo)}
+                                                        onChange={(e) => {
+                                                            setSelectedFolders(prev => 
+                                                                prev.includes(folder.cntrNo) 
+                                                                    ? prev.filter(name => name !== folder.cntrNo)
+                                                                    : [...prev, folder.cntrNo]
+                                                            );
+                                                        }}
+                                                        className={`w-3.5 h-3.5 rounded border-white/20 bg-black/40 focus:ring-sky-500 cursor-pointer ${isTrashView ? 'text-purple-500 focus:ring-purple-500' : 'text-sky-500 focus:ring-sky-500'}`}
+                                                    />
                                                 </div>
-                                            )}
+                                                <Folder className={`w-4 h-4 shrink-0 ${isTrashView ? 'text-purple-400' : 'text-sky-400'}`} />
+                                                <h4 className={`text-xs font-black truncate uppercase tracking-tight ${getCarrierColor(folder.transporter)}`}>
+                                                    {folder.cntrNo}
+                                                    {folder.transporter && (
+                                                        <span className="ml-1 text-[9px] font-bold text-slate-600 normal-case tracking-normal">
+                                                            [{folder.transporter.includes("천마") ? "천마" : (folder.transporter.includes("BNI") || folder.transporter.includes("비엔아이") ? "BNI" : folder.transporter.split('(')[0])}]
+                                                        </span>
+                                                    )}
+                                                </h4>
+                                            </div>
+                                            <span className={`text-[10px] font-extrabold px-1.5 py-0.5 rounded-lg shrink-0 ${isTrashView ? 'bg-purple-500/10 text-purple-400' : 'bg-sky-500/10 text-sky-400'}`}>
+                                                {folder.photos.length}장
+                                            </span>
                                         </div>
-                                    </div>
-                                </motion.div>
-                            ))}
-                        </div>
+
+                                        {/* Bottom row: Uploader, Date and Actions */}
+                                        <div className="flex items-center justify-between mt-2 pt-2 border-t border-white/5 text-[9px] text-slate-500 font-bold">
+                                            <span className="truncate max-w-[120px]">
+                                                작업자: {folder.uploaderNames}
+                                            </span>
+                                            <div className="flex items-center gap-2 shrink-0">
+                                                <span>
+                                                    {folder.lastUploadedAt.toLocaleDateString('ko-KR', { month: '2-digit', day: '2-digit' })}
+                                                </span>
+                                                {/* Folder Actions (Admin Only) */}
+                                                {isAdmin && (
+                                                    <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+                                                        {isTrashView ? (
+                                                            <>
+                                                                <button
+                                                                    onClick={(e) => handleRestoreFolder(folder.cntrNo, e)}
+                                                                    className="p-1 rounded bg-sky-500/10 border border-sky-500/20 text-sky-400 hover:text-white hover:bg-sky-500 transition-all cursor-pointer"
+                                                                    title="폴더 복구"
+                                                                >
+                                                                    <RotateCw className="w-2.5 h-2.5" />
+                                                                </button>
+                                                                <button
+                                                                    onClick={(e) => handleDeleteFolderPermanently(folder.cntrNo, folder.photos.length, e)}
+                                                                    className="p-1 rounded bg-rose-500/10 border border-rose-500/20 text-rose-400 hover:text-white hover:bg-rose-500 transition-all cursor-pointer"
+                                                                    title="폴더 영구 삭제"
+                                                                >
+                                                                    <Trash2 className="w-2.5 h-2.5" />
+                                                                </button>
+                                                            </>
+                                                        ) : (
+                                                            <button
+                                                                onClick={(e) => handleDeleteFolder(folder.cntrNo, folder.photos.length, e)}
+                                                                className="p-1 rounded bg-rose-500/10 border border-rose-500/20 text-rose-400 hover:text-white hover:bg-rose-500 hover:border-rose-600 transition-all shrink-0 cursor-pointer"
+                                                                title="폴더 삭제 (휴지통으로 이동)"
+                                                            >
+                                                                <Trash2 className="w-2.5 h-2.5" />
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </motion.div>
+                                ))}
+                            </div>
                     </div>
                     ) : (
                         /* PHOTO GRID VIEW (INSIDE SELECTED FOLDER) */
