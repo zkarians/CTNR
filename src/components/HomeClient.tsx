@@ -29,6 +29,7 @@ export default function Home({ user }: { user: SessionUser }) {
     const [selectedJobId, setSelectedJobId] = useState<number | null>(null);
     const [isFilterOpen, setIsFilterOpen] = useState(false);
     const [uploadJob, setUploadJob] = useState<Job | null>(null);
+    const [showOnlyWithPhotos, setShowOnlyWithPhotos] = useState(false);
     const [filters, setFilters] = useState<JobFilters>({ startDate: '', endDate: '', productName: '', containerNo: '' });
     const [manualProduct, setManualProduct] = useState({ model_name: '', width: 1000, length: 800, height: 1200, quantity: 10, allow_rotate: true, allow_lay_down: false });
     const [searchResults, setSearchResults] = useState<Product[]>([]);
@@ -340,6 +341,13 @@ export default function Home({ user }: { user: SessionUser }) {
                         <button onClick={refreshJobs} className={`p-1.5 hover:bg-white/5 rounded-lg text-slate-400 transition-all ${isLoading ? "animate-spin text-sky-500" : ""}`} title="새로고침">
                             <RotateCw className="w-4 h-4 md:w-3.5 md:h-3.5" />
                         </button>
+                        <button 
+                            onClick={() => setShowOnlyWithPhotos(!showOnlyWithPhotos)} 
+                            className={`p-1.5 hover:bg-white/5 rounded-lg transition-colors ${showOnlyWithPhotos ? "text-sky-500 bg-sky-500/10" : "text-slate-400"}`} 
+                            title={showOnlyWithPhotos ? "전체 작업 보기" : "사진 등록된 작업만 보기"}
+                        >
+                            <Camera className="w-4 h-4 md:w-3.5 md:h-3.5" />
+                        </button>
                         <button onClick={() => setIsFilterOpen(!isFilterOpen)} className="p-1.5 hover:bg-white/5 rounded-lg text-slate-400 transition-colors">
                             <Filter className={`w-5 h-5 md:w-4 md:h-4 ${isFilterOpen ? "text-sky-500" : ""}`} />
                         </button>
@@ -371,52 +379,58 @@ export default function Home({ user }: { user: SessionUser }) {
                 </AnimatePresence>
 
                 <div className="space-y-2 overflow-y-auto max-h-[220px] md:max-h-[160px] custom-scrollbar pr-1 pb-2">
-                    {jobs.length === 0 && !isLoading ? (
-                        <div className="flex flex-col items-center justify-center p-8 md:p-6 bg-white/5 border border-white/5 rounded-3xl opacity-40">
-                            <Search className="w-6 h-6 mb-2" />
-                            <p className="text-xs md:text-[10px] font-medium italic">조회 결과가 없습니다.</p>
-                        </div>
-                    ) : (
-                        jobs.map((job, idx) => (
-                            <div key={idx} onClick={() => handleJobSelect(job.id)}
-                                className={`w-full px-3.5 py-3 md:px-4 md:py-3 rounded-2xl text-left border transition-all duration-300 flex items-center justify-between group cursor-pointer select-none ${selectedJobId === job.id
-                                    ? "bg-sky-500/10 border-sky-500 shadow-[0_0_25px_rgba(56,189,248,0.15)] ring-1 ring-sky-500/30"
-                                    : "bg-[#11111a] border-white/5 text-slate-400 hover:border-white/10 hover:bg-white/[0.07]"}`}
-                            >
-                                <div className="flex items-center gap-3 min-w-0 flex-1">
-                                    <div className={`text-[15px] md:text-sm font-black truncate uppercase tracking-tight ${getCarrierColor(job.transporter)}`}>
-                                        {job.cntr_no || "번호없음"}
-                                        <span className="ml-2 text-[10px] font-bold text-slate-600 normal-case tracking-normal">
-                                            [{job.transporter ? (job.transporter.includes("천마") ? "천마" : (job.transporter.includes("BNI") || job.transporter.includes("비엔아이") ? "BNI" : job.transporter.split('(')[0])) : "미정"}]
-                                        </span>
+                    {(() => {
+                        const filteredJobs = showOnlyWithPhotos 
+                            ? jobs.filter(job => job.photo_count && job.photo_count > 0)
+                            : jobs;
+                        
+                        return filteredJobs.length === 0 && !isLoading ? (
+                            <div className="flex flex-col items-center justify-center p-8 md:p-6 bg-white/5 border border-white/5 rounded-3xl opacity-40">
+                                <Search className="w-6 h-6 mb-2" />
+                                <p className="text-xs md:text-[10px] font-medium italic">조회 결과가 없습니다.</p>
+                            </div>
+                        ) : (
+                            filteredJobs.map((job, idx) => (
+                                <div key={idx} onClick={() => handleJobSelect(job.id)}
+                                    className={`w-full px-3.5 py-3 md:px-4 md:py-3 rounded-2xl text-left border transition-all duration-300 flex items-center justify-between group cursor-pointer select-none ${selectedJobId === job.id
+                                        ? "bg-sky-500/10 border-sky-500 shadow-[0_0_25px_rgba(56,189,248,0.15)] ring-1 ring-sky-500/30"
+                                        : "bg-[#11111a] border-white/5 text-slate-400 hover:border-white/10 hover:bg-white/[0.07]"}`}
+                                >
+                                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                                        <div className={`text-[15px] md:text-sm font-black truncate uppercase tracking-tight ${getCarrierColor(job.transporter)}`}>
+                                            {job.cntr_no || "번호없음"}
+                                            <span className="ml-2 text-[10px] font-bold text-slate-600 normal-case tracking-normal">
+                                                [{job.transporter ? (job.transporter.includes("천마") ? "천마" : (job.transporter.includes("BNI") || job.transporter.includes("비엔아이") ? "BNI" : job.transporter.split('(')[0])) : "미정"}]
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-2 shrink-0 ml-2">
+                                        <div className="text-[11px] md:text-[10px] font-bold text-slate-600 shrink-0 tabular-nums">{job.work_date}</div>
+                                        <button 
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setUploadJob(job);
+                                                setUploadCntrNo(job.cntr_no || '');
+                                                setUploadFiles([]);
+                                                setUploadRemark('');
+                                            }}
+                                            className={`p-1.5 hover:bg-white/10 rounded-lg transition-all flex items-center gap-1 ${
+                                                job.photo_count && job.photo_count > 0 
+                                                    ? "text-sky-400 bg-sky-500/10 border border-sky-500/20" 
+                                                    : "text-slate-500 hover:text-sky-400 border border-transparent"
+                                            }`}
+                                            title={job.photo_count && job.photo_count > 0 ? `사진 등록 (현재 ${job.photo_count}장 등록됨)` : "사진 등록"}
+                                        >
+                                            <Camera className="w-4 h-4 md:w-3.5 md:h-3.5" />
+                                            {job.photo_count && job.photo_count > 0 ? (
+                                                <span className="text-[10px] md:text-[9px] font-black">{job.photo_count}</span>
+                                            ) : null}
+                                        </button>
                                     </div>
                                 </div>
-                                <div className="flex items-center gap-2 shrink-0 ml-2">
-                                    <div className="text-[11px] md:text-[10px] font-bold text-slate-600 shrink-0 tabular-nums">{job.work_date}</div>
-                                    <button 
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            setUploadJob(job);
-                                            setUploadCntrNo(job.cntr_no || '');
-                                            setUploadFiles([]);
-                                            setUploadRemark('');
-                                        }}
-                                        className={`p-1.5 hover:bg-white/10 rounded-lg transition-all flex items-center gap-1 ${
-                                            job.photo_count && job.photo_count > 0 
-                                                ? "text-sky-400 bg-sky-500/10 border border-sky-500/20" 
-                                                : "text-slate-500 hover:text-sky-400 border border-transparent"
-                                        }`}
-                                        title={job.photo_count && job.photo_count > 0 ? `사진 등록 (현재 ${job.photo_count}장 등록됨)` : "사진 등록"}
-                                    >
-                                        <Camera className="w-4 h-4 md:w-3.5 md:h-3.5" />
-                                        {job.photo_count && job.photo_count > 0 ? (
-                                            <span className="text-[10px] md:text-[9px] font-black">{job.photo_count}</span>
-                                        ) : null}
-                                    </button>
-                                </div>
-                            </div>
-                        ))
-                    )}
+                            ))
+                        );
+                    })()}
                 </div>
             </section>
 

@@ -42,6 +42,10 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
     const [users, setUsers] = useState<UserOption[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     
+    // Lightbox State
+    const [activePhotoIdx, setActivePhotoIdx] = useState<number | null>(null);
+    const [isZoomed, setIsZoomed] = useState(false);
+    
     // Folder State
     const [selectedContainerFolder, setSelectedContainerFolder] = useState<string | null>(null);
     const [selectedFolders, setSelectedFolders] = useState<string[]>([]);
@@ -66,14 +70,23 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
         })).sort((a, b) => b.lastUploadedAt.getTime() - a.lastUploadedAt.getTime());
     }, [photos]);
 
+    const folderPhotos = React.useMemo(() => {
+        if (!selectedContainerFolder) return [];
+        return photos.filter(p => p.cntr_no === selectedContainerFolder);
+    }, [photos, selectedContainerFolder]);
+
+    const currentPhotoIndex = React.useMemo(() => {
+        if (activePhotoIdx === null) return -1;
+        const currentPhoto = photos[activePhotoIdx];
+        if (!currentPhoto) return -1;
+        return folderPhotos.findIndex(p => p.id === currentPhoto.id);
+    }, [activePhotoIdx, photos, folderPhotos]);
+
     // Filters
     const [startDate, setStartDate] = useState('');
     const [endDate, setEndDate] = useState('');
     const [selectedUserId, setSelectedUserId] = useState('');
     
-    // Lightbox State
-    const [activePhotoIdx, setActivePhotoIdx] = useState<number | null>(null);
-
     // Load users (uploaders) once on mount
     useEffect(() => {
         const loadUsers = async () => {
@@ -310,6 +323,7 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
 
     const handlePrevPhoto = (e: React.MouseEvent) => {
         e.stopPropagation();
+        setIsZoomed(false);
         if (activePhotoIdx === null || photos.length === 0) return;
         
         if (selectedContainerFolder) {
@@ -326,6 +340,7 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
 
     const handleNextPhoto = (e: React.MouseEvent) => {
         e.stopPropagation();
+        setIsZoomed(false);
         if (activePhotoIdx === null || photos.length === 0) return;
         
         if (selectedContainerFolder) {
@@ -697,7 +712,11 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                                 </button>
 
                                 {/* Image */}
-                                <div className="max-w-[90%] max-h-[80vh] flex items-center justify-center relative select-none">
+                                <div className={`max-w-[90%] max-h-[80vh] relative select-none ${
+                                    isZoomed 
+                                        ? "overflow-auto custom-scrollbar block p-4" 
+                                        : "flex items-center justify-center"
+                                }`}>
                                     <motion.img 
                                         key={photos[activePhotoIdx].id}
                                         initial={{ scale: 0.95, opacity: 0 }}
@@ -706,8 +725,15 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                                         transition={{ type: 'spring', damping: 25, stiffness: 200 }}
                                         src={`/api/photos/view?filename=${encodeURIComponent(photos[activePhotoIdx].photo_path)}`}
                                         alt={photos[activePhotoIdx].cntr_no}
-                                        className="max-w-full max-h-[75vh] object-contain rounded-2xl border border-white/10 shadow-2xl"
-                                        onClick={(e) => e.stopPropagation()}
+                                        className={`rounded-2xl border border-white/10 shadow-2xl transition-all duration-300 ${
+                                            isZoomed 
+                                                ? "max-w-none max-h-none cursor-zoom-out" 
+                                                : "max-w-full max-h-[75vh] object-contain cursor-zoom-in"
+                                        }`}
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            setIsZoomed(!isZoomed);
+                                        }}
                                     />
                                 </div>
 
@@ -725,9 +751,14 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                                 <p className="text-xs text-slate-300 font-bold mb-1">
                                     {photos[activePhotoIdx].remark ? `"${photos[activePhotoIdx].remark}"` : "메모가 없습니다."}
                                 </p>
-                                <p className="text-[10px] text-slate-500 font-bold">
-                                    등록 일시: {new Date(photos[activePhotoIdx].uploaded_at).toLocaleString('ko-KR')}
-                                </p>
+                                <div className="flex justify-between items-center px-2 text-[10px] text-slate-500 font-bold">
+                                    <span>등록 일시: {new Date(photos[activePhotoIdx].uploaded_at).toLocaleString('ko-KR')}</span>
+                                    {selectedContainerFolder && folderPhotos.length > 0 && (
+                                        <span className="text-sky-400 font-black">
+                                            {currentPhotoIndex + 1} / {folderPhotos.length}
+                                        </span>
+                                    )}
+                                </div>
                             </div>
                         </motion.div>
                     )}
