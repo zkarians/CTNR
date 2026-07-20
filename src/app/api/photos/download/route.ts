@@ -5,7 +5,6 @@ import fs from 'fs';
 import path from 'path';
 import * as _archiver from 'archiver';
 const archiver = _archiver as any;
-import { PassThrough } from 'stream';
 
 export async function GET(req: NextRequest) {
     try {
@@ -44,6 +43,7 @@ export async function GET(req: NextRequest) {
                 SELECT cntr_no, photo_path 
                 FROM container_photos 
                 WHERE cntr_no = ANY($1)
+                  AND (is_deleted IS NULL OR is_deleted = false)
             `;
             const params: any[] = [cntrNos];
             let paramIdx = 2;
@@ -71,47 +71,40 @@ export async function GET(req: NextRequest) {
             return new NextResponse('No photos found for selected containers', { status: 404 });
         }
 
-        // 2. Create the archiver and stream the zip content
-        const archive = archiver('zip', { zlib: { level: 9 } });
-        const passthrough = new PassThrough();
-        
-        // Pipe the archive output to our Passthrough stream
-        archive.pipe(passthrough);
-
         const uploadsDir = path.join(process.cwd(), 'uploads');
 
-        // Add each file to the archive
-        photos.forEach(photo => {
-            const relativePath = photo.photo_path; // e.g. "CNTR_123456/filename.jpg"
-            const fullPath = path.resolve(uploadsDir, relativePath);
+        // 2. Build the ZIP into a Buffer in memory using a Promise wrapper
+        const zipBuffer: Buffer = await new Promise((resolve, reject) => {
+            const archive = archiver('zip', { zlib: { level: 6 } });
+            const chunks: Buffer[] = [];
 
-            // Security check: ensure filePath is inside uploads directory
-            if (fullPath.startsWith(uploadsDir) && fs.existsSync(fullPath)) {
-                // We add it to the zip file using the relative path so that the folder structure is preserved!
-                archive.file(fullPath, { name: relativePath });
-            }
+            archive.on('data', (chunk: Buffer) => chunks.push(chunk));
+            archive.on('end', () => resolve(Buffer.concat(chunks)));
+            archive.on('error', (err: Error) => reject(err));
+
+            // Add each existing file to the archive
+            photos.forEach(photo => {
+                const relativePath = photo.photo_path;
+                const fullPath = path.resolve(uploadsDir, relativePath);
+
+                // Security check: ensure filePath is inside uploads directory
+                if (fullPath.startsWith(uploadsDir) && fs.existsSync(fullPath)) {
+                    archive.file(fullPath, { name: relativePath });
+                }
+            });
+
+            archive.finalize();
         });
 
-        // Finalize the archive (this will finish writing to the passthrough stream)
-        archive.finalize();
-
-        // Convert the stream into a web ReadableStream so NextResponse can consume it
-        const responseStream = new ReadableStream({
-            start(controller) {
-                passthrough.on('data', chunk => controller.enqueue(chunk));
-                passthrough.on('end', () => controller.close());
-                passthrough.on('error', err => controller.error(err));
-            }
-        });
-
-        // Set response headers to force download as a ZIP file
+        // 3. Return the completed buffer as a ZIP response
         const todayStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
         const filename = `container_photos_${todayStr}.zip`;
 
-        return new NextResponse(responseStream, {
+        return new NextResponse(new Uint8Array(zipBuffer), {
             headers: {
                 'Content-Type': 'application/zip',
                 'Content-Disposition': `attachment; filename="${filename}"`,
+                'Content-Length': String(zipBuffer.length),
                 'Cache-Control': 'no-cache'
             }
         });
