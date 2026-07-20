@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
     X, Calendar, User, Download, Search, Image as ImageIcon, 
-    ChevronLeft, ChevronRight, Loader2, ArrowLeft, Trash2 
+    ChevronLeft, ChevronRight, Loader2, ArrowLeft, Trash2, Folder 
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { fetchUsers } from '@/lib/actions';
@@ -41,6 +41,29 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
     const [users, setUsers] = useState<UserOption[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     
+    // Folder State
+    const [selectedContainerFolder, setSelectedContainerFolder] = useState<string | null>(null);
+    
+    // Group photos by container number
+    const folders = React.useMemo(() => {
+        const group: { [cntrNo: string]: Photo[] } = {};
+        photos.forEach(photo => {
+            if (!photo.cntr_no) return;
+            const key = photo.cntr_no.toUpperCase().trim();
+            if (!group[key]) {
+                group[key] = [];
+            }
+            group[key].push(photo);
+        });
+        
+        return Object.entries(group).map(([cntrNo, list]) => ({
+            cntrNo,
+            photos: list,
+            lastUploadedAt: new Date(Math.max(...list.map(p => new Date(p.uploaded_at).getTime()))),
+            uploaderNames: Array.from(new Set(list.map(p => p.uploader_name || p.uploader_username))).join(', ')
+        })).sort((a, b) => b.lastUploadedAt.getTime() - a.lastUploadedAt.getTime());
+    }, [photos]);
+
     // Filters
     const [startDate, setStartDate] = useState('');
     const [endDate, setEndDate] = useState('');
@@ -108,6 +131,8 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
     useEffect(() => {
         if (isOpen) {
             loadPhotos();
+        } else {
+            setSelectedContainerFolder(null);
         }
     }, [isOpen, startDate, endDate, selectedUserId]);
 
@@ -180,6 +205,37 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
         }
     };
 
+    const handleDeleteFolder = async (cntrNo: string, count: number, e: React.MouseEvent) => {
+        e.stopPropagation();
+        
+        const confirmMsg = `[폴더 삭제 경고]\n\n컨테이너 '${cntrNo}' 폴더와 그 안의 사진 총 ${count}장을 모두 삭제하시겠습니까?\n\n이 작업은 복구할 수 없으며 서버 디스크 폴더와 DB 내역이 일괄 삭제됩니다.`;
+        if (!confirm(confirmMsg)) {
+            return;
+        }
+
+        setIsLoading(true);
+        try {
+            const res = await fetch(`/api/photos?cntrNo=${encodeURIComponent(cntrNo)}`, {
+                method: 'DELETE'
+            });
+            const data = await res.json();
+            if (data.success) {
+                alert(data.message);
+                if (selectedContainerFolder === cntrNo) {
+                    setSelectedContainerFolder(null);
+                }
+                loadPhotos();
+            } else {
+                alert(`폴더 삭제 실패: ${data.error}`);
+            }
+        } catch (error) {
+            console.error("Delete folder error:", error);
+            alert("폴더 삭제 중 오류가 발생했습니다.");
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
     const handleDownload = async (photo: Photo, e?: React.MouseEvent) => {
         if (e) e.stopPropagation();
         try {
@@ -210,13 +266,33 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
     const handlePrevPhoto = (e: React.MouseEvent) => {
         e.stopPropagation();
         if (activePhotoIdx === null || photos.length === 0) return;
-        setActivePhotoIdx(prev => (prev !== null && prev > 0 ? prev - 1 : photos.length - 1));
+        
+        if (selectedContainerFolder) {
+            const folderPhotos = photos.map((p, i) => ({ p, i })).filter(item => item.p.cntr_no === selectedContainerFolder);
+            const currentItemIdx = folderPhotos.findIndex(item => item.i === activePhotoIdx);
+            if (currentItemIdx !== -1) {
+                const prevItemIdx = currentItemIdx > 0 ? currentItemIdx - 1 : folderPhotos.length - 1;
+                setActivePhotoIdx(folderPhotos[prevItemIdx].i);
+            }
+        } else {
+            setActivePhotoIdx(prev => (prev !== null && prev > 0 ? prev - 1 : photos.length - 1));
+        }
     };
 
     const handleNextPhoto = (e: React.MouseEvent) => {
         e.stopPropagation();
         if (activePhotoIdx === null || photos.length === 0) return;
-        setActivePhotoIdx(prev => (prev !== null && prev < photos.length - 1 ? prev + 1 : 0));
+        
+        if (selectedContainerFolder) {
+            const folderPhotos = photos.map((p, i) => ({ p, i })).filter(item => item.p.cntr_no === selectedContainerFolder);
+            const currentItemIdx = folderPhotos.findIndex(item => item.i === activePhotoIdx);
+            if (currentItemIdx !== -1) {
+                const nextItemIdx = currentItemIdx < folderPhotos.length - 1 ? currentItemIdx + 1 : 0;
+                setActivePhotoIdx(folderPhotos[nextItemIdx].i);
+            }
+        } else {
+            setActivePhotoIdx(prev => (prev !== null && prev < photos.length - 1 ? prev + 1 : 0));
+        }
     };
 
     if (!isOpen) return null;
@@ -337,61 +413,133 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                             <p className="text-sm font-bold text-slate-400">조회된 사진이 없습니다.</p>
                             <p className="text-xs text-slate-600 mt-1">다른 날짜나 작업자로 검색해 보세요.</p>
                         </div>
-                    ) : (
-                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-                            {photos.map((photo, idx) => (
-                                <motion.div 
-                                    key={photo.id}
-                                    whileHover={{ y: -3, scale: 1.02 }}
-                                    onClick={() => setActivePhotoIdx(idx)}
-                                    className="group relative flex flex-col bg-[#11111a] border border-white/5 rounded-2xl overflow-hidden cursor-pointer shadow-lg hover:shadow-xl hover:border-white/10 transition-all duration-300"
+                    ) : selectedContainerFolder === null ? (
+                        /* FOLDER GRID VIEW */
+                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6">
+                            {folders.map(folder => (
+                                <motion.div
+                                    key={folder.cntrNo}
+                                    whileHover={{ y: -4, scale: 1.02 }}
+                                    onClick={() => setSelectedContainerFolder(folder.cntrNo)}
+                                    className="group relative flex flex-col bg-[#121422]/80 border border-white/5 rounded-3xl p-5 cursor-pointer shadow-lg hover:shadow-2xl hover:border-sky-500/30 hover:bg-[#15182e]/90 transition-all duration-300"
                                 >
-                                    {/* Aspect Ratio container for Image */}
-                                    <div className="relative aspect-[4/3] bg-black overflow-hidden border-b border-white/5">
-                                        <img 
-                                            src={`/api/photos/view?filename=${encodeURIComponent(photo.photo_path)}`}
-                                            alt={photo.cntr_no}
-                                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                                            loading="lazy"
-                                        />
-                                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-60 group-hover:opacity-80 transition-opacity" />
+                                    {/* Folder Shape Icon Container */}
+                                    <div className="relative aspect-[4/3] w-full flex items-center justify-center bg-sky-950/20 border border-sky-500/10 rounded-2xl mb-4 group-hover:bg-sky-500/10 transition-colors">
+                                        <div className="text-sky-400 group-hover:scale-110 transition-transform duration-300">
+                                            <Folder className="w-16 h-16" />
+                                        </div>
                                         
-                                        {/* Download trigger overlay - Admin Only */}
-                                        {isAdmin && (
-                                            <button 
-                                                onClick={(e) => handleDownload(photo, e)}
-                                                className="absolute top-2.5 right-2.5 p-2 rounded-xl bg-black/60 backdrop-blur-md border border-white/10 text-slate-300 hover:text-white hover:bg-black/90 transition-all opacity-0 group-hover:opacity-100"
-                                                title="다운로드"
-                                            >
-                                                <Download className="w-3.5 h-3.5" />
-                                            </button>
-                                        )}
+                                        {/* Floating Photo Count Badge */}
+                                        <div className="absolute top-3 right-3 px-2.5 py-1 rounded-xl bg-sky-500 text-white text-[10px] font-black tracking-wider">
+                                            {folder.photos.length}장
+                                        </div>
                                     </div>
 
-                                    {/* Description */}
-                                    <div className="p-3 flex-1 flex flex-col justify-between space-y-2">
-                                        <div className="space-y-0.5">
-                                            <p className="text-xs font-black text-sky-400 tracking-tight truncate uppercase">
-                                                {photo.cntr_no}
+                                    {/* Folder Details */}
+                                    <div className="space-y-1 flex-1 flex flex-col justify-between">
+                                        <div>
+                                            <h4 className="text-sm font-black text-slate-100 tracking-tight truncate uppercase group-hover:text-sky-400 transition-colors">
+                                                {folder.cntrNo}
+                                            </h4>
+                                            <p className="text-[10px] text-slate-500 font-bold mt-1 line-clamp-1">
+                                                작업자: {folder.uploaderNames}
                                             </p>
-                                            {photo.remark && (
-                                                <p className="text-[10px] text-slate-400 font-bold line-clamp-1">
-                                                    {photo.remark}
-                                                </p>
-                                            )}
                                         </div>
 
-                                        <div className="flex items-center justify-between pt-1.5 border-t border-white/5 text-[9px] text-slate-500 font-bold">
-                                            <span className="flex items-center gap-1 truncate max-w-[60px]">
-                                                <User className="w-2.5 h-2.5 text-slate-600" /> {photo.uploader_name || photo.uploader_username}
+                                        <div className="flex items-center justify-between pt-3 border-t border-white/5 mt-3">
+                                            <span className="text-[9px] text-slate-600 font-bold">
+                                                {folder.lastUploadedAt.toLocaleDateString('ko-KR', { month: '2-digit', day: '2-digit' })}
                                             </span>
-                                            <span>
-                                                {new Date(photo.uploaded_at).toLocaleDateString('ko-KR', { month: '2-digit', day: '2-digit' }).replace(' ', '')} {new Date(photo.uploaded_at).toTimeString().slice(0, 5)}
-                                            </span>
+                                            
+                                            {/* Folder Delete Button (Admin Only) */}
+                                            {isAdmin && (
+                                                <button
+                                                    onClick={(e) => handleDeleteFolder(folder.cntrNo, folder.photos.length, e)}
+                                                    className="p-1.5 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-400 hover:text-white hover:bg-rose-500 hover:border-rose-600 transition-all shrink-0"
+                                                    title="폴더 및 내부 사진 전체 삭제"
+                                                >
+                                                    <Trash2 className="w-3 h-3" />
+                                                </button>
+                                            )}
                                         </div>
                                     </div>
                                 </motion.div>
                             ))}
+                        </div>
+                    ) : (
+                        /* PHOTO GRID VIEW (INSIDE SELECTED FOLDER) */
+                        <div>
+                            {/* Back Header */}
+                            <div className="mb-6 flex items-center justify-between">
+                                <button 
+                                    onClick={() => setSelectedContainerFolder(null)}
+                                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-slate-300 hover:text-white transition-all text-xs font-black cursor-pointer"
+                                >
+                                    <ArrowLeft className="w-3.5 h-3.5" /> 폴더 목록
+                                </button>
+                                <div className="text-xs font-black text-sky-400 uppercase tracking-widest bg-sky-500/10 border border-sky-500/20 px-4 py-2 rounded-xl">
+                                    폴더: {selectedContainerFolder} ({photos.filter(p => p.cntr_no === selectedContainerFolder).length}장)
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                                {photos
+                                    .map((photo, idx) => ({ photo, originalIdx: idx }))
+                                    .filter(item => item.photo.cntr_no === selectedContainerFolder)
+                                    .map(({ photo, originalIdx }) => (
+                                        <motion.div 
+                                            key={photo.id}
+                                            whileHover={{ y: -3, scale: 1.02 }}
+                                            onClick={() => setActivePhotoIdx(originalIdx)}
+                                            className="group relative flex flex-col bg-[#11111a] border border-white/5 rounded-2xl overflow-hidden cursor-pointer shadow-lg hover:shadow-xl hover:border-white/10 transition-all duration-300"
+                                        >
+                                            {/* Aspect Ratio container for Image */}
+                                            <div className="relative aspect-[4/3] bg-black overflow-hidden border-b border-white/5">
+                                                <img 
+                                                    src={`/api/photos/view?filename=${encodeURIComponent(photo.photo_path)}`}
+                                                    alt={photo.cntr_no}
+                                                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                                                    loading="lazy"
+                                                />
+                                                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-60 group-hover:opacity-80 transition-opacity" />
+                                                
+                                                {/* Download trigger overlay - Admin Only */}
+                                                {isAdmin && (
+                                                    <button 
+                                                        onClick={(e) => handleDownload(photo, e)}
+                                                        className="absolute top-2.5 right-2.5 p-2 rounded-xl bg-black/60 backdrop-blur-md border border-white/10 text-slate-300 hover:text-white hover:bg-black/90 transition-all opacity-0 group-hover:opacity-100"
+                                                        title="다운로드"
+                                                    >
+                                                        <Download className="w-3.5 h-3.5" />
+                                                    </button>
+                                                )}
+                                            </div>
+
+                                            {/* Description */}
+                                            <div className="p-3 flex-1 flex flex-col justify-between space-y-2">
+                                                <div className="space-y-0.5">
+                                                    <p className="text-xs font-black text-sky-400 tracking-tight truncate uppercase">
+                                                        {photo.cntr_no}
+                                                    </p>
+                                                    {photo.remark && (
+                                                        <p className="text-[10px] text-slate-400 font-bold line-clamp-1">
+                                                            {photo.remark}
+                                                        </p>
+                                                    )}
+                                                </div>
+
+                                                <div className="flex items-center justify-between pt-1.5 border-t border-white/5 text-[9px] text-slate-500 font-bold">
+                                                    <span className="flex items-center gap-1 truncate max-w-[60px]">
+                                                        <User className="w-2.5 h-2.5 text-slate-600" /> {photo.uploader_name || photo.uploader_username}
+                                                    </span>
+                                                    <span>
+                                                        {new Date(photo.uploaded_at).toLocaleDateString('ko-KR', { month: '2-digit', day: '2-digit' }).replace(' ', '')} {new Date(photo.uploaded_at).toTimeString().slice(0, 5)}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        </motion.div>
+                                    ))}
+                            </div>
                         </div>
                     )}
                 </main>

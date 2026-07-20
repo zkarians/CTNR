@@ -210,6 +210,7 @@ export async function DELETE(req: NextRequest) {
 
         const { searchParams } = new URL(req.url);
         const id = searchParams.get('id');
+        const cntrNo = searchParams.get('cntrNo');
         const startDate = searchParams.get('startDate');
         const endDate = searchParams.get('endDate');
         const userId = searchParams.get('userId');
@@ -243,6 +244,41 @@ export async function DELETE(req: NextRequest) {
                 return NextResponse.json({
                     success: true,
                     message: '사진이 성공적으로 삭제되었습니다.'
+                });
+            } else if (cntrNo) {
+                // Delete container folder and all its photos
+                const selectQuery = `SELECT photo_path FROM container_photos WHERE cntr_no = $1`;
+                const deleteQuery = `DELETE FROM container_photos WHERE cntr_no = $1`;
+
+                const res = await client.query(selectQuery, [cntrNo]);
+                const filePaths = res.rows.map(row => row.photo_path);
+
+                if (filePaths.length === 0) {
+                    return NextResponse.json({ error: '해당 컨테이너의 사진이 존재하지 않습니다.' }, { status: 404 });
+                }
+
+                await client.query(deleteQuery, [cntrNo]);
+
+                let deletedFilesCount = 0;
+                const uploadsDir = path.join(process.cwd(), 'uploads');
+                for (const filename of filePaths) {
+                    const filePath = path.resolve(uploadsDir, filename);
+                    if (filePath.startsWith(uploadsDir) && fs.existsSync(filePath)) {
+                        fs.unlinkSync(filePath);
+                        deletedFilesCount++;
+                    }
+                }
+
+                // Delete physical subdirectory if it's empty
+                const containerFolder = cntrNo.replace(/[^a-zA-Z0-9]/g, '_').toUpperCase();
+                const containerDir = path.join(uploadsDir, containerFolder);
+                if (fs.existsSync(containerDir) && fs.readdirSync(containerDir).length === 0) {
+                    fs.rmdirSync(containerDir);
+                }
+
+                return NextResponse.json({
+                    success: true,
+                    message: `성공적으로 컨테이너 '${cntrNo}' 폴더의 사진 ${filePaths.length}장을 삭제했습니다.`
                 });
             } else {
                 // Bulk deletion based on search filters
