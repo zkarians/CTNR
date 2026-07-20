@@ -3,8 +3,7 @@ import { getSession } from '@/lib/auth';
 import { pool } from '@/lib/db';
 import fs from 'fs';
 import path from 'path';
-import * as _archiver from 'archiver';
-const archiver = _archiver as any;
+import JSZip from 'jszip';
 
 export async function GET(req: NextRequest) {
     try {
@@ -45,7 +44,7 @@ export async function GET(req: NextRequest) {
                 WHERE cntr_no = ANY($1)
                   AND (is_deleted IS NULL OR is_deleted = false)
             `;
-            const params: any[] = [cntrNos];
+            const params: (string | Date | string[])[] = [cntrNos];
             let paramIdx = 2;
 
             if (startDate) {
@@ -73,30 +72,28 @@ export async function GET(req: NextRequest) {
 
         const uploadsDir = path.join(process.cwd(), 'uploads');
 
-        // 2. Build the ZIP into a Buffer in memory using a Promise wrapper
-        const zipBuffer: Buffer = await new Promise((resolve, reject) => {
-            const archive = archiver('zip', { zlib: { level: 6 } });
-            const chunks: Buffer[] = [];
+        // 2. Build ZIP using JSZip (pure JS, no native streams needed)
+        const zip = new JSZip();
 
-            archive.on('data', (chunk: Buffer) => chunks.push(chunk));
-            archive.on('end', () => resolve(Buffer.concat(chunks)));
-            archive.on('error', (err: Error) => reject(err));
+        for (const photo of photos) {
+            const relativePath = photo.photo_path;
+            const fullPath = path.resolve(uploadsDir, relativePath);
 
-            // Add each existing file to the archive
-            photos.forEach(photo => {
-                const relativePath = photo.photo_path;
-                const fullPath = path.resolve(uploadsDir, relativePath);
+            // Security check: ensure filePath is inside uploads directory
+            if (fullPath.startsWith(uploadsDir) && fs.existsSync(fullPath)) {
+                const fileBuffer = fs.readFileSync(fullPath);
+                zip.file(relativePath, fileBuffer);
+            }
+        }
 
-                // Security check: ensure filePath is inside uploads directory
-                if (fullPath.startsWith(uploadsDir) && fs.existsSync(fullPath)) {
-                    archive.file(fullPath, { name: relativePath });
-                }
-            });
-
-            archive.finalize();
+        // 3. Generate zip as Node.js Buffer
+        const zipBuffer = await zip.generateAsync({
+            type: 'nodebuffer',
+            compression: 'DEFLATE',
+            compressionOptions: { level: 6 }
         });
 
-        // 3. Return the completed buffer as a ZIP response
+        // 4. Return the completed buffer as a ZIP response
         const todayStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
         const filename = `container_photos_${todayStr}.zip`;
 
