@@ -75,22 +75,25 @@ export async function GET(req: NextRequest) {
         // 2. Build ZIP using JSZip (pure JS, no native streams needed)
         const zip = new JSZip();
 
-        for (const photo of photos) {
-            const relativePath = photo.photo_path;
-            const fullPath = path.resolve(uploadsDir, relativePath);
+        // Read all files concurrently for speed
+        await Promise.all(
+            photos.map(async (photo) => {
+                const relativePath = photo.photo_path;
+                const fullPath = path.resolve(uploadsDir, relativePath);
 
-            // Security check: ensure filePath is inside uploads directory
-            if (fullPath.startsWith(uploadsDir) && fs.existsSync(fullPath)) {
-                const fileBuffer = fs.readFileSync(fullPath);
-                zip.file(relativePath, fileBuffer);
-            }
-        }
+                // Security check: ensure filePath is inside uploads directory
+                if (fullPath.startsWith(uploadsDir) && fs.existsSync(fullPath)) {
+                    const fileBuffer = await fs.promises.readFile(fullPath);
+                    zip.file(relativePath, fileBuffer);
+                }
+            })
+        );
 
         // 3. Generate zip as Node.js Buffer
+        // JPEG files are already compressed - use STORE (no re-compression) for maximum speed
         const zipBuffer = await zip.generateAsync({
             type: 'nodebuffer',
-            compression: 'DEFLATE',
-            compressionOptions: { level: 6 }
+            compression: 'STORE'
         });
 
         // 4. Return the completed buffer as a ZIP response
