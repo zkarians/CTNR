@@ -131,6 +131,37 @@ export async function GET(req: NextRequest) {
         const startDate = searchParams.get('startDate'); // YYYY-MM-DD
         const endDate = searchParams.get('endDate');     // YYYY-MM-DD
         const userId = searchParams.get('userId');       // UUID
+        const showTrash = searchParams.get('showTrash') === 'true';
+        const cntrNo = searchParams.get('cntrNo');
+
+        // Auto cleanup expired trash photos
+        try {
+            const retentionDays = parseInt(process.env.TRASH_RETENTION_DAYS || '15', 10);
+            const cleanupClient = await pool.connect();
+            try {
+                const expiredRes = await cleanupClient.query(`
+                    SELECT id, photo_path FROM container_photos 
+                    WHERE is_deleted = true AND deleted_at < NOW() - INTERVAL '${retentionDays} days'
+                `);
+                
+                if (expiredRes.rows.length > 0) {
+                    const uploadsDir = path.join(process.cwd(), 'uploads');
+                    for (const row of expiredRes.rows) {
+                        const filePath = path.resolve(uploadsDir, row.photo_path);
+                        if (filePath.startsWith(uploadsDir) && fs.existsSync(filePath)) {
+                            fs.unlinkSync(filePath);
+                        }
+                    }
+                    const expiredIds = expiredRes.rows.map(r => r.id);
+                    await cleanupClient.query('DELETE FROM container_photos WHERE id = ANY($1)', [expiredIds]);
+                    console.log(`[Auto-Cleanup] Permanently deleted ${expiredIds.length} expired photos from trash.`);
+                }
+            } finally {
+                cleanupClient.release();
+            }
+        } catch (cleanupErr) {
+            console.error('[Auto-Cleanup] Error cleaning up expired photos:', cleanupErr);
+        }
 
         let query = `
             SELECT 
@@ -143,11 +174,13 @@ export async function GET(req: NextRequest) {
                 p.uploaded_by, 
                 u.name as uploader_name, 
                 u.username as uploader_username, 
-                j.job_name
+                j.job_name,
+                r.transporter
             FROM container_photos p
             LEFT JOIN "User" u ON p.uploaded_by = u.id
             LEFT JOIN container_jobs j ON p.job_id = j.id
-            WHERE 1=1
+            LEFT JOIN container_results r ON r.job_id = p.job_id AND r.cntr_no = p.cntr_no
+            WHERE ${showTrash ? 'p.is_deleted = true' : '(p.is_deleted IS NULL OR p.is_deleted = false)'}
         `;
         
         const params: any[] = [];
@@ -173,6 +206,11 @@ export async function GET(req: NextRequest) {
         if (targetUserId) {
             query += ` AND p.uploaded_by = $${paramIdx++}`;
             params.push(targetUserId);
+        }
+
+        if (cntrNo) {
+            query += ` AND p.cntr_no ILIKE $${paramIdx++}`;
+            params.push(`%${cntrNo}%`);
         }
 
         query += ` ORDER BY p.uploaded_at DESC`;
@@ -234,129 +272,126 @@ export async function DELETE(req: NextRequest) {
         const startDate = searchParams.get('startDate');
         const endDate = searchParams.get('endDate');
         const userId = searchParams.get('userId');
+        const permanent = searchParams.get('permanent') === 'true';
 
         const client = await pool.connect();
         try {
             if (id) {
-                // Fetch photo path to delete from disk
-                const res = await client.query('SELECT photo_path FROM container_photos WHERE id = $1', [id]);
-                if (res.rows.length === 0) {
-                    return NextResponse.json({ error: '사진을 찾을 수 없습니다.' }, { status: 404 });
-                }
-
-                const filename = res.rows[0].photo_path;
-                const uploadsDir = path.join(process.cwd(), 'uploads');
-                const filePath = path.resolve(uploadsDir, filename);
-
-                // Prevent directory traversal
-                if (!filePath.startsWith(uploadsDir)) {
-                    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-                }
-
-                // Delete from database
-                await client.query('DELETE FROM container_photos WHERE id = $1', [id]);
-
-                // Delete from filesystem if it exists
-                if (fs.existsSync(filePath)) {
-                    fs.unlinkSync(filePath);
-                }
-
-                return NextResponse.json({
-                    success: true,
-                    message: '사진이 성공적으로 삭제되었습니다.'
-                });
-            } else if (cntrNo) {
-                // Delete container folder and all its photos
-                const selectQuery = `SELECT photo_path FROM container_photos WHERE cntr_no = $1`;
-                const deleteQuery = `DELETE FROM container_photos WHERE cntr_no = $1`;
-
-                const res = await client.query(selectQuery, [cntrNo]);
-                const filePaths = res.rows.map(row => row.photo_path);
-
-                if (filePaths.length === 0) {
-                    return NextResponse.json({ error: '해당 컨테이너의 사진이 존재하지 않습니다.' }, { status: 404 });
-                }
-
-                await client.query(deleteQuery, [cntrNo]);
-
-                let deletedFilesCount = 0;
-                const uploadsDir = path.join(process.cwd(), 'uploads');
-                for (const filename of filePaths) {
-                    const filePath = path.resolve(uploadsDir, filename);
-                    if (filePath.startsWith(uploadsDir) && fs.existsSync(filePath)) {
-                        fs.unlinkSync(filePath);
-                        deletedFilesCount++;
+                if (permanent) {
+                    // Physical Hard Delete
+                    const res = await client.query('SELECT photo_path FROM container_photos WHERE id = $1', [id]);
+                    if (res.rows.length === 0) {
+                        return NextResponse.json({ error: '사진을 찾을 수 없습니다.' }, { status: 404 });
                     }
-                }
 
-                // Delete physical subdirectory if it's empty
-                const containerFolder = cntrNo.replace(/[^a-zA-Z0-9]/g, '_').toUpperCase();
-                const containerDir = path.join(uploadsDir, containerFolder);
-                if (fs.existsSync(containerDir) && fs.readdirSync(containerDir).length === 0) {
-                    fs.rmdirSync(containerDir);
-                }
+                    const filename = res.rows[0].photo_path;
+                    const uploadsDir = path.join(process.cwd(), 'uploads');
+                    const filePath = path.resolve(uploadsDir, filename);
 
-                return NextResponse.json({
-                    success: true,
-                    message: `성공적으로 컨테이너 '${cntrNo}' 폴더의 사진 ${filePaths.length}장을 삭제했습니다.`
-                });
+                    // Prevent directory traversal
+                    if (!filePath.startsWith(uploadsDir)) {
+                        return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+                    }
+
+                    await client.query('DELETE FROM container_photos WHERE id = $1', [id]);
+
+                    if (fs.existsSync(filePath)) {
+                        fs.unlinkSync(filePath);
+                    }
+
+                    return NextResponse.json({
+                        success: true,
+                        message: '사진이 영구 삭제되었습니다.'
+                    });
+                } else {
+                    // Soft Delete to Trash
+                    const res = await client.query('UPDATE container_photos SET is_deleted = true, deleted_at = NOW() WHERE id = $1 RETURNING id', [id]);
+                    if (res.rows.length === 0) {
+                        return NextResponse.json({ error: '사진을 찾을 수 없습니다.' }, { status: 404 });
+                    }
+                    return NextResponse.json({
+                        success: true,
+                        message: '사진이 휴지통으로 이동되었습니다.'
+                    });
+                }
+            } else if (cntrNo) {
+                if (permanent) {
+                    // Physical Hard Delete
+                    const selectQuery = `SELECT photo_path FROM container_photos WHERE cntr_no = $1`;
+                    const deleteQuery = `DELETE FROM container_photos WHERE cntr_no = $1`;
+
+                    const res = await client.query(selectQuery, [cntrNo]);
+                    const filePaths = res.rows.map(row => row.photo_path);
+
+                    if (filePaths.length === 0) {
+                        return NextResponse.json({ error: '해당 컨테이너의 사진이 존재하지 않습니다.' }, { status: 404 });
+                    }
+
+                    await client.query(deleteQuery, [cntrNo]);
+
+                    let deletedFilesCount = 0;
+                    const uploadsDir = path.join(process.cwd(), 'uploads');
+                    for (const filename of filePaths) {
+                        const filePath = path.resolve(uploadsDir, filename);
+                        if (filePath.startsWith(uploadsDir) && fs.existsSync(filePath)) {
+                            fs.unlinkSync(filePath);
+                            deletedFilesCount++;
+                        }
+                    }
+
+                    const containerFolder = cntrNo.replace(/[^a-zA-Z0-9]/g, '_').toUpperCase();
+                    const containerDir = path.join(uploadsDir, containerFolder);
+                    if (fs.existsSync(containerDir) && fs.readdirSync(containerDir).length === 0) {
+                        fs.rmdirSync(containerDir);
+                    }
+
+                    return NextResponse.json({
+                        success: true,
+                        message: `성공적으로 컨테이너 '${cntrNo}' 폴더의 사진 ${filePaths.length}장을 영구 삭제했습니다.`
+                    });
+                } else {
+                    // Soft Delete to Trash
+                    const res = await client.query('UPDATE container_photos SET is_deleted = true, deleted_at = NOW() WHERE cntr_no = $1 RETURNING id', [cntrNo]);
+                    if (res.rows.length === 0) {
+                        return NextResponse.json({ error: '해당 컨테이너의 사진이 존재하지 않습니다.' }, { status: 404 });
+                    }
+                    return NextResponse.json({
+                        success: true,
+                        message: `컨테이너 '${cntrNo}' 폴더의 사진 ${res.rows.length}장이 휴지통으로 이동되었습니다.`
+                    });
+                }
             } else {
-                // Bulk deletion based on search filters
+                // Bulk deletion (soft delete only to prevent accidents)
                 if (!startDate && !endDate && !userId) {
                     return NextResponse.json({ error: '일괄 삭제 조건(기간 또는 업로더)이 지정되지 않았습니다.' }, { status: 400 });
                 }
 
-                let selectQuery = `SELECT photo_path FROM container_photos WHERE 1=1`;
-                let deleteQuery = `DELETE FROM container_photos WHERE 1=1`;
+                let updateQuery = `UPDATE container_photos SET is_deleted = true, deleted_at = NOW() WHERE (is_deleted IS NULL OR is_deleted = false)`;
                 const params: any[] = [];
                 let paramIdx = 1;
 
                 if (startDate) {
-                    selectQuery += ` AND uploaded_at >= $${paramIdx}`;
-                    deleteQuery += ` AND uploaded_at >= $${paramIdx}`;
+                    updateQuery += ` AND uploaded_at >= $${paramIdx}`;
                     params.push(new Date(startDate + 'T00:00:00.000Z'));
                     paramIdx++;
                 }
 
                 if (endDate) {
-                    selectQuery += ` AND uploaded_at <= $${paramIdx}`;
-                    deleteQuery += ` AND uploaded_at <= $${paramIdx}`;
+                    updateQuery += ` AND uploaded_at <= $${paramIdx}`;
                     params.push(new Date(endDate + 'T23:59:59.999Z'));
                     paramIdx++;
                 }
 
                 if (userId) {
-                    selectQuery += ` AND uploaded_by = $${paramIdx}`;
-                    deleteQuery += ` AND uploaded_by = $${paramIdx}`;
+                    updateQuery += ` AND uploaded_by = $${paramIdx}`;
                     params.push(userId);
                     paramIdx++;
                 }
 
-                // 1. Fetch file paths
-                const res = await client.query(selectQuery, params);
-                const filePaths = res.rows.map(row => row.photo_path);
-
-                if (filePaths.length === 0) {
-                    return NextResponse.json({ error: '해당 조건으로 삭제할 사진이 없습니다.' }, { status: 404 });
-                }
-
-                // 2. Delete database records
-                await client.query(deleteQuery, params);
-
-                // 3. Delete files from disk
-                let deletedFilesCount = 0;
-                const uploadsDir = path.join(process.cwd(), 'uploads');
-                for (const filename of filePaths) {
-                    const filePath = path.resolve(uploadsDir, filename);
-                    if (filePath.startsWith(uploadsDir) && fs.existsSync(filePath)) {
-                        fs.unlinkSync(filePath);
-                        deletedFilesCount++;
-                    }
-                }
-
+                const res = await client.query(updateQuery, params);
                 return NextResponse.json({
                     success: true,
-                    message: `성공적으로 ${filePaths.length}장의 사진 정보를 DB에서 지우고, ${deletedFilesCount}개의 이미지 파일을 일괄 삭제했습니다.`
+                    message: `성공적으로 ${res.rowCount}장의 사진을 휴지통으로 이동시켰습니다.`
                 });
             }
         } finally {
@@ -366,5 +401,42 @@ export async function DELETE(req: NextRequest) {
     } catch (error: any) {
         console.error('Delete Photo Error:', error);
         return NextResponse.json({ error: '서버 오류로 인해 사진 삭제에 실패했습니다.' }, { status: 500 });
+    }
+}
+
+export async function PATCH(req: NextRequest) {
+    try {
+        const session = await getSession();
+        if (!session) {
+            return NextResponse.json({ error: '인증되지 않은 사용자입니다.' }, { status: 401 });
+        }
+
+        const sessionRole = session.role?.toUpperCase();
+        const isAdmin = sessionRole === 'ADMIN' || sessionRole === 'MANAGER';
+        if (!isAdmin) {
+            return NextResponse.json({ error: '복구 권한이 없습니다. 관리자만 복구할 수 있습니다.' }, { status: 403 });
+        }
+
+        const { searchParams } = new URL(req.url);
+        const id = searchParams.get('id');
+        const cntrNo = searchParams.get('cntrNo');
+
+        const client = await pool.connect();
+        try {
+            if (id) {
+                await client.query('UPDATE container_photos SET is_deleted = false, deleted_at = NULL WHERE id = $1', [id]);
+                return NextResponse.json({ success: true, message: '사진이 복구되었습니다.' });
+            } else if (cntrNo) {
+                await client.query('UPDATE container_photos SET is_deleted = false, deleted_at = NULL WHERE cntr_no = $1', [cntrNo]);
+                return NextResponse.json({ success: true, message: `컨테이너 '${cntrNo}' 폴더의 모든 사진이 복구되었습니다.` });
+            } else {
+                return NextResponse.json({ error: '복구할 대상이 지정되지 않았습니다.' }, { status: 400 });
+            }
+        } finally {
+            client.release();
+        }
+    } catch (error: any) {
+        console.error('Restore Photo Error:', error);
+        return NextResponse.json({ error: '서버 오류로 인해 복구에 실패했습니다.' }, { status: 500 });
     }
 }

@@ -20,6 +20,7 @@ export async function getDbConfig(): Promise<DbConfig> {
         database: process.env.DB_NAME || 'excel',
         password: process.env.DB_PASSWORD || '',
         port: parseInt(process.env.DB_PORT || '5432'),
+        trash_retention_days: parseInt(process.env.TRASH_RETENTION_DAYS || '15', 10),
     };
 }
 
@@ -39,6 +40,7 @@ export async function updateDbConfig(config: DbConfig): Promise<{ success: boole
             if (key === 'DB_NAME') return `DB_NAME=${config.database}`;
             if (key === 'DB_PASSWORD' && config.password) return `DB_PASSWORD=${config.password}`;
             if (key === 'DB_PORT') return `DB_PORT=${config.port}`;
+            if (key === 'TRASH_RETENTION_DAYS') return `TRASH_RETENTION_DAYS=${config.trash_retention_days || 15}`;
             return line;
         });
 
@@ -49,6 +51,7 @@ export async function updateDbConfig(config: DbConfig): Promise<{ success: boole
         if (!keys.includes('DB_NAME')) newLines.push(`DB_NAME=${config.database}`);
         if (!keys.includes('DB_PASSWORD') && config.password) newLines.push(`DB_PASSWORD=${config.password}`);
         if (!keys.includes('DB_PORT')) newLines.push(`DB_PORT=${config.port}`);
+        if (!keys.includes('TRASH_RETENTION_DAYS')) newLines.push(`TRASH_RETENTION_DAYS=${config.trash_retention_days || 15}`);
 
         fs.writeFileSync(envPath, newLines.join('\n'), 'utf8');
 
@@ -58,6 +61,7 @@ export async function updateDbConfig(config: DbConfig): Promise<{ success: boole
         process.env.DB_NAME = config.database;
         if (config.password) process.env.DB_PASSWORD = config.password;
         process.env.DB_PORT = config.port.toString();
+        process.env.TRASH_RETENTION_DAYS = (config.trash_retention_days || 15).toString();
 
         await resetPool();
         return { success: true, message: "DB 설정이 저장되었습니다." };

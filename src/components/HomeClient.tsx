@@ -37,7 +37,7 @@ export default function Home({ user }: { user: SessionUser }) {
     const [activeProduct, setActiveProduct] = useState<string | null>(null);
     const [isManualAddOpen, setIsManualAddOpen] = useState(false);
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-    const [dbConfig, setDbConfig] = useState<DbConfig>({ host: '', database: '', user: '', password: '', port: 5432 });
+    const [dbConfig, setDbConfig] = useState<DbConfig>({ host: '', database: '', user: '', password: '', port: 5432, trash_retention_days: 15 });
     const [passwordData, setPasswordData] = useState({ current: '', new: '', confirm: '' });
     const [isPasswordUpdating, setIsPasswordUpdating] = useState(false);
     const [isSyncing, setIsSyncing] = useState(false);
@@ -765,6 +765,11 @@ export default function Home({ user }: { user: SessionUser }) {
                                                 <label className="text-[11px] font-black text-slate-500 ml-1">Password</label>
                                                 <input type="password" value={dbConfig.password} onChange={e => setDbConfig({ ...dbConfig, password: e.target.value })}
                                                     className="w-full bg-black/40 border border-white/10 rounded-2xl px-4 py-3 text-sm focus:border-sky-500 outline-none transition-all" placeholder="비밀번호 입력" />
+                                            </div>
+                                            <div className="space-y-2">
+                                                <label className="text-[11px] font-black text-slate-500 ml-1">휴지통 보관 기간 (일)</label>
+                                                <input type="number" value={dbConfig.trash_retention_days} onChange={e => setDbConfig({ ...dbConfig, trash_retention_days: parseInt(e.target.value) || 15 })}
+                                                    className="w-full bg-black/40 border border-white/10 rounded-2xl px-4 py-3 text-sm focus:border-sky-500 outline-none transition-all" min={1} max={365} />
                                             </div>
                                         </div>
 

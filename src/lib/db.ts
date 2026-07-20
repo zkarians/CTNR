@@ -21,6 +21,16 @@ export function getPool(): Pool {
             ssl: false,
             connectionTimeoutMillis: 5000,
         });
+
+        // Migration query to add soft delete columns to container_photos table
+        _pool.query(`
+            ALTER TABLE container_photos ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN DEFAULT FALSE;
+            ALTER TABLE container_photos ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP;
+        `).then(() => {
+            console.log("DB Migration: container_photos soft delete columns ensured.");
+        }).catch(err => {
+            console.error("DB Migration Error:", err);
+        });
     }
     return _pool;
 }
