@@ -655,7 +655,7 @@ export default function Home({ user }: { user: SessionUser }) {
                     {controlPanel}
                 </aside>
                 <div className="flex-1 relative p-6 bg-[#030712]">
-                    <ContainerViewer highlightedProduct={activeProduct} result={result} />
+                    <ContainerViewer highlightedProduct={activeProduct} result={result} hideLabels={isGalleryOpen || isSettingsOpen || isManualAddOpen} />
                     {/* Floating HUD info if needed */}
                 </div>
             </main>
@@ -693,7 +693,7 @@ export default function Home({ user }: { user: SessionUser }) {
                                 transition={{ duration: 0.5, ease: [0.23, 1, 0.32, 1] }}
                                 className="w-full shrink-0 bg-[#030712] border-b border-white/5 relative"
                             >
-                                <ContainerViewer highlightedProduct={activeProduct} result={result} />
+                                <ContainerViewer highlightedProduct={activeProduct} result={result} hideLabels={isGalleryOpen || isSettingsOpen || isManualAddOpen} />
                                 <div className="absolute top-3 left-1/2 -translate-x-1/2 px-4 py-1.5 rounded-full bg-sky-500/20 border border-sky-500/30 text-[10px] font-black text-sky-400 uppercase tracking-widest backdrop-blur-md">
                                     3D Simulation Map
                                 </div>

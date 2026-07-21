@@ -94,9 +94,10 @@ function ProductBox({ item, idx, isHighlighted, allItems }: ProductBoxProps) {
 interface ContainerViewerProps {
     result: PackingResult | null;
     highlightedProduct?: string | null;
+    hideLabels?: boolean;
 }
 
-export default function ContainerViewer({ result, highlightedProduct }: ContainerViewerProps) {
+export default function ContainerViewer({ result, highlightedProduct, hideLabels }: ContainerViewerProps) {
     const [showRuler, setShowRuler] = useState(true);
     const [panMode, setPanMode] = useState(false);
     const controlsRef = useRef<any>(null);
@@ -206,12 +207,14 @@ export default function ContainerViewer({ result, highlightedProduct }: Containe
                         </mesh>
 
                         {/* 3. Distance floating HTML label */}
-                        <Html position={[cw / 2, ch / 2, -(maxOccupiedLength + remainingDistance / 2) / 1000]} center distanceFactor={8}>
-                            <div className="bg-slate-950/90 text-amber-400 border border-amber-500/50 px-2.5 py-1.5 rounded-xl text-[10px] font-black whitespace-nowrap shadow-[0_0_20px_rgba(245,158,11,0.3)] flex items-center gap-1.5 backdrop-blur-sm pointer-events-none select-none animate-in fade-in zoom-in duration-350">
-                                <Ruler className="w-3.5 h-3.5 text-amber-500" />
-                                <span>남은 거리: {(remainingDistance).toLocaleString()} mm</span>
-                            </div>
-                        </Html>
+                        {!hideLabels && (
+                            <Html position={[cw / 2, ch / 2, -(maxOccupiedLength + remainingDistance / 2) / 1000]} center distanceFactor={8}>
+                                <div className="bg-slate-950/90 text-amber-400 border border-amber-500/50 px-2.5 py-1.5 rounded-xl text-[10px] font-black whitespace-nowrap shadow-[0_0_20px_rgba(245,158,11,0.3)] flex items-center gap-1.5 backdrop-blur-sm pointer-events-none select-none animate-in fade-in zoom-in duration-350">
+                                    <Ruler className="w-3.5 h-3.5 text-amber-500" />
+                                    <span>남은 거리: {(remainingDistance).toLocaleString()} mm</span>
+                                </div>
+                            </Html>
+                        )}
                     </group>
                 )}
 
