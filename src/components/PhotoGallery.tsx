@@ -1428,171 +1428,241 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                             animate={{ opacity: 1 }} 
                             exit={{ opacity: 0 }}
                             onClick={() => setActivePhotoIdx(null)}
-                            className="fixed inset-0 z-[60] bg-black/95 backdrop-blur-md flex flex-col justify-between p-4"
+                            className="fixed inset-0 z-[60] bg-[#07070a]/98 backdrop-blur-xl flex flex-col md:flex-row"
                         >
-                            {/* Lightbox Topbar */}
-                            <div className="flex items-center justify-between px-4 py-2 shrink-0 z-10">
-                                <div className="text-left">
-                                    <h3 className={`text-base md:text-lg font-black uppercase tracking-wide transition-colors duration-300 ${getCarrierColor(photos[activePhotoIdx].transporter)}`}>
-                                        {photos[activePhotoIdx].cntr_no}
-                                    </h3>
-                                    <p className="text-xs text-slate-400 font-bold mt-0.5">
-                                        {photos[activePhotoIdx].job_name || "작업"} | 업로드: {photos[activePhotoIdx].uploader_name} ({photos[activePhotoIdx].uploader_username})
-                                    </p>
-                                </div>
-                                <div className="flex items-center gap-3">
-                                    {isAdmin && (
-                                        isTrashView ? (
-                                            <>
-                                                <button 
-                                                    onClick={(e) => { e.stopPropagation(); handleRestorePhoto(photos[activePhotoIdx], e); }}
-                                                    className="p-3 rounded-2xl bg-sky-500/10 border border-sky-500/20 text-sky-400 hover:text-white hover:bg-sky-500 transition-all flex items-center gap-2 text-xs font-bold"
-                                                    title="사진 복구"
-                                                >
-                                                    <RotateCw className="w-4 h-4" /> <span className="hidden sm:inline">복구</span>
-                                                </button>
-                                                <button 
-                                                    onClick={(e) => { e.stopPropagation(); handleDeletePhotoPermanently(photos[activePhotoIdx], e); }}
-                                                    className="p-3 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-400 hover:text-white hover:bg-rose-600 transition-all flex items-center gap-2 text-xs font-bold"
-                                                    title="사진 영구 삭제"
-                                                >
-                                                    <Trash2 className="w-4 h-4" /> <span className="hidden sm:inline">영구 삭제</span>
-                                                </button>
-                                            </>
-                                        ) : (
-                                            <button 
-                                                onClick={(e) => { e.stopPropagation(); handleDelete(photos[activePhotoIdx], e); }}
-                                                className="p-3 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-400 hover:text-white hover:bg-rose-600 transition-all flex items-center gap-2 text-xs font-bold"
-                                                title="사진 삭제 (휴지통으로 이동)"
-                                            >
-                                                <Trash2 className="w-4 h-4" /> <span className="hidden sm:inline">삭제</span>
-                                            </button>
-                                        )
-                                    )}
-                                    <a 
-                                        href={`/api/photos/view?filename=${encodeURIComponent(photos[activePhotoIdx].photo_path)}`}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        onClick={(e) => e.stopPropagation()}
-                                        className="p-3 rounded-2xl bg-[#030712] border border-white/10 text-sky-400 hover:bg-sky-500 hover:text-white transition-all flex items-center gap-2 text-xs font-bold"
-                                        title="새 탭에서 원본 화질과 크기로 보기"
-                                    >
-                                        <ExternalLink className="w-4 h-4" /> <span className="hidden sm:inline">원본 보기</span>
-                                    </a>
-                                    <button 
-                                        onClick={(e) => { e.stopPropagation(); handleDownload(photos[activePhotoIdx]); }}
-                                        className="p-3 rounded-2xl bg-white/5 border border-white/5 text-slate-300 hover:text-white hover:bg-white/10 transition-all flex items-center gap-2 text-xs font-bold"
-                                        title="다운로드"
-                                    >
-                                        <Download className="w-4 h-4" /> <span className="hidden sm:inline">다운로드</span>
-                                    </button>
+                            {/* Left Main View (Image Area) */}
+                            <div className="flex-1 flex flex-col justify-between p-4 relative h-[70vh] md:h-full" onClick={(e) => e.stopPropagation()}>
+                                {/* Mobile Header only */}
+                                <div className="flex items-center justify-between z-10 shrink-0 md:hidden">
+                                    <div className="text-left">
+                                        <span className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">사진 상세 보기</span>
+                                    </div>
                                     <button 
                                         onClick={() => { setActivePhotoIdx(null); resetZoom(); }}
-                                        className="p-3 rounded-2xl bg-white/5 border border-white/5 text-slate-300 hover:text-white hover:bg-white/10 transition-all"
+                                        className="p-2 rounded-xl bg-white/5 border border-white/5 text-slate-300 hover:text-white transition-all"
                                         title="닫기"
                                     >
                                         <X className="w-4 h-4" />
                                     </button>
                                 </div>
-                            </div>
 
-                            {/* Lightbox Image & Navigation */}
-                            <div className="flex-1 flex items-center justify-center relative w-full my-4">
-                                {/* Left arrow */}
-                                <button 
-                                    onClick={handlePrevPhoto}
-                                    className="absolute left-2 md:left-6 p-3 rounded-2xl bg-black/40 border border-white/5 text-slate-400 hover:text-white hover:bg-black/80 transition-all z-10"
-                                >
-                                    <ChevronLeft className="w-6 h-6" />
-                                </button>
-
-                                {/* Image */}
-                                <div className="max-w-[90%] max-h-[80vh] flex items-center justify-center relative overflow-hidden select-none">
-                                    <motion.div
-                                        key={photos[activePhotoIdx].id}
-                                        initial={{ scale: 0.98, opacity: 0 }}
-                                        animate={{ scale: 1, opacity: 1 }}
-                                        exit={{ scale: 0.98, opacity: 0 }}
-                                        transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-                                        className="w-full h-full flex items-center justify-center"
+                                {/* Main Image display & navigation */}
+                                <div className="flex-1 flex items-center justify-center relative w-full my-2">
+                                    {/* Left Arrow */}
+                                    <button 
+                                        onClick={handlePrevPhoto}
+                                        className="absolute left-2 md:left-6 p-3 rounded-2xl bg-black/40 border border-white/5 text-slate-400 hover:text-white hover:bg-black/80 transition-all z-10"
                                     >
-                                        <img 
-                                            ref={imageRefCallback}
-                                            src={`/api/photos/view?filename=${encodeURIComponent(photos[activePhotoIdx].photo_path)}`}
-                                            alt={photos[activePhotoIdx].cntr_no}
-                                            className="max-w-full max-h-[75vh] object-contain rounded-2xl border border-white/10 shadow-2xl select-none"
-                                            style={{
-                                                transform: `translate(${position.x}px, ${position.y}px) scale(${scale})`,
-                                                transformOrigin: 'center center',
-                                                cursor: scale > 1 ? (isDragging ? 'grabbing' : 'grab') : 'zoom-in',
-                                                transition: isDragging ? 'none' : 'transform 0.15s ease-out'
-                                            }}
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                if (hasDraggedRef.current) {
-                                                    return; // Skip zoom toggle if it was a drag
-                                                }
-                                                if (scale > 1) {
-                                                    resetZoom();
-                                                } else {
-                                                    setScale(2.5); // Zoom to 2.5x on click
-                                                }
-                                            }}
-                                            onMouseDown={(e) => {
-                                                if (scale > 1) {
-                                                    e.preventDefault();
-                                                    setIsDragging(true);
-                                                    dragStartPosRef.current = { x: e.clientX, y: e.clientY };
-                                                    hasDraggedRef.current = false;
-                                                    setDragStart({ x: e.clientX - position.x, y: e.clientY - position.y });
-                                                }
-                                            }}
-                                            onMouseMove={(e) => {
-                                                if (isDragging && scale > 1) {
-                                                    e.preventDefault();
-                                                    const dx = e.clientX - dragStartPosRef.current.x;
-                                                    const dy = e.clientY - dragStartPosRef.current.y;
-                                                    if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
-                                                        hasDraggedRef.current = true;
+                                        <ChevronLeft className="w-6 h-6" />
+                                    </button>
+
+                                    {/* Image Wrapper */}
+                                    <div className="max-w-[95%] max-h-[85vh] flex items-center justify-center relative overflow-hidden select-none">
+                                        <motion.div
+                                            key={photos[activePhotoIdx].id}
+                                            initial={{ scale: 0.98, opacity: 0 }}
+                                            animate={{ scale: 1, opacity: 1 }}
+                                            exit={{ scale: 0.98, opacity: 0 }}
+                                            transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+                                            className="w-full h-full flex items-center justify-center"
+                                        >
+                                            <img 
+                                                ref={imageRefCallback}
+                                                src={`/api/photos/view?filename=${encodeURIComponent(photos[activePhotoIdx].photo_path)}`}
+                                                alt={photos[activePhotoIdx].cntr_no}
+                                                className="max-w-full max-h-[82vh] object-contain rounded-2xl border border-white/10 shadow-2xl select-none"
+                                                style={{
+                                                    transform: `translate(${position.x}px, ${position.y}px) scale(${scale})`,
+                                                    transformOrigin: 'center center',
+                                                    cursor: scale > 1 ? (isDragging ? 'grabbing' : 'grab') : 'zoom-in',
+                                                    transition: isDragging ? 'none' : 'transform 0.15s ease-out'
+                                                }}
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    if (hasDraggedRef.current) return;
+                                                    if (scale > 1) {
+                                                        resetZoom();
+                                                    } else {
+                                                        setScale(2.5);
                                                     }
-                                                    setPosition({
-                                                        x: e.clientX - dragStart.x,
-                                                        y: e.clientY - dragStart.y
-                                                    });
-                                                }
-                                            }}
-                                            onMouseUp={() => setIsDragging(false)}
-                                            onMouseLeave={() => setIsDragging(false)}
-                                        />
-                                    </motion.div>
+                                                }}
+                                                onMouseDown={(e) => {
+                                                    if (scale > 1) {
+                                                        e.preventDefault();
+                                                        setIsDragging(true);
+                                                        dragStartPosRef.current = { x: e.clientX, y: e.clientY };
+                                                        hasDraggedRef.current = false;
+                                                        setDragStart({ x: e.clientX - position.x, y: e.clientY - position.y });
+                                                    }
+                                                }}
+                                                onMouseMove={(e) => {
+                                                    if (isDragging && scale > 1) {
+                                                        e.preventDefault();
+                                                        const dx = e.clientX - dragStartPosRef.current.x;
+                                                        const dy = e.clientY - dragStartPosRef.current.y;
+                                                        if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
+                                                            hasDraggedRef.current = true;
+                                                        }
+                                                        setPosition({
+                                                            x: e.clientX - dragStart.x,
+                                                            y: e.clientY - dragStart.y
+                                                        });
+                                                    }
+                                                }}
+                                                onMouseUp={() => setIsDragging(false)}
+                                                onMouseLeave={() => setIsDragging(false)}
+                                            />
+                                        </motion.div>
+                                    </div>
+
+                                    {/* Right Arrow */}
+                                    <button 
+                                        onClick={handleNextPhoto}
+                                        className="absolute right-2 md:right-6 p-3 rounded-2xl bg-black/40 border border-white/5 text-slate-400 hover:text-white hover:bg-black/80 transition-all z-10"
+                                    >
+                                        <ChevronRight className="w-6 h-6" />
+                                    </button>
                                 </div>
 
-                                {/* Right arrow */}
-                                <button 
-                                    onClick={handleNextPhoto}
-                                    className="absolute right-2 md:right-6 p-3 rounded-2xl bg-black/40 border border-white/5 text-slate-400 hover:text-white hover:bg-black/80 transition-all z-10"
-                                >
-                                    <ChevronRight className="w-6 h-6" />
-                                </button>
+                                {/* Slide index on bottom-left for mobile */}
+                                <div className="text-center text-[10px] text-slate-500 font-bold md:hidden shrink-0 z-10">
+                                    {selectedContainerFolder && folderPhotos.length > 0 && (
+                                        <span>{currentPhotoIndex + 1} / {folderPhotos.length}</span>
+                                    )}
+                                </div>
                             </div>
 
-                            {/* Lightbox Info Panel */}
-                            <div className="text-center px-4 py-2 shrink-0 z-10 bg-black/20 rounded-2xl max-w-xl mx-auto w-full border border-white/5 mb-4">
-                                <p className="text-xs text-slate-300 font-bold mb-1">
-                                    {photos[activePhotoIdx].remark ? `"${photos[activePhotoIdx].remark}"` : "메모가 없습니다."}
-                                </p>
-                                <div className="flex justify-between items-center px-2 text-[10px] text-slate-500 font-bold">
-                                    <span>등록 일시: {new Date(photos[activePhotoIdx].uploaded_at).toLocaleString('ko-KR')}</span>
-                                    {selectedContainerFolder && folderPhotos.length > 0 && (
-                                        <span className={`font-black transition-colors duration-300 ${
-                                            isTrashView 
-                                                ? "text-purple-400" 
-                                                : isCompletedView 
-                                                    ? "text-emerald-400" 
-                                                    : "text-sky-400"
-                                        }`}>
-                                            {currentPhotoIndex + 1} / {folderPhotos.length}
-                                        </span>
+                            {/* Right Info Sidebar */}
+                            <div 
+                                className="w-full md:w-96 bg-[#0b0b10] border-t md:border-t-0 md:border-l border-white/5 p-6 flex flex-col justify-between shrink-0 overflow-y-auto h-[30vh] md:h-full"
+                                onClick={(e) => e.stopPropagation()}
+                            >
+                                <div className="space-y-6">
+                                    {/* Close Button & Title */}
+                                    <div className="hidden md:flex items-center justify-between">
+                                        <h4 className="text-xs font-black text-slate-400 uppercase tracking-wider">상세 정보</h4>
+                                        <button 
+                                            onClick={() => { setActivePhotoIdx(null); resetZoom(); }}
+                                            className="p-2 rounded-xl bg-white/5 border border-white/5 text-slate-400 hover:text-white hover:bg-white/10 transition-all"
+                                            title="닫기"
+                                        >
+                                            <X className="w-4 h-4" />
+                                        </button>
+                                    </div>
+
+                                    {/* Container Info Card */}
+                                    <div className="bg-[#12121a] border border-white/5 rounded-2xl p-5 space-y-3 shadow-md">
+                                        <div>
+                                            <h3 className={`text-lg md:text-xl font-black uppercase tracking-wide transition-colors duration-300 ${getCarrierColor(photos[activePhotoIdx].transporter)}`}>
+                                                {photos[activePhotoIdx].cntr_no}
+                                            </h3>
+                                            <p className="text-xs text-sky-400 font-bold mt-1 bg-sky-500/10 border border-sky-500/20 px-2.5 py-1 rounded-lg inline-block">
+                                                {photos[activePhotoIdx].job_name || "작업"}
+                                            </p>
+                                        </div>
+
+                                        <div className="flex justify-between items-center text-xs text-slate-500 font-bold pt-2 border-t border-white/5">
+                                            <span>사진 순서</span>
+                                            {selectedContainerFolder && folderPhotos.length > 0 && (
+                                                <span className={`font-black ${
+                                                    isTrashView 
+                                                        ? "text-purple-400" 
+                                                        : isCompletedView 
+                                                            ? "text-emerald-400" 
+                                                            : "text-sky-400"
+                                                }`}>
+                                                    {currentPhotoIndex + 1} / {folderPhotos.length} 장
+                                                </span>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* Meta info list */}
+                                    <div className="space-y-4">
+                                        {/* Uploader info */}
+                                        <div className="flex items-start gap-3">
+                                            <div className="p-2.5 rounded-xl bg-white/5 text-slate-400">
+                                                <User className="w-4 h-4" />
+                                            </div>
+                                            <div>
+                                                <p className="text-[11px] font-bold text-slate-500">등록자</p>
+                                                <p className="text-xs font-black text-slate-300 mt-0.5">
+                                                    {photos[activePhotoIdx].uploader_name} <span className="text-[10px] text-slate-500 font-normal">({photos[activePhotoIdx].uploader_username})</span>
+                                                </p>
+                                            </div>
+                                        </div>
+
+                                        {/* Upload date */}
+                                        <div className="flex items-start gap-3">
+                                            <div className="p-2.5 rounded-xl bg-white/5 text-slate-400">
+                                                <Calendar className="w-4 h-4" />
+                                            </div>
+                                            <div>
+                                                <p className="text-[11px] font-bold text-slate-500">등록 일시</p>
+                                                <p className="text-xs font-black text-slate-300 mt-0.5">
+                                                    {new Date(photos[activePhotoIdx].uploaded_at).toLocaleString('ko-KR')}
+                                                </p>
+                                            </div>
+                                        </div>
+
+                                        {/* Remarks / Memo section */}
+                                        <div className="bg-[#12121a]/50 border border-white/5 rounded-2xl p-4 space-y-2.5">
+                                            <p className="text-xs font-black text-slate-400">메모 / 특이사항</p>
+                                            <div className="text-xs font-bold text-slate-200 leading-relaxed bg-[#0c0c12]/50 border border-white/5 rounded-xl p-3 min-h-[80px]">
+                                                {photos[activePhotoIdx].remark || "등록된 메모가 없습니다."}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Action Buttons Panel at bottom of sidebar */}
+                                <div className="space-y-2 pt-6 border-t border-white/5">
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <a 
+                                            href={`/api/photos/view?filename=${encodeURIComponent(photos[activePhotoIdx].photo_path)}`}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="p-3 rounded-xl bg-[#12121a] border border-white/5 hover:border-white/10 text-sky-400 hover:bg-sky-500 hover:text-white transition-all flex items-center justify-center gap-1.5 text-xs font-black"
+                                            title="새 탭에서 원본 보기"
+                                        >
+                                            <ExternalLink className="w-3.5 h-3.5" /> 원본 보기
+                                        </a>
+                                        <button 
+                                            onClick={(e) => { e.stopPropagation(); handleDownload(photos[activePhotoIdx]); }}
+                                            className="p-3 rounded-xl bg-white/5 border border-white/5 text-slate-300 hover:text-white hover:bg-white/10 transition-all flex items-center justify-center gap-1.5 text-xs font-black"
+                                            title="다운로드"
+                                        >
+                                            <Download className="w-3.5 h-3.5" /> 다운로드
+                                        </button>
+                                    </div>
+
+                                    {isAdmin && (
+                                        isTrashView ? (
+                                            <div className="grid grid-cols-2 gap-2">
+                                                <button 
+                                                    onClick={(e) => { e.stopPropagation(); handleRestorePhoto(photos[activePhotoIdx], e); }}
+                                                    className="p-3 rounded-xl bg-sky-500/10 border border-sky-500/20 text-sky-400 hover:text-white hover:bg-sky-500 transition-all flex items-center justify-center gap-1.5 text-xs font-black"
+                                                    title="사진 복구"
+                                                >
+                                                    <RotateCw className="w-3.5 h-3.5" /> 복구
+                                                </button>
+                                                <button 
+                                                    onClick={(e) => { e.stopPropagation(); handleDeletePhotoPermanently(photos[activePhotoIdx], e); }}
+                                                    className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 hover:text-white hover:bg-rose-600 transition-all flex items-center justify-center gap-1.5 text-xs font-black"
+                                                    title="사진 영구 삭제"
+                                                >
+                                                    <Trash2 className="w-3.5 h-3.5" /> 영구 삭제
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            <button 
+                                                onClick={(e) => { e.stopPropagation(); handleDelete(photos[activePhotoIdx], e); }}
+                                                className="w-full p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 hover:text-white hover:bg-rose-600 transition-all flex items-center justify-center gap-1.5 text-xs font-black"
+                                                title="사진 삭제 (휴지통으로 이동)"
+                                            >
+                                                <Trash2 className="w-3.5 h-3.5" /> 사진 삭제 (휴지통 이동)
+                                            </button>
+                                        )
                                     )}
                                 </div>
                             </div>
