@@ -132,6 +132,7 @@ export async function GET(req: NextRequest) {
         const endDate = searchParams.get('endDate');     // YYYY-MM-DD
         const userId = searchParams.get('userId');       // UUID
         const showTrash = searchParams.get('showTrash') === 'true';
+        const showCompleted = searchParams.get('showCompleted') === 'true';
         const cntrNo = searchParams.get('cntrNo');
 
         // Auto cleanup expired trash photos
@@ -167,6 +168,10 @@ export async function GET(req: NextRequest) {
         const params: any[] = [];
         let paramIdx = 1;
         let whereSuffix = `WHERE ${showTrash ? 'p.is_deleted = true' : '(p.is_deleted IS NULL OR p.is_deleted = false)'}`;
+        
+        if (!showTrash) {
+            whereSuffix += ` AND ${showCompleted ? 'p.is_completed = true' : '(p.is_completed IS NULL OR p.is_completed = false)'}`;
+        }
 
         if (startDate) {
             whereSuffix += ` AND p.uploaded_at AT TIME ZONE 'Asia/Seoul' >= $${paramIdx++}::timestamp`;
@@ -207,6 +212,8 @@ export async function GET(req: NextRequest) {
                     p.remark, 
                     p.uploaded_at, 
                     p.uploaded_by, 
+                    p.is_completed,
+                    p.completed_at,
                     u.name as uploader_name, 
                     u.username as uploader_username, 
                     j.job_name,
@@ -417,32 +424,65 @@ export async function PATCH(req: NextRequest) {
             return NextResponse.json({ error: '인증되지 않은 사용자입니다.' }, { status: 401 });
         }
 
-        const sessionRole = session.role?.toUpperCase();
-        const isAdmin = sessionRole === 'ADMIN' || sessionRole === 'MANAGER';
-        if (!isAdmin) {
-            return NextResponse.json({ error: '복구 권한이 없습니다. 관리자만 복구할 수 있습니다.' }, { status: 403 });
-        }
-
         const { searchParams } = new URL(req.url);
         const id = searchParams.get('id');
         const cntrNo = searchParams.get('cntrNo');
+        const complete = searchParams.get('complete');
+
+        const isCompleteAction = complete !== null;
+        const sessionRole = session.role?.toUpperCase();
+        const isAdmin = sessionRole === 'ADMIN' || sessionRole === 'MANAGER';
+
+        // Only admins can restore deleted files from trash.
+        // But anyone logged in can toggle the "completed" status of a container folder.
+        if (!isCompleteAction && !isAdmin) {
+            return NextResponse.json({ error: '복구 권한이 없습니다. 관리자만 복구할 수 있습니다.' }, { status: 403 });
+        }
 
         const client = await pool.connect();
         try {
-            if (id) {
-                await client.query('UPDATE container_photos SET is_deleted = false, deleted_at = NULL WHERE id = $1', [id]);
-                return NextResponse.json({ success: true, message: '사진이 복구되었습니다.' });
-            } else if (cntrNo) {
-                await client.query('UPDATE container_photos SET is_deleted = false, deleted_at = NULL WHERE cntr_no = $1', [cntrNo]);
-                return NextResponse.json({ success: true, message: `컨테이너 '${cntrNo}' 폴더의 모든 사진이 복구되었습니다.` });
+            if (isCompleteAction) {
+                const completeVal = complete === 'true';
+                const completedAt = completeVal ? new Date() : null;
+                
+                if (cntrNo) {
+                    await client.query(
+                        'UPDATE container_photos SET is_completed = $1, completed_at = $2 WHERE cntr_no = $3',
+                        [completeVal, completedAt, cntrNo]
+                    );
+                    return NextResponse.json({
+                        success: true,
+                        message: `컨테이너 '${cntrNo}' 폴더의 작업이 ${completeVal ? '완료' : '진행 중'}으로 변경되었습니다.`
+                    });
+                } else if (id) {
+                    await client.query(
+                        'UPDATE container_photos SET is_completed = $1, completed_at = $2 WHERE id = $3',
+                        [completeVal, completedAt, id]
+                    );
+                    return NextResponse.json({
+                        success: true,
+                        message: `사진의 작업이 ${completeVal ? '완료' : '진행 중'}으로 변경되었습니다.`
+                    });
+                } else {
+                    return NextResponse.json({ error: '상태 변경할 대상이 지정되지 않았습니다.' }, { status: 400 });
+                }
             } else {
-                return NextResponse.json({ error: '복구할 대상이 지정되지 않았습니다.' }, { status: 400 });
+                // Restore deleted files from trash
+                if (id) {
+                    await client.query('UPDATE container_photos SET is_deleted = false, deleted_at = NULL WHERE id = $1', [id]);
+                    return NextResponse.json({ success: true, message: '사진이 복구되었습니다.' });
+                } else if (cntrNo) {
+                    await client.query('UPDATE container_photos SET is_deleted = false, deleted_at = NULL WHERE cntr_no = $1', [cntrNo]);
+                    return NextResponse.json({ success: true, message: `컨테이너 '${cntrNo}' 폴더의 모든 사진이 복구되었습니다.` });
+                } else {
+                    return NextResponse.json({ error: '복구할 대상이 지정되지 않았습니다.' }, { status: 400 });
+                }
             }
         } finally {
             client.release();
         }
     } catch (error: any) {
-        console.error('Restore Photo Error:', error);
-        return NextResponse.json({ error: '서버 오류로 인해 복구에 실패했습니다.' }, { status: 500 });
+        console.error('PATCH Photo Error:', error);
+        return NextResponse.json({ error: '서버 오류로 인해 상태 변경에 실패했습니다.' }, { status: 500 });
     }
 }

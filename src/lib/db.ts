@@ -26,8 +26,10 @@ export function getPool(): Pool {
         _pool.query(`
             ALTER TABLE container_photos ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN DEFAULT FALSE;
             ALTER TABLE container_photos ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP;
+            ALTER TABLE container_photos ADD COLUMN IF NOT EXISTS is_completed BOOLEAN DEFAULT FALSE;
+            ALTER TABLE container_photos ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP;
         `).then(() => {
-            console.log("DB Migration: container_photos soft delete columns ensured.");
+            console.log("DB Migration: container_photos soft delete and completion columns ensured.");
         }).catch(err => {
             console.error("DB Migration Error:", err);
         });
