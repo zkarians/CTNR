@@ -1428,113 +1428,11 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                             animate={{ opacity: 1 }} 
                             exit={{ opacity: 0 }}
                             onClick={() => setActivePhotoIdx(null)}
-                            className="fixed inset-0 z-[60] bg-[#07070a]/98 backdrop-blur-xl flex flex-col md:flex-row"
+                            className="fixed inset-0 z-[60] bg-[#07070a]/98 backdrop-blur-xl flex flex-col-reverse md:flex-row"
                         >
-                            {/* Left Main View (Image Area) */}
-                            <div className="flex-1 flex flex-col justify-between p-4 relative h-[70vh] md:h-full" onClick={(e) => e.stopPropagation()}>
-                                {/* Mobile Header only */}
-                                <div className="flex items-center justify-between z-10 shrink-0 md:hidden">
-                                    <div className="text-left">
-                                        <span className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">사진 상세 보기</span>
-                                    </div>
-                                    <button 
-                                        onClick={() => { setActivePhotoIdx(null); resetZoom(); }}
-                                        className="p-2 rounded-xl bg-white/5 border border-white/5 text-slate-300 hover:text-white transition-all"
-                                        title="닫기"
-                                    >
-                                        <X className="w-4 h-4" />
-                                    </button>
-                                </div>
-
-                                {/* Main Image display & navigation */}
-                                <div className="flex-1 flex items-center justify-center relative w-full my-2">
-                                    {/* Left Arrow */}
-                                    <button 
-                                        onClick={handlePrevPhoto}
-                                        className="absolute left-2 md:left-6 p-3 rounded-2xl bg-black/40 border border-white/5 text-slate-400 hover:text-white hover:bg-black/80 transition-all z-10"
-                                    >
-                                        <ChevronLeft className="w-6 h-6" />
-                                    </button>
-
-                                    {/* Image Wrapper */}
-                                    <div className="max-w-[95%] max-h-[85vh] flex items-center justify-center relative overflow-hidden select-none">
-                                        <motion.div
-                                            key={photos[activePhotoIdx].id}
-                                            initial={{ scale: 0.98, opacity: 0 }}
-                                            animate={{ scale: 1, opacity: 1 }}
-                                            exit={{ scale: 0.98, opacity: 0 }}
-                                            transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-                                            className="w-full h-full flex items-center justify-center"
-                                        >
-                                            <img 
-                                                ref={imageRefCallback}
-                                                src={`/api/photos/view?filename=${encodeURIComponent(photos[activePhotoIdx].photo_path)}`}
-                                                alt={photos[activePhotoIdx].cntr_no}
-                                                className="max-w-full max-h-[82vh] object-contain rounded-2xl border border-white/10 shadow-2xl select-none"
-                                                style={{
-                                                    transform: `translate(${position.x}px, ${position.y}px) scale(${scale})`,
-                                                    transformOrigin: 'center center',
-                                                    cursor: scale > 1 ? (isDragging ? 'grabbing' : 'grab') : 'zoom-in',
-                                                    transition: isDragging ? 'none' : 'transform 0.15s ease-out'
-                                                }}
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    if (hasDraggedRef.current) return;
-                                                    if (scale > 1) {
-                                                        resetZoom();
-                                                    } else {
-                                                        setScale(2.5);
-                                                    }
-                                                }}
-                                                onMouseDown={(e) => {
-                                                    if (scale > 1) {
-                                                        e.preventDefault();
-                                                        setIsDragging(true);
-                                                        dragStartPosRef.current = { x: e.clientX, y: e.clientY };
-                                                        hasDraggedRef.current = false;
-                                                        setDragStart({ x: e.clientX - position.x, y: e.clientY - position.y });
-                                                    }
-                                                }}
-                                                onMouseMove={(e) => {
-                                                    if (isDragging && scale > 1) {
-                                                        e.preventDefault();
-                                                        const dx = e.clientX - dragStartPosRef.current.x;
-                                                        const dy = e.clientY - dragStartPosRef.current.y;
-                                                        if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
-                                                            hasDraggedRef.current = true;
-                                                        }
-                                                        setPosition({
-                                                            x: e.clientX - dragStart.x,
-                                                            y: e.clientY - dragStart.y
-                                                        });
-                                                    }
-                                                }}
-                                                onMouseUp={() => setIsDragging(false)}
-                                                onMouseLeave={() => setIsDragging(false)}
-                                            />
-                                        </motion.div>
-                                    </div>
-
-                                    {/* Right Arrow */}
-                                    <button 
-                                        onClick={handleNextPhoto}
-                                        className="absolute right-2 md:right-6 p-3 rounded-2xl bg-black/40 border border-white/5 text-slate-400 hover:text-white hover:bg-black/80 transition-all z-10"
-                                    >
-                                        <ChevronRight className="w-6 h-6" />
-                                    </button>
-                                </div>
-
-                                {/* Slide index on bottom-left for mobile */}
-                                <div className="text-center text-[10px] text-slate-500 font-bold md:hidden shrink-0 z-10">
-                                    {selectedContainerFolder && folderPhotos.length > 0 && (
-                                        <span>{currentPhotoIndex + 1} / {folderPhotos.length}</span>
-                                    )}
-                                </div>
-                            </div>
-
-                            {/* Right Info Sidebar */}
+                            {/* Left Info Sidebar */}
                             <div 
-                                className="w-full md:w-96 bg-[#0b0b10] border-t md:border-t-0 md:border-l border-white/5 p-6 flex flex-col justify-between shrink-0 overflow-y-auto h-[30vh] md:h-full"
+                                className="w-full md:w-96 bg-[#0b0b10] border-t md:border-t-0 md:border-r border-white/5 p-6 flex flex-col justify-between shrink-0 overflow-y-auto h-[30vh] md:h-full"
                                 onClick={(e) => e.stopPropagation()}
                             >
                                 <div className="space-y-6">
@@ -1666,10 +1564,111 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                                     )}
                                 </div>
                             </div>
+
+                            {/* Right Main View (Image Area) */}
+                            <div className="flex-1 flex flex-col justify-between p-2 md:p-4 relative h-[70vh] md:h-full" onClick={(e) => e.stopPropagation()}>
+                                {/* Mobile Header only */}
+                                <div className="flex items-center justify-between z-10 shrink-0 md:hidden">
+                                    <div className="text-left">
+                                        <span className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">사진 상세 보기</span>
+                                    </div>
+                                    <button 
+                                        onClick={() => { setActivePhotoIdx(null); resetZoom(); }}
+                                        className="p-2 rounded-xl bg-white/5 border border-white/5 text-slate-300 hover:text-white transition-all"
+                                        title="닫기"
+                                    >
+                                        <X className="w-4 h-4" />
+                                    </button>
+                                </div>
+
+                                {/* Main Image display & navigation */}
+                                <div className="flex-1 flex items-center justify-center relative w-full my-2">
+                                    {/* Left Arrow */}
+                                    <button 
+                                        onClick={handlePrevPhoto}
+                                        className="absolute left-2 md:left-6 p-3 rounded-2xl bg-black/40 border border-white/5 text-slate-400 hover:text-white hover:bg-black/80 transition-all z-10"
+                                    >
+                                        <ChevronLeft className="w-6 h-6" />
+                                    </button>
+
+                                    {/* Image Wrapper */}
+                                    <div className="max-w-full max-h-[92vh] flex items-center justify-center relative overflow-hidden select-none">
+                                        <motion.div
+                                            key={photos[activePhotoIdx].id}
+                                            initial={{ scale: 0.98, opacity: 0 }}
+                                            animate={{ scale: 1, opacity: 1 }}
+                                            exit={{ scale: 0.98, opacity: 0 }}
+                                            transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+                                            className="w-full h-full flex items-center justify-center"
+                                        >
+                                            <img 
+                                                ref={imageRefCallback}
+                                                src={`/api/photos/view?filename=${encodeURIComponent(photos[activePhotoIdx].photo_path)}`}
+                                                alt={photos[activePhotoIdx].cntr_no}
+                                                className="max-w-full max-h-[90vh] object-contain rounded-2xl border border-white/10 shadow-2xl select-none"
+                                                style={{
+                                                    transform: `translate(${position.x}px, ${position.y}px) scale(${scale})`,
+                                                    transformOrigin: 'center center',
+                                                    cursor: scale > 1 ? (isDragging ? 'grabbing' : 'grab') : 'zoom-in',
+                                                    transition: isDragging ? 'none' : 'transform 0.15s ease-out'
+                                                }}
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    if (hasDraggedRef.current) return;
+                                                    if (scale > 1) {
+                                                        resetZoom();
+                                                    } else {
+                                                        setScale(2.5);
+                                                    }
+                                                }}
+                                                onMouseDown={(e) => {
+                                                    if (scale > 1) {
+                                                        e.preventDefault();
+                                                        setIsDragging(true);
+                                                        dragStartPosRef.current = { x: e.clientX, y: e.clientY };
+                                                        hasDraggedRef.current = false;
+                                                        setDragStart({ x: e.clientX - position.x, y: e.clientY - position.y });
+                                                    }
+                                                }}
+                                                onMouseMove={(e) => {
+                                                    if (isDragging && scale > 1) {
+                                                        e.preventDefault();
+                                                        const dx = e.clientX - dragStartPosRef.current.x;
+                                                        const dy = e.clientY - dragStartPosRef.current.y;
+                                                        if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
+                                                            hasDraggedRef.current = true;
+                                                        }
+                                                        setPosition({
+                                                            x: e.clientX - dragStart.x,
+                                                            y: e.clientY - dragStart.y
+                                                        });
+                                                    }
+                                                }}
+                                                onMouseUp={() => setIsDragging(false)}
+                                                onMouseLeave={() => setIsDragging(false)}
+                                            />
+                                        </motion.div>
+                                    </div>
+
+                                    {/* Right Arrow */}
+                                    <button 
+                                        onClick={handleNextPhoto}
+                                        className="absolute right-2 md:right-6 p-3 rounded-2xl bg-black/40 border border-white/5 text-slate-400 hover:text-white hover:bg-black/80 transition-all z-10"
+                                    >
+                                        <ChevronRight className="w-6 h-6" />
+                                    </button>
+                                </div>
+
+                                {/* Slide index on bottom-left for mobile */}
+                                <div className="text-center text-[10px] text-slate-500 font-bold md:hidden shrink-0 z-10">
+                                    {selectedContainerFolder && folderPhotos.length > 0 && (
+                                        <span>{currentPhotoIndex + 1} / {folderPhotos.length}</span>
+                                    )}
+                                </div>
+                            </div>
                         </motion.div>
                     )}
                 </AnimatePresence>
-
                 {/* Local Copy Modal */}
                 <AnimatePresence>
                     {isLocalCopyOpen && (
