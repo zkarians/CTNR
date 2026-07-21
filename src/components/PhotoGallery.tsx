@@ -64,6 +64,7 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
     const [tabState, setTabState] = useState<TabState>('ACTIVE');
     const isTrashView = tabState === 'TRASH';
     const isCompletedView = tabState === 'COMPLETED';
+    const [duplicatePhotoIds, setDuplicatePhotoIds] = useState<string[]>([]);
 
     // Callback ref to attach wheel listener to image with passive: false to prevent default page scrolling
     const imageRefCallback = React.useCallback((node: HTMLImageElement | null) => {
@@ -269,6 +270,31 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
             setSearchCntrNo('');
         }
     }, [isOpen, startDate, endDate, selectedUserId, tabState, searchCntrNo]);
+
+    // Fetch duplicate photo IDs when selectedContainerFolder changes
+    useEffect(() => {
+        if (selectedContainerFolder) {
+            fetch(`/api/photos/duplicates?cntrNo=${encodeURIComponent(selectedContainerFolder)}`)
+                .then(res => res.json())
+                .then(data => {
+                    if (data.success && data.duplicateGroups) {
+                        const dupIds: string[] = [];
+                        data.duplicateGroups.forEach((group: any) => {
+                            dupIds.push(...group.duplicatePhotoIds);
+                        });
+                        setDuplicatePhotoIds(dupIds);
+                    } else {
+                        setDuplicatePhotoIds([]);
+                    }
+                })
+                .catch(err => {
+                    console.error("Error fetching duplicate details:", err);
+                    setDuplicatePhotoIds([]);
+                });
+        } else {
+            setDuplicatePhotoIds([]);
+        }
+    }, [selectedContainerFolder]);
 
     const handleDelete = async (photo: Photo, e?: React.MouseEvent) => {
         if (e) e.stopPropagation();
@@ -493,6 +519,62 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
         } catch (error) {
             console.error("Error toggling completion for selected folders:", error);
             alert("상태 변경 중 오류가 발생했습니다.");
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const handleCleanupSingleFolderDuplicates = async () => {
+        if (!selectedContainerFolder) return;
+        if (!confirm("이 폴더 내의 모든 중복 사진을 정리(휴지통 이동)하시겠습니까?")) {
+            return;
+        }
+
+        setIsLoading(true);
+        try {
+            const res = await fetch(`/api/photos/duplicates?cntrNo=${encodeURIComponent(selectedContainerFolder)}`, {
+                method: 'POST'
+            });
+            const data = await res.json();
+            if (data.success) {
+                alert(`성공적으로 중복 사진 ${data.cleanedCount}장을 휴지통으로 이동했습니다.`);
+                loadPhotos();
+                setDuplicatePhotoIds([]);
+            } else {
+                alert(data.error || "중복 사진 정리 중 오류가 발생했습니다.");
+            }
+        } catch (error) {
+            console.error("Error cleaning folder duplicates:", error);
+            alert("서버 연결에 실패했습니다.");
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const handleCleanupSelectedFoldersDuplicates = async () => {
+        if (selectedFolders.length === 0) return;
+        if (!confirm(`선택한 ${selectedFolders.length}개 폴더 내의 모든 중복 사진을 정리(휴지통 이동)하시겠습니까?`)) {
+            return;
+        }
+
+        setIsLoading(true);
+        try {
+            const res = await fetch('/api/photos/duplicates', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ cntrNos: selectedFolders })
+            });
+            const data = await res.json();
+            if (data.success) {
+                alert(`성공적으로 중복 사진 ${data.cleanedCount}장을 휴지통으로 이동했습니다.`);
+                setSelectedFolders([]);
+                loadPhotos();
+            } else {
+                alert(data.error || "중복 사진 정리 중 오류가 발생했습니다.");
+            }
+        } catch (error) {
+            console.error("Error cleaning bulk duplicates:", error);
+            alert("서버 연결에 실패했습니다.");
         } finally {
             setIsLoading(false);
         }
@@ -971,12 +1053,20 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                                                             <Undo className="w-3.5 h-3.5" /> 선택 완료 취소 ({selectedFolders.length}개)
                                                         </button>
                                                     ) : (
-                                                        <button
-                                                            onClick={() => handleToggleSelectedFoldersCompletion(false)}
-                                                            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20 hover:bg-emerald-600 text-emerald-400 hover:text-white font-black text-xs transition-all cursor-pointer"
-                                                        >
-                                                            <Check className="w-3.5 h-3.5" /> 선택 완료 처리 ({selectedFolders.length}개)
-                                                        </button>
+                                                        <>
+                                                            <button
+                                                                onClick={() => handleToggleSelectedFoldersCompletion(false)}
+                                                                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20 hover:bg-emerald-600 text-emerald-400 hover:text-white font-black text-xs transition-all cursor-pointer"
+                                                            >
+                                                                <Check className="w-3.5 h-3.5" /> 선택 완료 처리 ({selectedFolders.length}개)
+                                                            </button>
+                                                            <button
+                                                                onClick={handleCleanupSelectedFoldersDuplicates}
+                                                                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-500/10 border border-amber-500/20 hover:bg-amber-600 text-amber-400 hover:text-white font-black text-xs transition-all cursor-pointer shadow-lg shadow-amber-500/5"
+                                                            >
+                                                                <ImageIcon className="w-3.5 h-3.5" /> 선택 중복 정리 ({selectedFolders.length}개)
+                                                            </button>
+                                                        </>
                                                     )}
                                                     
                                                     {/* Delete (Admin Only) */}
@@ -1207,6 +1297,26 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                                     </div>
                                 </div>
                             </div>
+                            {/* Duplicate Photos Banner */}
+                            {duplicatePhotoIds.length > 0 && (
+                                <div className="mb-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-4 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-200">
+                                    <div className="flex items-center gap-3">
+                                        <div className="p-2 rounded-xl bg-amber-500/20 text-amber-400">
+                                            <ImageIcon className="w-5 h-5" />
+                                        </div>
+                                        <div>
+                                            <p className="text-sm font-black">이 폴더에 완전히 동일한 중복 사진이 {duplicatePhotoIds.length}장 감지되었습니다.</p>
+                                            <p className="text-xs text-amber-500/80 font-bold mt-0.5">중복본은 주황색 '중복' 배지로 구분되며, 정리 시 휴지통으로 이동합니다.</p>
+                                        </div>
+                                    </div>
+                                    <button
+                                        onClick={handleCleanupSingleFolderDuplicates}
+                                        className="w-full sm:w-auto px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-[#07070d] font-black text-xs transition-all shadow-lg shadow-amber-500/15 cursor-pointer whitespace-nowrap"
+                                    >
+                                        중복 사진 일괄 정리
+                                    </button>
+                                </div>
+                            )}
 
                             <div className={
                                 viewMode === 'GRID'
@@ -1230,6 +1340,11 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                                                 ? "relative aspect-[4/3] bg-black overflow-hidden border-b border-white/5"
                                                 : "relative w-full bg-black/40 flex items-center justify-center overflow-hidden border-b border-white/5 aspect-auto min-h-[200px]"
                                         }>
+                                            {duplicatePhotoIds.includes(photo.id) && (
+                                                <div className="absolute top-2.5 left-2.5 z-10 px-2 py-1 rounded-lg bg-amber-500 text-[#07070d] font-black text-[9px] uppercase tracking-wider shadow-md animate-pulse">
+                                                    중복
+                                                </div>
+                                            )}
                                             <img 
                                                 src={`/api/photos/view?filename=${encodeURIComponent(photo.photo_path)}`}
                                                 alt={photo.cntr_no}
