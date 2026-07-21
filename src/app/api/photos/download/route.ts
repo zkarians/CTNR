@@ -48,12 +48,12 @@ export async function GET(req: NextRequest) {
             let paramIdx = 2;
 
             if (startDate) {
-                query += ` AND uploaded_at >= $${paramIdx++}`;
-                params.push(new Date(startDate + 'T00:00:00.000Z'));
+                query += ` AND uploaded_at AT TIME ZONE 'Asia/Seoul' >= $${paramIdx++}::timestamp`;
+                params.push(`${startDate} 00:00:00`);
             }
             if (endDate) {
-                query += ` AND uploaded_at <= $${paramIdx++}`;
-                params.push(new Date(endDate + 'T23:59:59.999Z'));
+                query += ` AND uploaded_at AT TIME ZONE 'Asia/Seoul' <= $${paramIdx++}::timestamp`;
+                params.push(`${endDate} 23:59:59.999`);
             }
             if (userId) {
                 query += ` AND uploaded_by = $${paramIdx++}`;
@@ -70,7 +70,7 @@ export async function GET(req: NextRequest) {
             return new NextResponse('No photos found for selected containers', { status: 404 });
         }
 
-        const uploadsDir = path.join(process.cwd(), 'uploads');
+        const uploadsDir = process.env.UPLOAD_DIR || path.join(process.cwd(), 'uploads');
 
         // 2. Build ZIP using JSZip (pure JS, no native streams needed)
         const zip = new JSZip();

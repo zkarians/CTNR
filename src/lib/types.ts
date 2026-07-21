@@ -86,4 +86,5 @@ export interface DbConfig {
     password?: string;
     port: number;
     trash_retention_days?: number;
+    upload_dir?: string;
 }

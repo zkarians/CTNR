@@ -37,7 +37,7 @@ export default function Home({ user }: { user: SessionUser }) {
     const [activeProduct, setActiveProduct] = useState<string | null>(null);
     const [isManualAddOpen, setIsManualAddOpen] = useState(false);
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-    const [dbConfig, setDbConfig] = useState<DbConfig>({ host: '', database: '', user: '', password: '', port: 5432, trash_retention_days: 15 });
+    const [dbConfig, setDbConfig] = useState<DbConfig>({ host: '', database: '', user: '', password: '', port: 5432, trash_retention_days: 15, upload_dir: '' });
     const [passwordData, setPasswordData] = useState({ current: '', new: '', confirm: '' });
     const [isPasswordUpdating, setIsPasswordUpdating] = useState(false);
     const [isSyncing, setIsSyncing] = useState(false);
@@ -770,6 +770,11 @@ export default function Home({ user }: { user: SessionUser }) {
                                                 <label className="text-[11px] font-black text-slate-500 ml-1">휴지통 보관 기간 (일)</label>
                                                 <input type="number" value={dbConfig.trash_retention_days} onChange={e => setDbConfig({ ...dbConfig, trash_retention_days: parseInt(e.target.value) || 15 })}
                                                     className="w-full bg-black/40 border border-white/10 rounded-2xl px-4 py-3 text-sm focus:border-sky-500 outline-none transition-all" min={1} max={365} />
+                                            </div>
+                                            <div className="space-y-2">
+                                                <label className="text-[11px] font-black text-slate-500 ml-1">사진 저장 폴더 (저장지)</label>
+                                                <input value={dbConfig.upload_dir || ''} onChange={e => setDbConfig({ ...dbConfig, upload_dir: e.target.value })}
+                                                    className="w-full bg-black/40 border border-white/10 rounded-2xl px-4 py-3 text-sm focus:border-sky-500 outline-none transition-all" placeholder="예: C:\CTNR_uploads (기본값: uploads)" />
                                             </div>
                                         </div>
 

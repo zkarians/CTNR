@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
         const sanitizedCntrNo = cntrNo.replace(/[^a-zA-Z0-9]/g, '_').toUpperCase();
 
         // Create container-specific folder inside uploads
-        const uploadsDir = path.join(process.cwd(), 'uploads');
+        const uploadsDir = process.env.UPLOAD_DIR || path.join(process.cwd(), 'uploads');
         const containerDir = path.join(uploadsDir, sanitizedCntrNo);
         if (!fs.existsSync(containerDir)) {
             fs.mkdirSync(containerDir, { recursive: true });
@@ -145,7 +145,7 @@ export async function GET(req: NextRequest) {
                 `);
                 
                 if (expiredRes.rows.length > 0) {
-                    const uploadsDir = path.join(process.cwd(), 'uploads');
+                    const uploadsDir = process.env.UPLOAD_DIR || path.join(process.cwd(), 'uploads');
                     for (const row of expiredRes.rows) {
                         const filePath = path.resolve(uploadsDir, row.photo_path);
                         if (filePath.startsWith(uploadsDir) && fs.existsSync(filePath)) {
@@ -169,13 +169,13 @@ export async function GET(req: NextRequest) {
         let whereSuffix = `WHERE ${showTrash ? 'p.is_deleted = true' : '(p.is_deleted IS NULL OR p.is_deleted = false)'}`;
 
         if (startDate) {
-            whereSuffix += ` AND p.uploaded_at >= $${paramIdx++}`;
-            params.push(new Date(startDate + 'T00:00:00.000Z'));
+            whereSuffix += ` AND p.uploaded_at AT TIME ZONE 'Asia/Seoul' >= $${paramIdx++}::timestamp`;
+            params.push(`${startDate} 00:00:00`);
         }
 
         if (endDate) {
-            whereSuffix += ` AND p.uploaded_at <= $${paramIdx++}`;
-            params.push(new Date(endDate + 'T23:59:59.999Z'));
+            whereSuffix += ` AND p.uploaded_at AT TIME ZONE 'Asia/Seoul' <= $${paramIdx++}::timestamp`;
+            params.push(`${endDate} 23:59:59.999`);
         }
 
         let targetUserId = userId;
@@ -226,7 +226,7 @@ export async function GET(req: NextRequest) {
             const res = await client.query(query, params);
             
             // Get local file creation/modification times for "file creation date" sorting
-            const uploadsDir = path.join(process.cwd(), 'uploads');
+            const uploadsDir = process.env.UPLOAD_DIR || path.join(process.cwd(), 'uploads');
             const photosWithStats = res.rows.map(row => {
                 let fileCreatedAt = row.uploaded_at;
                 try {
@@ -291,7 +291,7 @@ export async function DELETE(req: NextRequest) {
                     }
 
                     const filename = res.rows[0].photo_path;
-                    const uploadsDir = path.join(process.cwd(), 'uploads');
+                    const uploadsDir = process.env.UPLOAD_DIR || path.join(process.cwd(), 'uploads');
                     const filePath = path.resolve(uploadsDir, filename);
 
                     // Prevent directory traversal
@@ -336,7 +336,7 @@ export async function DELETE(req: NextRequest) {
                     await client.query(deleteQuery, [cntrNo]);
 
                     let deletedFilesCount = 0;
-                    const uploadsDir = path.join(process.cwd(), 'uploads');
+                    const uploadsDir = process.env.UPLOAD_DIR || path.join(process.cwd(), 'uploads');
                     for (const filename of filePaths) {
                         const filePath = path.resolve(uploadsDir, filename);
                         if (filePath.startsWith(uploadsDir) && fs.existsSync(filePath)) {

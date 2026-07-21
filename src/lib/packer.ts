@@ -369,11 +369,13 @@ export function packContainer(
         // V6.13: 2-Pass strategy — first half uses standard logic, second half forces mixed-width
         // only when unpacked still exist and the dimensional condition is met
         let currentMixedFlag = isMixedWidthSpecialJob;
+        let forceTallDepthOnly = false;
         if (shouldForceMixedWidth && pIdx >= 25 && bestRes && bestRes.unpacked.filter(p => p.id !== 'NONASSET.ITEM').length > 0) {
             currentMixedFlag = true;
+            forceTallDepthOnly = true; // V6.13: Force tall-product-depth walls to prevent pure-flat walls from outscoring mixed walls
         }
 
-        let res = doTwoPhasePacking(container, sortedNormal, sortedSmall, products, pIdx, currentMixedFlag);
+        let res = doTwoPhasePacking(container, sortedNormal, sortedSmall, products, pIdx, currentMixedFlag, forceTallDepthOnly);
         
         // V5.03: Append invalid 0-dimension products to the unpacked list so user sees them as failed
         if (invalidProducts.length > 0) {
@@ -399,7 +401,7 @@ export function packContainer(
     return bestRes!;
 }
 
-function doTwoPhasePacking(container: any, normalProducts: Product[], smallProducts: Product[], allProducts: Product[], pIdx: number, isMixedWidthSpecialJob: boolean): PackingResult {
+function doTwoPhasePacking(container: any, normalProducts: Product[], smallProducts: Product[], allProducts: Product[], pIdx: number, isMixedWidthSpecialJob: boolean, forceTallDepthOnly: boolean = false): PackingResult {
     const unpacked = new Map<string, number>();
     allProducts.forEach(p => unpacked.set(p.id, p.quantity));
     const placed: PackedItem[] = [];
@@ -433,12 +435,37 @@ function doTwoPhasePacking(container: any, normalProducts: Product[], smallProdu
 
         const depthCandidates: number[] = [];
         if (isMixedWidthSpecialJob) {
-            for (const rp of rem) {
-                depthCandidates.push(rp.length);
-                if (rp.allow_rotate) {
-                    depthCandidates.push(rp.width, rp.height);
+            if (forceTallDepthOnly) {
+                // V6.13: Restrict depth candidates to tall product only (e.g. DLEX8900B h=1148)
+                // so pure flat-product walls cannot outscore mixed walls during forced passes.
+                // When tall product is exhausted, fall back to all remaining products.
+                const tallProd = rem.find(p => Number(p.height) >= 1000);
+                if (tallProd) {
+                    depthCandidates.push(Number(tallProd.length));
+                    if (tallProd.allow_rotate) {
+                        depthCandidates.push(Number(tallProd.width), Number(tallProd.height));
+                    } else {
+                        depthCandidates.push(Number(tallProd.height));
+                    }
                 } else {
-                    depthCandidates.push(rp.height);
+                    // Tall product exhausted — fall back to all remaining
+                    for (const rp of rem) {
+                        depthCandidates.push(Number(rp.length));
+                        if (rp.allow_rotate) {
+                            depthCandidates.push(Number(rp.width), Number(rp.height));
+                        } else {
+                            depthCandidates.push(Number(rp.height));
+                        }
+                    }
+                }
+            } else {
+                for (const rp of rem) {
+                    depthCandidates.push(rp.length);
+                    if (rp.allow_rotate) {
+                        depthCandidates.push(rp.width, rp.height);
+                    } else {
+                        depthCandidates.push(rp.height);
+                    }
                 }
             }
         } else {

@@ -36,6 +36,13 @@ interface PhotoGalleryProps {
     user: SessionUser;
 }
 
+function getLocalDateString(d: Date): string {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
 export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProps) {
     const isAdmin = user && (user.role.toUpperCase() === 'ADMIN' || user.role.toUpperCase() === 'MANAGER');
 
@@ -45,7 +52,7 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
     
     // Sort State
     const [sortBy, setSortBy] = useState<'UPLOAD_DESC' | 'UPLOAD_ASC' | 'CREATION_DESC' | 'CREATION_ASC' | 'NAME_ASC' | 'NAME_DESC'>('UPLOAD_DESC');
-    const [viewMode, setViewMode] = useState<'GRID' | 'LARGE'>('GRID');
+    const [viewMode, setViewMode] = useState<'GRID' | 'LARGE'>('LARGE');
     
     // Lightbox State
     const [activePhotoIdx, setActivePhotoIdx] = useState<number | null>(null);
@@ -97,8 +104,8 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
         const yesterday = new Date();
         yesterday.setDate(today.getDate() - 1);
         
-        setEndDate(today.toISOString().split('T')[0]);
-        setStartDate(yesterday.toISOString().split('T')[0]);
+        setEndDate(getLocalDateString(today));
+        setStartDate(getLocalDateString(yesterday));
         
         if (isAdmin) {
             setSelectedUserId('');
@@ -110,7 +117,7 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
         setIsTrashView(false);
         setSelectedContainerFolder(null);
         setSelectedFolders([]);
-        setViewMode('GRID');
+        setViewMode('LARGE');
     };
 
     
@@ -178,6 +185,17 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
     const [endDate, setEndDate] = useState('');
     const [selectedUserId, setSelectedUserId] = useState('');
     const [searchCntrNo, setSearchCntrNo] = useState('');
+
+    // Local copy state
+    const [isLocalCopyOpen, setIsLocalCopyOpen] = useState(false);
+    const [localCopyPath, setLocalCopyPath] = useState('');
+
+    useEffect(() => {
+        if (typeof window !== 'undefined') {
+            const savedPath = localStorage.getItem('localCopyTargetPath') || '';
+            setLocalCopyPath(savedPath);
+        }
+    }, []);
     
     // Load users (uploaders) once on mount
     useEffect(() => {
@@ -198,8 +216,8 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
         const yesterday = new Date();
         yesterday.setDate(today.getDate() - 1);
         
-        setEndDate(today.toISOString().split('T')[0]);
-        setStartDate(yesterday.toISOString().split('T')[0]);
+        setEndDate(getLocalDateString(today));
+        setStartDate(getLocalDateString(yesterday));
     }, [user, isAdmin]);
 
     // Force non-admins to only see their own uploads
@@ -485,6 +503,66 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
             setSelectedFolders([]);
         } else {
             setSelectedFolders(folders.map(f => f.cntrNo));
+        }
+    };
+
+    const handleBrowseFolder = async () => {
+        setIsLoading(true);
+        try {
+            const response = await fetch('/api/photos/select-local-folder');
+            const data = await response.json();
+            if (response.ok && data.success) {
+                if (!data.cancelled && data.path) {
+                    setLocalCopyPath(data.path);
+                }
+            } else {
+                alert(`폴더 선택 실패: ${data.error || '알 수 없는 오류가 발생했습니다.'}`);
+            }
+        } catch (error) {
+            console.error("Browse folder error:", error);
+            alert("폴더 선택창을 여는 중 오류가 발생했습니다.");
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const handleLocalCopy = async () => {
+        if (selectedFolders.length === 0) {
+            alert("복사할 폴더를 하나 이상 선택해 주세요.");
+            return;
+        }
+        if (!localCopyPath.trim()) {
+            alert("대상 폴더 경로를 입력해 주세요.");
+            return;
+        }
+
+        setIsLoading(true);
+        try {
+            const response = await fetch('/api/photos/local-copy', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    cntrNos: selectedFolders,
+                    targetPath: localCopyPath.trim(),
+                }),
+            });
+
+            const data = await response.json();
+            if (response.ok && data.success) {
+                localStorage.setItem('localCopyTargetPath', localCopyPath.trim());
+                alert(data.message);
+                setIsLocalCopyOpen(false);
+                setSelectedFolders([]);
+            } else {
+                alert(`복사 실패: ${data.error || '알 수 없는 오류가 발생했습니다.'}`);
+            }
+        } catch (error) {
+            console.error("Local copy error:", error);
+            alert("로컬 폴더 복사 중 오류가 발생했습니다.");
+        } finally {
+            setIsLoading(false);
         }
     };
 
@@ -799,22 +877,29 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                                 </div>
                                 
                                 {!isTrashView && selectedFolders.length > 0 && (
-                                    <button
-                                        onClick={handleDownloadSelectedFoldersZip}
-                                        className="flex items-center gap-2 px-4 py-2 rounded-xl bg-sky-500 hover:bg-sky-400 border border-sky-600 text-white font-black text-xs transition-all shadow-lg shadow-sky-500/10 cursor-pointer"
-                                    >
-                                        <Download className="w-3.5 h-3.5" /> 선택 폴더 압축 다운로드 (.ZIP)
-                                    </button>
+                                    <div className="flex gap-2 animate-fade-in">
+                                        <button
+                                            onClick={() => setIsLocalCopyOpen(true)}
+                                            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 border border-emerald-600 text-white font-black text-xs transition-all shadow-lg shadow-emerald-500/10 cursor-pointer"
+                                        >
+                                            <Folder className="w-3.5 h-3.5" /> 로컬 폴더로 복사
+                                        </button>
+                                        <button
+                                            onClick={handleDownloadSelectedFoldersZip}
+                                            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-sky-500 hover:bg-sky-400 border border-sky-600 text-white font-black text-xs transition-all shadow-lg shadow-sky-500/10 cursor-pointer"
+                                        >
+                                            <Download className="w-3.5 h-3.5" /> 선택 폴더 압축 다운로드 (.ZIP)
+                                        </button>
+                                    </div>
                                 )}
                             </div>
 
                             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
                                 {folders.map(folder => (
-                                    <motion.div
+                                    <div
                                         key={folder.cntrNo}
-                                        whileHover={{ y: -2, scale: 1.01 }}
                                         onClick={() => setSelectedContainerFolder(folder.cntrNo)}
-                                        className="group relative flex flex-col bg-[#121422]/80 border border-white/5 rounded-2xl p-3 cursor-pointer shadow-md hover:shadow-lg hover:border-sky-500/20 hover:bg-[#15182e]/90 transition-all duration-300 select-none"
+                                        className="group relative flex flex-col bg-[#121422]/80 border border-white/5 rounded-2xl p-3 cursor-pointer shadow-md hover:shadow-lg hover:border-sky-500/20 hover:bg-[#15182e]/90 transition-all duration-300 hover:-translate-y-0.5 hover:scale-[1.01] select-none"
                                     >
                                         {/* Top row: Checkbox, Folder icon, Title/Carrier, Count Badge */}
                                         <div className="flex items-center justify-between gap-2">
@@ -890,7 +975,7 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                                                 )}
                                             </div>
                                         </div>
-                                    </motion.div>
+                                    </div>
                                 ))}
                             </div>
                     </div>
@@ -962,16 +1047,15 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                                     : "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"
                             }>
                                 {folderPhotos.map((photo) => (
-                                    <motion.div 
+                                    <div 
                                         key={photo.id}
-                                        whileHover={{ y: -3, scale: 1.02 }}
                                         onClick={() => {
                                             const globalIdx = photos.findIndex(p => p.id === photo.id);
                                             if (globalIdx !== -1) {
                                                 setActivePhotoIdx(globalIdx);
                                             }
                                         }}
-                                        className="group relative flex flex-col bg-[#11111a] border border-white/5 rounded-2xl overflow-hidden cursor-pointer shadow-lg hover:shadow-xl hover:border-white/10 transition-all duration-300"
+                                        className="group relative flex flex-col bg-[#11111a] border border-white/5 rounded-2xl overflow-hidden cursor-pointer shadow-lg hover:shadow-xl hover:border-white/10 transition-all duration-300 hover:-translate-y-[3px] hover:scale-[1.02]"
                                     >
                                         {/* Aspect Ratio container for Image */}
                                         <div className={
@@ -988,6 +1072,7 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                                                         : "w-full h-auto object-contain max-h-[60vh] group-hover:scale-[1.02] transition-transform duration-500"
                                                 }
                                                 loading="lazy"
+                                                decoding="async"
                                             />
                                             <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-60 group-hover:opacity-80 transition-opacity" />
                                                 
@@ -1044,7 +1129,7 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                                                     </span>
                                                 </div>
                                             </div>
-                                        </motion.div>
+                                        </div>
                                     ))}
                             </div>
                         </div>
@@ -1212,6 +1297,84 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                                 </div>
                             </div>
                         </motion.div>
+                    )}
+                </AnimatePresence>
+
+                {/* Local Copy Modal */}
+                <AnimatePresence>
+                    {isLocalCopyOpen && (
+                        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+                            <motion.div 
+                                initial={{ opacity: 0 }} 
+                                animate={{ opacity: 1 }} 
+                                exit={{ opacity: 0 }} 
+                                onClick={() => setIsLocalCopyOpen(false)} 
+                                className="absolute inset-0 bg-black/60 backdrop-blur-sm" 
+                            />
+                            <motion.div 
+                                initial={{ scale: 0.9, opacity: 0, y: 20 }} 
+                                animate={{ scale: 1, opacity: 1, y: 0 }} 
+                                exit={{ scale: 0.9, opacity: 0, y: 20 }}
+                                className="relative w-full max-w-md bg-[#0f111a] border border-white/10 rounded-[2.5rem] shadow-2xl overflow-hidden p-8 z-10"
+                            >
+                                <div className="flex items-center gap-3 mb-6">
+                                    <div className="p-3 bg-emerald-500/10 rounded-2xl">
+                                        <Folder className="w-6 h-6 text-emerald-500" />
+                                    </div>
+                                    <div>
+                                        <h2 className="text-xl font-black text-white">로컬 폴더로 복사</h2>
+                                        <p className="text-xs text-slate-500 font-bold uppercase tracking-widest">Direct Local File Copy</p>
+                                    </div>
+                                </div>
+
+                                <div className="space-y-4">
+                                    <p className="text-xs text-slate-400 leading-relaxed">
+                                        선택한 <strong className="text-emerald-400">{selectedFolders.length}개</strong> 컨테이너 폴더를 지정한 로컬 디렉토리로 압축 없이 즉시 복사합니다.
+                                    </p>
+                                    
+                                    <div className="space-y-2">
+                                        <label className="text-[11px] font-black text-slate-500 ml-1">대상 폴더 경로 (PC 경로)</label>
+                                        <div className="flex gap-2">
+                                            <input 
+                                                value={localCopyPath} 
+                                                onChange={e => setLocalCopyPath(e.target.value)}
+                                                className="flex-1 bg-black/40 border border-white/10 rounded-2xl px-4 py-3 text-sm focus:border-emerald-500 outline-none text-slate-200 transition-all placeholder:text-slate-600" 
+                                                placeholder="예: D:\MyDownloads 또는 C:\Users\Downloads" 
+                                                autoFocus
+                                                onKeyDown={(e) => {
+                                                    if (e.key === 'Enter') {
+                                                        handleLocalCopy();
+                                                    }
+                                                }}
+                                            />
+                                            <button
+                                                onClick={handleBrowseFolder}
+                                                className="px-4 py-3 rounded-2xl bg-white/5 border border-white/10 hover:bg-white/10 text-slate-300 hover:text-white font-bold text-xs transition-all flex items-center justify-center shrink-0 cursor-pointer"
+                                                title="폴더 선택"
+                                                disabled={isLoading}
+                                            >
+                                                찾아보기...
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="flex gap-3 mt-6">
+                                    <button 
+                                        onClick={() => setIsLocalCopyOpen(false)} 
+                                        className="flex-1 py-4 rounded-2xl bg-white/5 hover:bg-white/10 text-slate-400 font-bold text-sm transition-all"
+                                    >
+                                        취소
+                                    </button>
+                                    <button 
+                                        onClick={handleLocalCopy} 
+                                        className="flex-2 py-4 px-8 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-white font-black text-sm transition-all shadow-lg shadow-emerald-500/20"
+                                    >
+                                        복사 시작
+                                    </button>
+                                </div>
+                            </motion.div>
+                        </div>
                     )}
                 </AnimatePresence>
             </motion.div>

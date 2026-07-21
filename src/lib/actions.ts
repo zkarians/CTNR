@@ -21,6 +21,7 @@ export async function getDbConfig(): Promise<DbConfig> {
         password: process.env.DB_PASSWORD || '',
         port: parseInt(process.env.DB_PORT || '5432'),
         trash_retention_days: parseInt(process.env.TRASH_RETENTION_DAYS || '15', 10),
+        upload_dir: process.env.UPLOAD_DIR || path.join(process.cwd(), 'uploads'),
     };
 }
 
@@ -41,6 +42,7 @@ export async function updateDbConfig(config: DbConfig): Promise<{ success: boole
             if (key === 'DB_PASSWORD' && config.password) return `DB_PASSWORD=${config.password}`;
             if (key === 'DB_PORT') return `DB_PORT=${config.port}`;
             if (key === 'TRASH_RETENTION_DAYS') return `TRASH_RETENTION_DAYS=${config.trash_retention_days || 15}`;
+            if (key === 'UPLOAD_DIR') return `UPLOAD_DIR=${config.upload_dir || ''}`;
             return line;
         });
 
@@ -52,6 +54,7 @@ export async function updateDbConfig(config: DbConfig): Promise<{ success: boole
         if (!keys.includes('DB_PASSWORD') && config.password) newLines.push(`DB_PASSWORD=${config.password}`);
         if (!keys.includes('DB_PORT')) newLines.push(`DB_PORT=${config.port}`);
         if (!keys.includes('TRASH_RETENTION_DAYS')) newLines.push(`TRASH_RETENTION_DAYS=${config.trash_retention_days || 15}`);
+        if (!keys.includes('UPLOAD_DIR')) newLines.push(`UPLOAD_DIR=${config.upload_dir || ''}`);
 
         fs.writeFileSync(envPath, newLines.join('\n'), 'utf8');
 
@@ -62,6 +65,7 @@ export async function updateDbConfig(config: DbConfig): Promise<{ success: boole
         if (config.password) process.env.DB_PASSWORD = config.password;
         process.env.DB_PORT = config.port.toString();
         process.env.TRASH_RETENTION_DAYS = (config.trash_retention_days || 15).toString();
+        process.env.UPLOAD_DIR = config.upload_dir || '';
 
         await resetPool();
         return { success: true, message: "DB 설정이 저장되었습니다." };

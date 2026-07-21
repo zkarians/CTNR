@@ -18,7 +18,7 @@ export async function GET(req: NextRequest) {
         }
 
         // Prevent directory traversal by resolving the path and checking prefix
-        const uploadsDir = path.join(process.cwd(), 'uploads');
+        const uploadsDir = process.env.UPLOAD_DIR || path.join(process.cwd(), 'uploads');
         const filePath = path.resolve(uploadsDir, filename);
 
         if (!filePath.startsWith(uploadsDir)) {
