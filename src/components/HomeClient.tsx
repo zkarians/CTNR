@@ -242,6 +242,7 @@ export default function Home({ user }: { user: SessionUser }) {
 
         setIsUploading(true);
         let successCount = 0;
+        const duplicatesUploaded: { id: string; name: string }[] = [];
         try {
             for (let i = 0; i < uploadFiles.length; i++) {
                 const file = uploadFiles[i];
@@ -261,11 +262,30 @@ export default function Home({ user }: { user: SessionUser }) {
                 const data = await res.json();
                 if (data.success) {
                     successCount++;
+                    if (data.isDuplicate && data.photo) {
+                        duplicatesUploaded.push({ id: data.photo.id, name: file.name });
+                    }
                 } else {
                     console.error(`Failed to upload file ${file.name}:`, data.error);
                 }
             }
-            alert(`성공적으로 ${successCount}장의 사진을 업로드했습니다.`);
+
+            if (duplicatesUploaded.length > 0) {
+                const dupNames = duplicatesUploaded.map(d => d.name).join('\n');
+                if (confirm(`⚠️ 업로드된 사진 중 완전히 일치하는 중복 사진이 ${duplicatesUploaded.length}장 존재합니다:\n\n${dupNames}\n\n이 중복 사진들을 휴지통으로 이동(삭제)하시겠습니까?`)) {
+                    for (const dup of duplicatesUploaded) {
+                        try {
+                            await fetch(`/api/photos?id=${dup.id}`, { method: 'DELETE' });
+                        } catch (e) {
+                            console.error("Failed to delete duplicate upload:", e);
+                        }
+                    }
+                    alert("중복 사진이 휴지통으로 이동되었습니다.");
+                }
+            } else {
+                alert(`성공적으로 ${successCount}장의 사진을 업로드했습니다.`);
+            }
+
             setUploadFiles([]);
             setUploadRemark('');
             setUploadJob(null);

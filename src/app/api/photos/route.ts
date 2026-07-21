@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 import { getSession } from '@/lib/auth';
 import { pool } from '@/lib/db';
 // @ts-ignore
@@ -96,6 +97,31 @@ export async function POST(req: NextRequest) {
 
             fs.writeFileSync(filePath, buffer);
 
+            const fileHash = crypto.createHash('md5').update(buffer).digest('hex');
+
+            // Scan other active photos in this container to see if this is a duplicate
+            const existingPhotosRes = await client.query(
+                `SELECT id, photo_path FROM container_photos WHERE cntr_no = $1 AND (is_deleted = false OR is_deleted IS NULL)`,
+                [cntrNo]
+            );
+            let isDuplicate = false;
+            let duplicateOfId: string | null = null;
+            for (const row of existingPhotosRes.rows) {
+                const existingPath = path.resolve(uploadsDir, row.photo_path);
+                if (fs.existsSync(existingPath)) {
+                    try {
+                        const existingHash = crypto.createHash('md5').update(fs.readFileSync(existingPath)).digest('hex');
+                        if (existingHash === fileHash) {
+                            isDuplicate = true;
+                            duplicateOfId = row.id;
+                            break;
+                        }
+                    } catch (e) {
+                        // ignore hashing error
+                    }
+                }
+            }
+
             const relativeDbPath = `${sanitizedCntrNo}/${filename}`;
 
             const query = `
@@ -108,7 +134,9 @@ export async function POST(req: NextRequest) {
             
             return NextResponse.json({
                 success: true,
-                photo: res.rows[0]
+                photo: res.rows[0],
+                isDuplicate,
+                duplicateOfId
             });
         } finally {
             client.release();
@@ -272,13 +300,6 @@ export async function DELETE(req: NextRequest) {
             return NextResponse.json({ error: '인증되지 않은 사용자입니다.' }, { status: 401 });
         }
 
-        // Only admin is allowed to delete photos
-        const sessionRole = session.role?.toUpperCase();
-        const isAdmin = sessionRole === 'ADMIN' || sessionRole === 'MANAGER';
-        if (!isAdmin) {
-            return NextResponse.json({ error: '삭제 권한이 없습니다. 관리자만 삭제할 수 있습니다.' }, { status: 403 });
-        }
-
         const { searchParams } = new URL(req.url);
         const id = searchParams.get('id');
         const cntrNo = searchParams.get('cntrNo');
@@ -287,17 +308,30 @@ export async function DELETE(req: NextRequest) {
         const userId = searchParams.get('userId');
         const permanent = searchParams.get('permanent') === 'true';
 
+        const sessionRole = session.role?.toUpperCase();
+        const isAdmin = sessionRole === 'ADMIN' || sessionRole === 'MANAGER';
+
         const client = await pool.connect();
         try {
             if (id) {
+                // Get the photo to check ownership
+                const ownerRes = await client.query('SELECT uploaded_by FROM container_photos WHERE id = $1', [id]);
+                if (ownerRes.rows.length === 0) {
+                    return NextResponse.json({ error: '사진을 찾을 수 없습니다.' }, { status: 404 });
+                }
+                const uploadedBy = ownerRes.rows[0].uploaded_by;
+                const isOwner = uploadedBy === session.id;
+
+                if (!isAdmin && !isOwner) {
+                    return NextResponse.json({ error: '삭제 권한이 없습니다. 본인이 올린 사진이거나 관리자만 삭제할 수 있습니다.' }, { status: 403 });
+                }
+
                 if (permanent) {
                     // Physical Hard Delete
-                    const res = await client.query('SELECT photo_path FROM container_photos WHERE id = $1', [id]);
-                    if (res.rows.length === 0) {
-                        return NextResponse.json({ error: '사진을 찾을 수 없습니다.' }, { status: 404 });
+                    if (!isAdmin) {
+                        return NextResponse.json({ error: '영구 삭제 권한이 없습니다. 관리자만 영구 삭제할 수 있습니다.' }, { status: 403 });
                     }
-
-                    const filename = res.rows[0].photo_path;
+                    const filename = ownerRes.rows[0].photo_path;
                     const uploadsDir = process.env.UPLOAD_DIR || path.join(process.cwd(), 'uploads');
                     const filePath = path.resolve(uploadsDir, filename);
 
@@ -328,6 +362,9 @@ export async function DELETE(req: NextRequest) {
                     });
                 }
             } else if (cntrNo) {
+                if (!isAdmin) {
+                    return NextResponse.json({ error: '삭제 권한이 없습니다. 관리자만 폴더 전체를 삭제할 수 있습니다.' }, { status: 403 });
+                }
                 if (permanent) {
                     // Physical Hard Delete
                     const selectQuery = `SELECT photo_path FROM container_photos WHERE cntr_no = $1`;
