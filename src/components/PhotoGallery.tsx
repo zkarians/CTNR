@@ -60,6 +60,8 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
     const [position, setPosition] = useState({ x: 0, y: 0 });
     const [isDragging, setIsDragging] = useState(false);
     const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+    const dragStartPosRef = React.useRef({ x: 0, y: 0 });
+    const hasDraggedRef = React.useRef(false);
     type TabState = 'ACTIVE' | 'COMPLETED' | 'TRASH';
     const [tabState, setTabState] = useState<TabState>('ACTIVE');
     const isTrashView = tabState === 'TRASH';
@@ -1527,6 +1529,9 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                                             }}
                                             onClick={(e) => {
                                                 e.stopPropagation();
+                                                if (hasDraggedRef.current) {
+                                                    return; // Skip zoom toggle if it was a drag
+                                                }
                                                 if (scale > 1) {
                                                     resetZoom();
                                                 } else {
@@ -1537,12 +1542,19 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                                                 if (scale > 1) {
                                                     e.preventDefault();
                                                     setIsDragging(true);
+                                                    dragStartPosRef.current = { x: e.clientX, y: e.clientY };
+                                                    hasDraggedRef.current = false;
                                                     setDragStart({ x: e.clientX - position.x, y: e.clientY - position.y });
                                                 }
                                             }}
                                             onMouseMove={(e) => {
                                                 if (isDragging && scale > 1) {
                                                     e.preventDefault();
+                                                    const dx = e.clientX - dragStartPosRef.current.x;
+                                                    const dy = e.clientY - dragStartPosRef.current.y;
+                                                    if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
+                                                        hasDraggedRef.current = true;
+                                                    }
                                                     setPosition({
                                                         x: e.clientX - dragStart.x,
                                                         y: e.clientY - dragStart.y
