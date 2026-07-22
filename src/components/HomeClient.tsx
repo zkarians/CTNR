@@ -4,19 +4,20 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
     Search, Box, Package, Truck, RotateCw, Plus, Trash2,
     Settings2, ChevronRight, Filter, Calendar, Briefcase, Move3d, X,
-    Camera, Upload, Loader2, Image as ImageIcon
+    Camera, Upload, Loader2, Image as ImageIcon,
+    Users, UserPlus, Edit3, Shield, KeyRound, Database, UserCheck, UserX,
+    FileText, Copy, Download, Check
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import ContainerViewer from '@/components/ContainerViewer';
 import LogoutButton from '@/components/LogoutButton';
 import PhotoGallery from '@/components/PhotoGallery';
 import {
-    Product, PackingResult, ContainerType, CONTAINER_DATA, Job, JobFilters
+    Product, PackingResult, ContainerType, CONTAINER_DATA, Job, JobFilters, DbConfig, UserAccount
 } from '@/lib/types';
 import { packContainer } from '@/lib/packer';
-import { fetchJobs, fetchProductsByJob, searchProducts, getDbConfig, updateDbConfig, updatePassword, syncDb } from '@/lib/actions';
+import { fetchJobs, fetchProductsByJob, searchProducts, getDbConfig, updateDbConfig, updatePassword, fetchAllUsers, createUserAccount, updateUserAccount, deleteUserAccount, deleteMultipleUserAccounts, generateWorkReport } from '@/lib/actions';
 import { SessionUser } from '@/lib/auth';
-import { DbConfig } from '@/lib/types';
 
 export default function Home({ user }: { user: SessionUser }) {
     const isAdmin = user && (user.role.toUpperCase() === 'ADMIN' || user.role.toUpperCase() === 'MANAGER');
@@ -40,7 +41,156 @@ export default function Home({ user }: { user: SessionUser }) {
     const [dbConfig, setDbConfig] = useState<DbConfig>({ host: '', database: '', user: '', password: '', port: 5432, trash_retention_days: 15, upload_dir: '' });
     const [passwordData, setPasswordData] = useState({ current: '', new: '', confirm: '' });
     const [isPasswordUpdating, setIsPasswordUpdating] = useState(false);
-    const [isSyncing, setIsSyncing] = useState(false);
+    const [settingsTab, setSettingsTab] = useState<'db' | 'users' | 'password'>('db');
+    const [userList, setUserList] = useState<UserAccount[]>([]);
+    const [isUserLoading, setIsUserLoading] = useState(false);
+    const [isUserModalOpen, setIsUserModalOpen] = useState(false);
+    const [editingUser, setEditingUser] = useState<UserAccount | null>(null);
+    const [userForm, setUserForm] = useState({
+        username: '',
+        name: '',
+        password: '',
+        role: 'USER',
+        isApproved: true
+    });
+
+    const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
+
+    const loadUserList = async () => {
+        setIsUserLoading(true);
+        setSelectedUserIds([]);
+        const res = await fetchAllUsers();
+        if (res.success && res.users) {
+            setUserList(res.users);
+        } else if (res.error) {
+            alert(res.error);
+        }
+        setIsUserLoading(false);
+    };
+
+    const deletableUsers = userList.filter(u => u.id !== user.id);
+    const isAllUsersSelected = deletableUsers.length > 0 && deletableUsers.every(u => selectedUserIds.includes(u.id));
+
+    const toggleSelectAllUsers = () => {
+        if (isAllUsersSelected) {
+            setSelectedUserIds([]);
+        } else {
+            setSelectedUserIds(deletableUsers.map(u => u.id));
+        }
+    };
+
+    const toggleSelectUser = (id: string) => {
+        if (selectedUserIds.includes(id)) {
+            setSelectedUserIds(selectedUserIds.filter(i => i !== id));
+        } else {
+            setSelectedUserIds([...selectedUserIds, id]);
+        }
+    };
+
+    const handleDeleteSelectedUsers = async () => {
+        if (selectedUserIds.length === 0) return;
+        if (!confirm(`선택한 ${selectedUserIds.length}명의 사용자 계정을 정말 삭제하시겠습니까?`)) {
+            return;
+        }
+        setIsUserLoading(true);
+        const res = await deleteMultipleUserAccounts(selectedUserIds);
+        setIsUserLoading(false);
+        if (res.success) {
+            alert(`${res.deletedCount || selectedUserIds.length}명의 계정이 성공적으로 삭제되었습니다.`);
+            loadUserList();
+        } else {
+            alert(res.error || "일괄 삭제 중 오류가 발생했습니다.");
+        }
+    };
+
+    useEffect(() => {
+        if (isSettingsOpen && isAdmin && settingsTab === 'users') {
+            loadUserList();
+        }
+    }, [isSettingsOpen, settingsTab]);
+
+    const handleOpenAddUser = () => {
+        setEditingUser(null);
+        setUserForm({ username: '', name: '', password: '', role: 'USER', isApproved: true });
+        setIsUserModalOpen(true);
+    };
+
+    const handleOpenEditUser = (u: UserAccount) => {
+        setEditingUser(u);
+        setUserForm({
+            username: u.username,
+            name: u.name,
+            password: '',
+            role: u.role || 'USER',
+            isApproved: u.isApproved
+        });
+        setIsUserModalOpen(true);
+    };
+
+    const handleSaveUser = async () => {
+        if (!editingUser) {
+            if (!userForm.username || !userForm.name || !userForm.password) {
+                alert("아이디, 이름, 비밀번호를 모두 입력해주세요.");
+                return;
+            }
+            setIsUserLoading(true);
+            const res = await createUserAccount({
+                username: userForm.username,
+                name: userForm.name,
+                password: userForm.password,
+                role: userForm.role,
+                isApproved: userForm.isApproved
+            });
+            setIsUserLoading(false);
+            if (res.success) {
+                alert("사용자 계정이 등록되었습니다.");
+                setIsUserModalOpen(false);
+                loadUserList();
+            } else {
+                alert(res.error || "사용자 등록에 실패했습니다.");
+            }
+        } else {
+            if (!userForm.name) {
+                alert("이름을 입력해주세요.");
+                return;
+            }
+            setIsUserLoading(true);
+            const res = await updateUserAccount(editingUser.id, {
+                name: userForm.name,
+                role: userForm.role,
+                isApproved: userForm.isApproved,
+                password: userForm.password || undefined
+            });
+            setIsUserLoading(false);
+            if (res.success) {
+                alert("사용자 정보가 수정되었습니다.");
+                setIsUserModalOpen(false);
+                loadUserList();
+            } else {
+                alert(res.error || "사용자 정보 수정에 실패했습니다.");
+            }
+        }
+    };
+
+    const handleDeleteUser = async (u: UserAccount) => {
+        if (u.id === user.id) {
+            alert("현재 로그인된 본인 계정은 삭제할 수 없습니다.");
+            return;
+        }
+        if (!confirm(`'${u.name}(${u.username})' 사용자 계정을 정말 삭제하시겠습니까?`)) {
+            return;
+        }
+        setIsUserLoading(true);
+        const res = await deleteUserAccount(u.id);
+        setIsUserLoading(false);
+        if (res.success) {
+            alert("사용자 계정이 삭제되었습니다.");
+            loadUserList();
+        } else {
+            alert(res.error || "삭제에 실패했습니다.");
+        }
+    };
+
     const controlPanelRef = useRef<HTMLDivElement>(null);
 
     // Photo Upload States
@@ -50,6 +200,85 @@ export default function Home({ user }: { user: SessionUser }) {
     const [uploadCntrNo, setUploadCntrNo] = useState('');
     const [isUploading, setIsUploading] = useState(false);
     const [uploadProgressText, setUploadProgressText] = useState('');
+
+    // Report Modal States
+    const [isReportOpen, setIsReportOpen] = useState(false);
+    const [reportText, setReportText] = useState('');
+    const [isReportGenerating, setIsReportGenerating] = useState(false);
+    const [isCopied, setIsCopied] = useState(false);
+
+    const handleGenerateReport = async () => {
+        setIsReportGenerating(true);
+        setIsReportOpen(true);
+        setIsCopied(false);
+        try {
+            const res = await generateWorkReport(filters);
+            if (res.success && res.reportText) {
+                setReportText(res.reportText);
+            } else {
+                setReportText(res.error || '보고서를 생성할 데이터가 없습니다.');
+            }
+        } catch (err) {
+            console.error("Report error:", err);
+            setReportText('보고서 생성 중 오류가 발생했습니다.');
+        } finally {
+            setIsReportGenerating(false);
+        }
+    };
+
+    const handleCopyReport = () => {
+        if (!reportText) return;
+        
+        if (navigator.clipboard && window.isSecureContext) {
+            navigator.clipboard.writeText(reportText).then(() => {
+                setIsCopied(true);
+                setTimeout(() => setIsCopied(false), 2000);
+            }).catch(() => {
+                fallbackCopyText(reportText);
+            });
+        } else {
+            fallbackCopyText(reportText);
+        }
+    };
+
+    const fallbackCopyText = (text: string) => {
+        try {
+            const textArea = document.createElement('textarea');
+            textArea.value = text;
+            textArea.style.top = '0';
+            textArea.style.left = '0';
+            textArea.style.position = 'fixed';
+            textArea.style.opacity = '0';
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+            const successful = document.execCommand('copy');
+            document.body.removeChild(textArea);
+            if (successful) {
+                setIsCopied(true);
+                setTimeout(() => setIsCopied(false), 2000);
+            } else {
+                alert('텍스트 선택 후 Ctrl+C를 눌러 복사해 주세요.');
+            }
+        } catch (err) {
+            console.error('Fallback copy error:', err);
+            alert('복사 중 오류가 발생했습니다.');
+        }
+    };
+
+    const handleDownloadReport = () => {
+        if (!reportText) return;
+        const blob = new Blob([reportText], { type: 'text/plain;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        const dateStr = new Date().toISOString().split('T')[0];
+        a.download = `작업완료보고서_${dateStr}.txt`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    };
 
     // V4.22: Auto Real-time Search with Debounce
     useEffect(() => {
@@ -87,31 +316,6 @@ export default function Home({ user }: { user: SessionUser }) {
         }
     };
 
-    const handleSync = async () => {
-        if (!confirm("원격 DB의 데이터를 가져와 로컬 DB를 업데이트하시겠습니까?\n이 작업은 로컬의 기존 작업 데이터를 모두 초기화하고 원격 데이터로 덮어씁니다.")) {
-            return;
-        }
-        
-        setIsSyncing(true);
-        try {
-            const res = await syncDb();
-            if (res.success) {
-                alert(`${res.message}\n\n[동기화 통계]\n- 작업 개수: ${res.stats?.jobs}개\n- 결과 상세: ${res.stats?.results}개\n- 제품 규격: ${res.stats?.products}개`);
-                // Refresh jobs list
-                const data = await fetchJobs(filters);
-                setJobs(data);
-                setResult(null);
-                setProducts([]);
-            } else {
-                alert(res.message);
-            }
-        } catch (error) {
-            console.error("Sync error:", error);
-            alert("동기화 중 오류가 발생했습니다.");
-        } finally {
-            setIsSyncing(false);
-        }
-    };
     const handlePasswordUpdate = async () => {
         if (!passwordData.current || !passwordData.new || !passwordData.confirm) {
             alert("모든 필드를 입력해주세요.");
@@ -267,6 +471,7 @@ export default function Home({ user }: { user: SessionUser }) {
                     }
                 } else {
                     console.error(`Failed to upload file ${file.name}:`, data.error);
+                    alert(`사진 업로드 실패 (${file.name}): ${data.error || '알 수 없는 오류가 발생했습니다.'}`);
                 }
             }
 
@@ -357,7 +562,15 @@ export default function Home({ user }: { user: SessionUser }) {
                         <Briefcase className="w-4 h-4 md:w-3.5 md:h-3.5" />
                         작업 데이터 조회
                     </div>
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-1.5">
+                        <button 
+                            onClick={handleGenerateReport} 
+                            className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500 hover:text-white text-xs md:text-[11px] font-black transition-all cursor-pointer shadow-sm"
+                            title="작업 완료 보고서 생성"
+                        >
+                            <FileText className="w-3.5 h-3.5" />
+                            보고서 생성
+                        </button>
                         <button onClick={refreshJobs} className={`p-1.5 hover:bg-white/5 rounded-lg text-slate-400 transition-all ${isLoading ? "animate-spin text-sky-500" : ""}`} title="새로고침">
                             <RotateCw className="w-4 h-4 md:w-3.5 md:h-3.5" />
                         </button>
@@ -734,29 +947,64 @@ export default function Home({ user }: { user: SessionUser }) {
                     </div>
                 </div>
             </div>
-            {/* Database Settings Modal */}
+            {/* Database & Account Settings Modal */}
             <AnimatePresence>
                 {isSettingsOpen && (
                     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
                         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setIsSettingsOpen(false)} className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
                         <motion.div initial={{ scale: 0.9, opacity: 0, y: 20 }} animate={{ scale: 1, opacity: 1, y: 0 }} exit={{ scale: 0.9, opacity: 0, y: 20 }}
-                            className="relative w-full max-w-md bg-[#0f111a] border border-white/10 rounded-[2.5rem] shadow-2xl overflow-hidden p-8 max-h-[90vh] flex flex-col">
-                            <div className="flex items-center gap-3 mb-6 shrink-0">
-                                <div className="p-3 bg-sky-500/10 rounded-2xl">
-                                    <Settings2 className="w-6 h-6 text-sky-500" />
+                            className="relative w-full max-w-lg bg-[#0f111a] border border-white/10 rounded-[2.5rem] shadow-2xl overflow-hidden p-6 md:p-8 max-h-[90vh] flex flex-col">
+                            
+                            {/* Modal Header */}
+                            <div className="flex items-center justify-between gap-3 mb-6 shrink-0">
+                                <div className="flex items-center gap-3">
+                                    <div className="p-3 bg-sky-500/10 rounded-2xl">
+                                        <Settings2 className="w-6 h-6 text-sky-500" />
+                                    </div>
+                                    <div>
+                                        <h2 className="text-xl font-black text-white">
+                                            {isAdmin ? "시스템 설정" : "사용자 설정"}
+                                        </h2>
+                                        <p className="text-xs text-slate-500 font-bold uppercase tracking-widest">
+                                            {isAdmin ? "System Configuration" : "User Settings"}
+                                        </p>
+                                    </div>
                                 </div>
-                                <div>
-                                    <h2 className="text-xl font-black text-white">
-                                        {isAdmin ? "DB 연결 설정" : "사용자 설정"}
-                                    </h2>
-                                    <p className="text-xs text-slate-500 font-bold uppercase tracking-widest">
-                                        {isAdmin ? "Database Configuration" : "User Settings"}
-                                    </p>
-                                </div>
+                                <button onClick={() => setIsSettingsOpen(false)} className="p-2 hover:bg-white/5 rounded-full text-slate-400 hover:text-white">
+                                    <X className="w-5 h-5" />
+                                </button>
                             </div>
 
+                            {/* Settings Tab Navigation (Admin gets DB / Users / Password tabs) */}
+                            {isAdmin && (
+                                <div className="flex bg-black/40 p-1.5 rounded-2xl border border-white/5 mb-6 shrink-0 gap-1">
+                                    <button 
+                                        onClick={() => setSettingsTab('db')}
+                                        className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${settingsTab === 'db' ? 'bg-sky-500 text-white shadow-lg shadow-sky-500/20' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}
+                                    >
+                                        <Database className="w-3.5 h-3.5" />
+                                        DB 설정
+                                    </button>
+                                    <button 
+                                        onClick={() => setSettingsTab('users')}
+                                        className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${settingsTab === 'users' ? 'bg-sky-500 text-white shadow-lg shadow-sky-500/20' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}
+                                    >
+                                        <Users className="w-3.5 h-3.5" />
+                                        계정 관리
+                                    </button>
+                                    <button 
+                                        onClick={() => setSettingsTab('password')}
+                                        className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${settingsTab === 'password' ? 'bg-sky-500 text-white shadow-lg shadow-sky-500/20' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}
+                                    >
+                                        <KeyRound className="w-3.5 h-3.5" />
+                                        비밀번호
+                                    </button>
+                                </div>
+                            )}
+
+                            {/* Tab Content */}
                             <div className="overflow-y-auto custom-scrollbar flex-1 pr-1 space-y-6">
-                                {isAdmin && (
+                                {(settingsTab === 'db' && isAdmin) && (
                                     <>
                                         <div className="space-y-4">
                                             <div className="space-y-2">
@@ -798,59 +1046,132 @@ export default function Home({ user }: { user: SessionUser }) {
                                             </div>
                                         </div>
 
-                                        <div className="flex gap-3 mt-4 mb-4">
+                                        <div className="flex gap-3 mt-6">
                                             <button onClick={() => setIsSettingsOpen(false)} className="flex-1 py-4 rounded-2xl bg-white/5 hover:bg-white/10 text-slate-400 font-bold text-sm transition-all">취소</button>
                                             <button onClick={handleDbSave} className="flex-2 py-4 px-8 rounded-2xl bg-sky-500 hover:bg-sky-400 text-white font-black text-sm transition-all shadow-lg shadow-sky-500/20">설정 저장</button>
                                         </div>
                                     </>
                                 )}
 
-                                {/* Remote DB Sync Section */}
-                                <div className="border-t border-white/5 pt-6">
-                                    <div className="flex items-center gap-3 mb-4">
-                                        <div className="p-3 bg-emerald-500/10 rounded-2xl">
-                                            <RotateCw className={`w-6 h-6 text-emerald-500 ${isSyncing ? "animate-spin" : ""}`} />
-                                        </div>
-                                        <div>
-                                            <h2 className="text-xl font-black text-white">원격 DB 동기화</h2>
-                                            <p className="text-xs text-slate-500 font-bold uppercase tracking-widest">Remote DB Sync</p>
-                                        </div>
-                                    </div>
-                                    
-                                    <p className="text-xs text-slate-400 mb-4 leading-relaxed">
-                                        원격 데이터베이스(<code className="text-sky-400 bg-sky-500/10 px-1.5 py-0.5 rounded">idlezero.iptime.org</code>)의 제품 마스터 및 작업 데이터를 로컬 DB로 동기화합니다. 로컬 DB의 기존 데이터는 초기화됩니다.
-                                    </p>
+                                {(settingsTab === 'users' && isAdmin) && (
+                                    <div className="space-y-4">
+                                        <div className="flex items-center justify-between gap-2 flex-wrap bg-black/40 p-3 rounded-2xl border border-white/5">
+                                            <label className="flex items-center gap-2 text-xs font-bold text-slate-300 cursor-pointer select-none">
+                                                <input 
+                                                    type="checkbox"
+                                                    checked={isAllUsersSelected}
+                                                    disabled={deletableUsers.length === 0}
+                                                    onChange={toggleSelectAllUsers}
+                                                    className="w-4 h-4 rounded border-white/20 bg-black/40 text-sky-500 focus:ring-0 cursor-pointer accent-sky-500 disabled:opacity-30"
+                                                />
+                                                <span>전체 선택 ({deletableUsers.length}명 중 {selectedUserIds.length}명 선택)</span>
+                                            </label>
 
-                                    <button 
-                                        onClick={handleSync} 
-                                        disabled={isSyncing || isLoading}
-                                        className="w-full py-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 hover:bg-emerald-500 hover:text-white font-black text-sm transition-all flex items-center justify-center gap-2 active:scale-[0.98] disabled:opacity-50"
-                                    >
-                                        {isSyncing ? (
-                                            <>
-                                                <div className="w-5 h-5 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                                                동기화 진행 중...
-                                            </>
+                                            <div className="flex items-center gap-2">
+                                                {selectedUserIds.length > 0 && (
+                                                    <button 
+                                                        onClick={handleDeleteSelectedUsers}
+                                                        disabled={isUserLoading}
+                                                        className="px-3.5 py-1.5 rounded-xl bg-rose-500/20 border border-rose-500/40 text-rose-400 hover:bg-rose-500 hover:text-white font-bold text-xs transition-all flex items-center gap-1.5 shadow-sm disabled:opacity-50"
+                                                    >
+                                                        <Trash2 className="w-3.5 h-3.5" />
+                                                        선택 삭제 ({selectedUserIds.length})
+                                                    </button>
+                                                )}
+                                                <button 
+                                                    onClick={handleOpenAddUser}
+                                                    className="px-3.5 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500 hover:text-white font-bold text-xs transition-all flex items-center gap-1.5 shadow-sm"
+                                                >
+                                                    <UserPlus className="w-3.5 h-3.5" />
+                                                    계정 추가
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        {isUserLoading ? (
+                                            <div className="py-12 flex flex-col items-center justify-center gap-2 text-slate-400">
+                                                <Loader2 className="w-6 h-6 animate-spin text-sky-400" />
+                                                <p className="text-xs">사용자 목록을 불러오는 중...</p>
+                                            </div>
+                                        ) : userList.length === 0 ? (
+                                            <div className="py-12 text-center text-xs text-slate-500 bg-white/5 rounded-2xl border border-white/5">
+                                                등록된 사용자 계정이 없습니다.
+                                            </div>
                                         ) : (
-                                            <>
-                                                <RotateCw className="w-4 h-4" />
-                                                원격 데이터 동기화 실행
-                                            </>
+                                            <div className="space-y-2.5 max-h-[50vh] overflow-y-auto pr-1">
+                                                {userList.map((u) => {
+                                                    const isSelf = u.id === user.id;
+                                                    const isSelected = selectedUserIds.includes(u.id);
+                                                    const roleUpper = (u.role || 'USER').toUpperCase();
+                                                    return (
+                                                        <div key={u.id} className={`p-3.5 rounded-2xl bg-black/40 border transition-all flex items-center justify-between gap-3 ${isSelected ? 'border-sky-500/50 bg-sky-500/5' : 'border-white/5 hover:border-white/10'}`}>
+                                                            <div className="flex items-center gap-3 min-w-0 flex-1">
+                                                                <input 
+                                                                    type="checkbox"
+                                                                    checked={isSelected}
+                                                                    disabled={isSelf}
+                                                                    onChange={() => toggleSelectUser(u.id)}
+                                                                    className="w-4 h-4 rounded border-white/20 bg-black/40 text-sky-500 focus:ring-0 cursor-pointer accent-sky-500 disabled:opacity-30 disabled:cursor-not-allowed shrink-0"
+                                                                    title={isSelf ? "본인 계정은 선택할 수 없습니다" : "선택"}
+                                                                />
+                                                                <div className="min-w-0 flex-1">
+                                                                    <div className="flex items-center gap-2 mb-1">
+                                                                        <span className="font-bold text-sm text-white truncate">{u.name}</span>
+                                                                        <span className="text-xs text-slate-400 font-mono">({u.username})</span>
+                                                                        {isSelf && (
+                                                                            <span className="px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-400 text-[10px] font-black">나</span>
+                                                                        )}
+                                                                    </div>
+                                                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                                                        <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider ${
+                                                                            roleUpper === 'ADMIN' 
+                                                                                ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30' 
+                                                                                : roleUpper === 'MANAGER' 
+                                                                                ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' 
+                                                                                : 'bg-slate-500/20 text-slate-400 border border-slate-500/30'
+                                                                        }`}>
+                                                                            {roleUpper}
+                                                                        </span>
+                                                                        {u.isApproved ? (
+                                                                            <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center gap-1">
+                                                                                <UserCheck className="w-3 h-3" /> 승인됨
+                                                                            </span>
+                                                                        ) : (
+                                                                            <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-rose-500/10 text-rose-400 border border-rose-500/20 flex items-center gap-1">
+                                                                                <UserX className="w-3 h-3" /> 승인대기
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+
+                                                            <div className="flex items-center gap-1 shrink-0">
+                                                                <button 
+                                                                    onClick={() => handleOpenEditUser(u)}
+                                                                    className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white transition-all text-xs font-bold flex items-center gap-1"
+                                                                    title="수정"
+                                                                >
+                                                                    <Edit3 className="w-3.5 h-3.5" />
+                                                                </button>
+                                                                {!isSelf && (
+                                                                    <button 
+                                                                        onClick={() => handleDeleteUser(u)}
+                                                                        className="p-2 rounded-xl bg-rose-500/10 hover:bg-rose-500 text-rose-400 hover:text-white transition-all text-xs font-bold flex items-center gap-1"
+                                                                        title="개별 삭제"
+                                                                    >
+                                                                        <Trash2 className="w-3.5 h-3.5" />
+                                                                    </button>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
                                         )}
-                                    </button>
-                                </div>
-
-                                <div className="border-t border-white/5 pt-6">
-                                    <div className="flex items-center gap-3 mb-6">
-                                        <div className="p-3 bg-amber-500/10 rounded-2xl">
-                                            <Briefcase className="w-6 h-6 text-amber-500" />
-                                        </div>
-                                        <div>
-                                            <h2 className="text-xl font-black text-white">비밀번호 변경</h2>
-                                            <p className="text-xs text-slate-500 font-bold uppercase tracking-widest">Change Password</p>
-                                        </div>
                                     </div>
+                                )}
 
+                                {(settingsTab === 'password' || !isAdmin) && (
                                     <div className="space-y-4">
                                         <div className="space-y-2">
                                             <label className="text-[11px] font-black text-slate-500 ml-1">현재 비밀번호</label>
@@ -874,12 +1195,123 @@ export default function Home({ user }: { user: SessionUser }) {
                                             {isPasswordUpdating ? "변경 중..." : "비밀번호 변경 적용"}
                                         </button>
                                     </div>
+                                )}
+                            </div>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
+
+            {/* User Form Modal (Create / Edit User) */}
+            <AnimatePresence>
+                {isUserModalOpen && (
+                    <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
+                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setIsUserModalOpen(false)} className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
+                        <motion.div initial={{ scale: 0.9, opacity: 0, y: 20 }} animate={{ scale: 1, opacity: 1, y: 0 }} exit={{ scale: 0.9, opacity: 0, y: 20 }}
+                            className="relative w-full max-w-sm bg-[#0f111a] border border-white/10 rounded-[2rem] shadow-2xl overflow-hidden p-6 flex flex-col">
+                            
+                            <div className="flex items-center justify-between mb-5">
+                                <h3 className="text-lg font-black text-white flex items-center gap-2">
+                                    {editingUser ? <Edit3 className="w-5 h-5 text-sky-400" /> : <UserPlus className="w-5 h-5 text-emerald-400" />}
+                                    {editingUser ? "사용자 정보 수정" : "신규 사용자 등록"}
+                                </h3>
+                                <button onClick={() => setIsUserModalOpen(false)} className="p-1.5 rounded-full hover:bg-white/10 text-slate-400 hover:text-white">
+                                    <X className="w-4 h-4" />
+                                </button>
+                            </div>
+
+                            <div className="space-y-4">
+                                <div className="space-y-1.5">
+                                    <label className="text-[11px] font-black text-slate-400 ml-1">아이디 (Username)</label>
+                                    <input 
+                                        value={userForm.username} 
+                                        disabled={!!editingUser}
+                                        onChange={e => setUserForm({ ...userForm, username: e.target.value })}
+                                        className="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2.5 text-sm focus:border-sky-500 outline-none transition-all disabled:opacity-50 disabled:bg-white/5"
+                                        placeholder="로그인 아이디 입력" 
+                                    />
+                                </div>
+
+                                <div className="space-y-1.5">
+                                    <label className="text-[11px] font-black text-slate-400 ml-1">이름 (Name)</label>
+                                    <input 
+                                        value={userForm.name} 
+                                        onChange={e => setUserForm({ ...userForm, name: e.target.value })}
+                                        className="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2.5 text-sm focus:border-sky-500 outline-none transition-all"
+                                        placeholder="사용자 이름 입력" 
+                                    />
+                                </div>
+
+                                <div className="space-y-1.5">
+                                    <label className="text-[11px] font-black text-slate-400 ml-1">
+                                        비밀번호 {editingUser && <span className="text-[10px] text-slate-500 font-normal">(변경 시에만 입력)</span>}
+                                    </label>
+                                    <input 
+                                        type="password"
+                                        value={userForm.password} 
+                                        onChange={e => setUserForm({ ...userForm, password: e.target.value })}
+                                        className="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2.5 text-sm focus:border-sky-500 outline-none transition-all"
+                                        placeholder={editingUser ? "변경할 비밀번호 입력 (선택)" : "비밀번호 입력"} 
+                                    />
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div className="space-y-1.5">
+                                        <label className="text-[11px] font-black text-slate-400 ml-1">권한 (Role)</label>
+                                        <select 
+                                            value={userForm.role}
+                                            onChange={e => setUserForm({ ...userForm, role: e.target.value })}
+                                            className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2.5 text-sm focus:border-sky-500 outline-none transition-all text-white"
+                                        >
+                                            <option value="USER" className="bg-[#0f111a]">일반 (USER)</option>
+                                            <option value="MANAGER" className="bg-[#0f111a]">매니저 (MANAGER)</option>
+                                            <option value="ADMIN" className="bg-[#0f111a]">관리자 (ADMIN)</option>
+                                        </select>
+                                    </div>
+
+                                    <div className="space-y-1.5">
+                                        <label className="text-[11px] font-black text-slate-400 ml-1">승인 상태</label>
+                                        <button
+                                            type="button"
+                                            onClick={() => setUserForm({ ...userForm, isApproved: !userForm.isApproved })}
+                                            className={`w-full py-2.5 px-3 rounded-xl border text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                                                userForm.isApproved 
+                                                    ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400' 
+                                                    : 'bg-rose-500/20 border-rose-500/40 text-rose-400'
+                                            }`}
+                                        >
+                                            {userForm.isApproved ? (
+                                                <><UserCheck className="w-3.5 h-3.5" /> 승인됨</>
+                                            ) : (
+                                                <><UserX className="w-3.5 h-3.5" /> 승인 대기</>
+                                            )}
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div className="flex gap-2 pt-2">
+                                    <button 
+                                        type="button"
+                                        onClick={() => setIsUserModalOpen(false)}
+                                        className="flex-1 py-3 rounded-xl bg-white/5 hover:bg-white/10 text-slate-400 font-bold text-xs transition-all"
+                                    >
+                                        취소
+                                    </button>
+                                    <button 
+                                        type="button"
+                                        onClick={handleSaveUser}
+                                        disabled={isUserLoading}
+                                        className="flex-1 py-3 rounded-xl bg-sky-500 hover:bg-sky-400 text-white font-bold text-xs transition-all shadow-lg shadow-sky-500/20 disabled:opacity-50"
+                                    >
+                                        {isUserLoading ? "저장 중..." : "저장"}
+                                    </button>
                                 </div>
                             </div>
                         </motion.div>
                     </div>
                 )}
             </AnimatePresence>
+
 
             {/* Photo Upload Modal */}
             <AnimatePresence>
@@ -991,6 +1423,87 @@ export default function Home({ user }: { user: SessionUser }) {
                                             사진 저장하기
                                         </span>
                                     )}
+                                </button>
+                            </div>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
+
+            {/* Work Report Modal */}
+            <AnimatePresence>
+                {isReportOpen && (
+                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+                        <motion.div 
+                            initial={{ opacity: 0 }} 
+                            animate={{ opacity: 1 }} 
+                            exit={{ opacity: 0 }} 
+                            onClick={() => setIsReportOpen(false)} 
+                            className="absolute inset-0 bg-black/70 backdrop-blur-md" 
+                        />
+                        <motion.div 
+                            initial={{ scale: 0.95, opacity: 0, y: 20 }} 
+                            animate={{ scale: 1, opacity: 1, y: 0 }} 
+                            exit={{ scale: 0.95, opacity: 0, y: 20 }}
+                            className="relative w-full max-w-2xl bg-[#0f111a] border border-white/10 rounded-[2.5rem] shadow-2xl overflow-hidden p-6 md:p-8 z-10 max-h-[90vh] flex flex-col"
+                        >
+                            <div className="flex items-center justify-between pb-4 mb-4 border-b border-white/10 shrink-0">
+                                <div className="flex items-center gap-3">
+                                    <div className="p-3 bg-emerald-500/10 rounded-2xl">
+                                        <FileText className="w-6 h-6 text-emerald-400" />
+                                    </div>
+                                    <div>
+                                        <h2 className="text-xl font-black text-white">작업 완료 보고서</h2>
+                                        <p className="text-xs text-slate-500 font-bold uppercase tracking-widest">Work Summary Report</p>
+                                    </div>
+                                </div>
+                                <button 
+                                    onClick={() => setIsReportOpen(false)}
+                                    className="p-2 hover:bg-white/10 rounded-full text-slate-400 hover:text-white transition-all cursor-pointer"
+                                >
+                                    <X className="w-5 h-5" />
+                                </button>
+                            </div>
+
+                            <div className="flex-1 overflow-y-auto min-h-[300px] max-h-[50vh] bg-black/50 border border-white/5 rounded-2xl p-4 font-mono text-xs md:text-sm leading-relaxed text-slate-200 custom-scrollbar select-all whitespace-pre-wrap">
+                                {isReportGenerating ? (
+                                    <div className="flex flex-col items-center justify-center h-48 gap-3 text-slate-400">
+                                        <Loader2 className="w-8 h-8 animate-spin text-emerald-400" />
+                                        <p className="text-xs font-bold">보고서를 생성하는 중입니다...</p>
+                                    </div>
+                                ) : (
+                                    reportText
+                                )}
+                            </div>
+
+                            <div className="flex flex-wrap gap-2.5 mt-6 shrink-0">
+                                <button
+                                    onClick={handleCopyReport}
+                                    disabled={isReportGenerating || !reportText}
+                                    className={`flex-1 py-3.5 px-4 rounded-2xl font-bold text-xs md:text-sm transition-all shadow-lg flex items-center justify-center gap-2 cursor-pointer ${
+                                        isCopied
+                                            ? 'bg-emerald-500 text-white shadow-emerald-500/20'
+                                            : 'bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 hover:bg-emerald-500 hover:text-white'
+                                    }`}
+                                >
+                                    {isCopied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                                    {isCopied ? '복사 완료!' : '📋 1초 텍스트 복사'}
+                                </button>
+
+                                <button
+                                    onClick={handleDownloadReport}
+                                    disabled={isReportGenerating || !reportText}
+                                    className="py-3.5 px-5 rounded-2xl bg-white/5 border border-white/10 hover:bg-white/10 text-slate-300 hover:text-white font-bold text-xs md:text-sm transition-all flex items-center gap-2 cursor-pointer"
+                                >
+                                    <Download className="w-4 h-4" />
+                                    .txt 파일 저장
+                                </button>
+
+                                <button
+                                    onClick={() => setIsReportOpen(false)}
+                                    className="py-3.5 px-5 rounded-2xl bg-white/5 hover:bg-white/10 text-slate-400 font-bold text-xs md:text-sm transition-all cursor-pointer"
+                                >
+                                    닫기
                                 </button>
                             </div>
                         </motion.div>

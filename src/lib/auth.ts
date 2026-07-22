@@ -6,6 +6,8 @@ import bcrypt from "bcryptjs";
 import fs from "fs";
 import path from "path";
 
+import crypto from 'crypto';
+
 function debugLog(message: string) {
     try {
         const logPath = path.resolve(process.cwd(), 'login_debug.log');
@@ -15,6 +17,8 @@ function debugLog(message: string) {
         // ignore
     }
 }
+
+import { UserAccount } from "./types";
 
 export interface SessionUser {
     id: string;
@@ -163,3 +167,166 @@ export async function updatePassword(
         return { success: false, error: "비밀번호 변경 중 오류가 발생했습니다." };
     }
 }
+
+export async function getAllUsers(): Promise<{ success: boolean; users?: UserAccount[]; error?: string }> {
+    try {
+        const session = await getSession();
+        if (!session || (session.role.toUpperCase() !== 'ADMIN' && session.role.toUpperCase() !== 'MANAGER')) {
+            return { success: false, error: "관리자 권한이 필요합니다." };
+        }
+        const client = await pool.connect();
+        try {
+            const res = await client.query(
+                `SELECT id, username, name, role, "isApproved" FROM "User" ORDER BY name`
+            );
+            return { success: true, users: res.rows };
+        } finally {
+            client.release();
+        }
+    } catch (error: any) {
+        console.error("getAllUsers error:", error);
+        return { success: false, error: "사용자 목록을 불러오는 중 오류가 발생했습니다." };
+    }
+}
+
+export async function createUserAccount(data: {
+    username: string;
+    name: string;
+    password: string;
+    role: string;
+    isApproved: boolean;
+}): Promise<{ success: boolean; error?: string }> {
+    try {
+        const session = await getSession();
+        if (!session || (session.role.toUpperCase() !== 'ADMIN' && session.role.toUpperCase() !== 'MANAGER')) {
+            return { success: false, error: "관리자 권한이 필요합니다." };
+        }
+        if (!data.username || !data.password || !data.name) {
+            return { success: false, error: "아이디, 이름, 비밀번호를 모두 입력해주세요." };
+        }
+
+        const client = await pool.connect();
+        try {
+            const dupRes = await client.query(
+                `SELECT id FROM "User" WHERE username = $1 LIMIT 1`,
+                [data.username.trim()]
+            );
+            if (dupRes.rows.length > 0) {
+                return { success: false, error: "이미 존재하는 아이디입니다." };
+            }
+
+            const id = crypto.randomUUID();
+            const hashedPassword = await bcrypt.hash(data.password, 10);
+            const role = data.role || 'USER';
+            const isApproved = data.isApproved ?? true;
+
+            await client.query(
+                `INSERT INTO "User" (id, username, name, password, role, "isApproved") VALUES ($1, $2, $3, $4, $5, $6)`,
+                [id, data.username.trim(), data.name.trim(), hashedPassword, role, isApproved]
+            );
+
+            return { success: true };
+        } finally {
+            client.release();
+        }
+    } catch (error: any) {
+        console.error("createUserAccount error:", error);
+        return { success: false, error: "사용자 추가 중 오류가 발생했습니다." };
+    }
+}
+
+export async function updateUserAccount(
+    id: string,
+    data: { name?: string; role?: string; isApproved?: boolean; password?: string }
+): Promise<{ success: boolean; error?: string }> {
+    try {
+        const session = await getSession();
+        if (!session || (session.role.toUpperCase() !== 'ADMIN' && session.role.toUpperCase() !== 'MANAGER')) {
+            return { success: false, error: "관리자 권한이 필요합니다." };
+        }
+
+        const client = await pool.connect();
+        try {
+            const userRes = await client.query(`SELECT id FROM "User" WHERE id = $1 LIMIT 1`, [id]);
+            if (userRes.rows.length === 0) {
+                return { success: false, error: "해당 사용자를 찾을 수 없습니다." };
+            }
+
+            if (data.name !== undefined) {
+                await client.query(`UPDATE "User" SET name = $1 WHERE id = $2`, [data.name.trim(), id]);
+            }
+            if (data.role !== undefined) {
+                await client.query(`UPDATE "User" SET role = $1 WHERE id = $2`, [data.role, id]);
+            }
+            if (data.isApproved !== undefined) {
+                await client.query(`UPDATE "User" SET "isApproved" = $1 WHERE id = $2`, [data.isApproved, id]);
+            }
+            if (data.password && data.password.trim() !== '') {
+                const hashedPassword = await bcrypt.hash(data.password, 10);
+                await client.query(`UPDATE "User" SET password = $1 WHERE id = $2`, [hashedPassword, id]);
+            }
+
+            return { success: true };
+        } finally {
+            client.release();
+        }
+    } catch (error: any) {
+        console.error("updateUserAccount error:", error);
+        return { success: false, error: "사용자 정보 수정 중 오류가 발생했습니다." };
+    }
+}
+
+export async function deleteUserAccount(id: string): Promise<{ success: boolean; error?: string }> {
+    try {
+        const session = await getSession();
+        if (!session || (session.role.toUpperCase() !== 'ADMIN' && session.role.toUpperCase() !== 'MANAGER')) {
+            return { success: false, error: "관리자 권한이 필요합니다." };
+        }
+
+        if (session.id === id) {
+            return { success: false, error: "현재 로그인된 본인 계정은 삭제할 수 없습니다." };
+        }
+
+        const client = await pool.connect();
+        try {
+            await client.query(`DELETE FROM "User" WHERE id = $1`, [id]);
+            return { success: true };
+        } finally {
+            client.release();
+        }
+    } catch (error: any) {
+        console.error("deleteUserAccount error:", error);
+        return { success: false, error: "사용자 계정 삭제 중 오류가 발생했습니다." };
+    }
+}
+
+export async function deleteMultipleUserAccounts(ids: string[]): Promise<{ success: boolean; deletedCount?: number; error?: string }> {
+    try {
+        const session = await getSession();
+        if (!session || (session.role.toUpperCase() !== 'ADMIN' && session.role.toUpperCase() !== 'MANAGER')) {
+            return { success: false, error: "관리자 권한이 필요합니다." };
+        }
+
+        if (!ids || ids.length === 0) {
+            return { success: false, error: "삭제할 사용자를 선택해주세요." };
+        }
+
+        const validIds = ids.filter(id => id !== session.id);
+        if (validIds.length === 0) {
+            return { success: false, error: "현재 로그인된 본인 계정은 삭제할 수 없습니다." };
+        }
+
+        const client = await pool.connect();
+        try {
+            const res = await client.query(`DELETE FROM "User" WHERE id = ANY($1::uuid[])`, [validIds]);
+            return { success: true, deletedCount: res.rowCount || validIds.length };
+        } finally {
+            client.release();
+        }
+    } catch (error: any) {
+        console.error("deleteMultipleUserAccounts error:", error);
+        return { success: false, error: "사용자 일괄 삭제 중 오류가 발생했습니다." };
+    }
+}
+
+

@@ -88,3 +88,12 @@ export interface DbConfig {
     trash_retention_days?: number;
     upload_dir?: string;
 }
+
+export interface UserAccount {
+    id: string;
+    username: string;
+    name: string;
+    role: string;
+    isApproved: boolean;
+}
+

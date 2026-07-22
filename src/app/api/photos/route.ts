@@ -8,6 +8,7 @@ import { pool } from '@/lib/db';
 import heicConvert from 'heic-convert';
 // @ts-ignore
 import ExifParser from 'exif-parser';
+import sharp from 'sharp';
 
 export async function POST(req: NextRequest) {
     try {
@@ -43,6 +44,21 @@ export async function POST(req: NextRequest) {
         // Save metadata to database and determine name sequentially
         const client = await pool.connect();
         try {
+            // Verify Job exists to prevent foreign key violation
+            const jobCheck = await client.query(`SELECT id FROM container_jobs WHERE id = $1 LIMIT 1`, [jobId]);
+            if (jobCheck.rows.length === 0) {
+                return NextResponse.json({ error: '해당 작업(Job ID)이 존재하지 않습니다.' }, { status: 404 });
+            }
+
+            // Verify User exists to prevent uploaded_by foreign key violation
+            let validUploadedBy: string | null = null;
+            if (session.id) {
+                const userCheck = await client.query(`SELECT id FROM "User" WHERE id::text = $1 OR username = $1 LIMIT 1`, [session.id]);
+                if (userCheck.rows.length > 0) {
+                    validUploadedBy = userCheck.rows[0].id;
+                }
+            }
+
             // Count photos uploaded today for this container number to determine sequence
             const countRes = await client.query(
                 `SELECT COUNT(*) as count FROM container_photos WHERE cntr_no = $1 AND uploaded_at::date = CURRENT_DATE`,
@@ -59,11 +75,44 @@ export async function POST(req: NextRequest) {
 
             const originalName = file.name;
             let ext = (path.extname(originalName) || '.jpg').toLowerCase();
-
-            // Determine if the uploaded file is in HEIC/HEIF format
             const isHeic = ext === '.heic' || ext === '.heif';
+
+            const bytes = await file.arrayBuffer();
+            const inputBuffer = Buffer.from(bytes);
+            let buffer: Buffer;
+
             if (isHeic) {
-                ext = '.jpg'; // Save as JPEG on disk
+                ext = '.jpg'; // Save converted JPEG on disk
+                try {
+                    // Primary: Use high-performance sharp to convert HEIC to JPEG with auto-orientation
+                    buffer = await sharp(inputBuffer)
+                        .rotate()
+                        .jpeg({ quality: 85 })
+                        .toBuffer();
+                } catch (sharpError) {
+                    console.error("Sharp HEIC conversion failed, trying heic-convert fallback:", sharpError);
+                    try {
+                        const converted = await heicConvert({
+                            buffer: inputBuffer,
+                            format: 'JPEG',
+                            quality: 0.85
+                        });
+                        buffer = Buffer.from(converted);
+                    } catch (convError) {
+                        console.error("HEIC Conversion completely failed, saving raw bytes:", convError);
+                        buffer = inputBuffer;
+                        ext = path.extname(originalName).toLowerCase() || '.heic';
+                    }
+                }
+            } else {
+                try {
+                    // Auto-rotate standard images (e.g. iPhone JPEGs) based on EXIF orientation
+                    buffer = await sharp(inputBuffer)
+                        .rotate()
+                        .toBuffer();
+                } catch (e) {
+                    buffer = inputBuffer;
+                }
             }
 
             let seqNum = existingCount + 1;
@@ -75,26 +124,6 @@ export async function POST(req: NextRequest) {
                 seqNum++;
                 filename = `${dateStr}_${sanitizedCntrNo}_${seqNum.toString().padStart(2, '0')}${ext}`;
                 filePath = path.join(containerDir, filename);
-            }
-
-            // Convert file to buffer and write to disk (converting HEIC to JPEG if needed)
-            const bytes = await file.arrayBuffer();
-            let buffer: Buffer;
-
-            if (isHeic) {
-                try {
-                    const converted = await heicConvert({
-                        buffer: Buffer.from(bytes),
-                        format: 'JPEG',
-                        quality: 0.85
-                    });
-                    buffer = Buffer.from(converted);
-                } catch (convError) {
-                    console.error("HEIC Conversion failed, saving raw bytes instead:", convError);
-                    buffer = Buffer.from(bytes);
-                }
-            } else {
-                buffer = Buffer.from(bytes);
             }
 
             fs.writeFileSync(filePath, buffer);
@@ -131,7 +160,7 @@ export async function POST(req: NextRequest) {
                 VALUES ($1, $2, $3, $4, $5)
                 RETURNING id, job_id, cntr_no, photo_path, remark, uploaded_at
             `;
-            const values = [jobId, cntrNo, relativeDbPath, remark || '', session.id];
+            const values = [jobId, cntrNo, relativeDbPath, remark || '', validUploadedBy];
             const res = await client.query(query, values);
             
             return NextResponse.json({
@@ -146,7 +175,7 @@ export async function POST(req: NextRequest) {
 
     } catch (error: any) {
         console.error('Photo Upload Error:', error);
-        return NextResponse.json({ error: '서버 오류로 인해 업로드에 실패했습니다.' }, { status: 500 });
+        return NextResponse.json({ error: `서버 오류로 인해 업로드에 실패했습니다. (${error?.message || '알 수 없는 오류'})` }, { status: 500 });
     }
 }
 

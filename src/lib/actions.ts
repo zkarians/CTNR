@@ -6,12 +6,20 @@ import {
     getJobsFromDB,
     getProductsForJob,
     pool,
-    resetPool,
-    getRemotePool,
-    resetRemotePool
+    resetPool
 } from "./db";
 import { Product, Job, JobFilters, DbConfig } from "./types";
-import { updatePassword as updatePass } from "./auth";
+import {
+    updatePassword as updatePass,
+    getAllUsers as fetchAllUsers,
+    createUserAccount,
+    updateUserAccount,
+    deleteUserAccount,
+    deleteMultipleUserAccounts
+} from "./auth";
+
+export { fetchAllUsers, createUserAccount, updateUserAccount, deleteUserAccount, deleteMultipleUserAccounts };
+
 
 export async function getDbConfig(): Promise<DbConfig> {
     return {
@@ -128,166 +136,6 @@ export async function updatePassword(currentPassword: string, newPassword: strin
     return await updatePass(currentPassword, newPassword);
 }
 
-export async function syncDb(): Promise<{ success: boolean; message: string; stats?: { jobs: number; results: number; products: number } }> {
-    const localClient = await pool.connect();
-    const remotePool = getRemotePool();
-    const remoteClient = await remotePool.connect();
-
-    try {
-        console.log("Starting Remote ➔ Local Database Sync...");
-        
-        // 1. Sync container_jobs
-        const jobsRes = await remoteClient.query(`
-            SELECT id, job_name, eta, etd, remark, saved_at 
-            FROM container_jobs
-        `);
-        
-        await localClient.query('BEGIN');
-        
-        console.log("Truncating local tables...");
-        await localClient.query('TRUNCATE TABLE container_results, container_jobs, product_master_sync CASCADE');
-        
-        const jobBatchSize = 500;
-        for (let i = 0; i < jobsRes.rows.length; i += jobBatchSize) {
-            const batch = jobsRes.rows.slice(i, i + jobBatchSize);
-            let queryText = 'INSERT INTO container_jobs (id, job_name, eta, etd, remark, saved_at) VALUES ';
-            const values: any[] = [];
-            let valIdx = 1;
-            
-            batch.forEach((row, rowIdx) => {
-                if (rowIdx > 0) queryText += ', ';
-                queryText += `($${valIdx++}, $${valIdx++}, $${valIdx++}, $${valIdx++}, $${valIdx++}, $${valIdx++})`;
-                values.push(row.id, row.job_name, row.eta, row.etd, row.remark, row.saved_at);
-            });
-            
-            await localClient.query(queryText, values);
-        }
-        
-        // 2. Sync container_results
-        const resultsRes = await remoteClient.query(`
-            SELECT 
-                id, job_name, cntr_no, seal_no, prod_name, qty_plan, qty_load, cntr_type, 
-                carrier, destination, weight_mixed, etd, eta, remark, saved_at, prod_type, 
-                division, dims, weight_orig, weight_down, transporter, adj1, adj1_color, 
-                job_id, adj2, qty_pending, qty_remain, qty_packing, work_date 
-            FROM container_results
-        `);
-        
-        const resBatchSize = 500;
-        const columns = [
-            'id', 'job_name', 'cntr_no', 'seal_no', 'prod_name', 'qty_plan', 'qty_load', 'cntr_type', 
-            'carrier', 'destination', 'weight_mixed', 'etd', 'eta', 'remark', 'saved_at', 'prod_type', 
-            'division', 'dims', 'weight_orig', 'weight_down', 'transporter', 'adj1', 'adj1_color', 
-            'job_id', 'adj2', 'qty_pending', 'qty_remain', 'qty_packing', 'work_date'
-        ];
-
-        for (let i = 0; i < resultsRes.rows.length; i += resBatchSize) {
-            const batch = resultsRes.rows.slice(i, i + resBatchSize);
-            let queryText = `INSERT INTO container_results (${columns.join(', ')}) VALUES `;
-            const values: any[] = [];
-            let valIdx = 1;
-
-            batch.forEach((row, rowIdx) => {
-                if (rowIdx > 0) queryText += ', ';
-                queryText += '(' + columns.map(() => `$${valIdx++}`).join(', ') + ')';
-                
-                values.push(
-                    row.id,
-                    row.job_name,
-                    row.cntr_no,
-                    row.seal_no,
-                    row.prod_name,
-                    row.qty_plan !== null ? String(row.qty_plan) : null,
-                    row.qty_load !== null ? String(row.qty_load) : null,
-                    row.cntr_type,
-                    row.carrier,
-                    row.destination,
-                    row.weight_mixed !== null ? String(row.weight_mixed) : null,
-                    row.etd,
-                    row.eta,
-                    row.remark,
-                    row.saved_at !== null ? (row.saved_at instanceof Date ? row.saved_at.toISOString() : String(row.saved_at)) : null,
-                    row.prod_type,
-                    row.division,
-                    row.dims,
-                    row.weight_orig !== null ? String(row.weight_orig) : null,
-                    row.weight_down !== null ? String(row.weight_down) : null,
-                    row.transporter,
-                    row.adj1,
-                    row.adj1_color,
-                    row.job_id,
-                    row.adj2,
-                    row.qty_pending !== null ? String(row.qty_pending) : null,
-                    row.qty_remain !== null ? String(row.qty_remain) : null,
-                    row.qty_packing !== null ? String(row.qty_packing) : null,
-                    row.work_date
-                );
-            });
-
-            await localClient.query(queryText, values);
-        }
-
-        // 3. Sync product_master_sync
-        const pmCountRes = await remoteClient.query('SELECT count(*) FROM product_master_sync');
-        const totalPmRows = parseInt(pmCountRes.rows[0].count);
-        
-        const pmBatchSize = 10000;
-        let offset = 0;
-        
-        while (offset < totalPmRows) {
-            const pmRes = await remoteClient.query(`
-                SELECT prod_name, width, depth, height, prod_type 
-                FROM product_master_sync 
-                ORDER BY prod_name
-                LIMIT $1 OFFSET $2
-            `, [pmBatchSize, offset]);
-            
-            if (pmRes.rows.length === 0) break;
-            
-            let queryText = 'INSERT INTO product_master_sync (prod_name, width, depth, height, prod_type) VALUES ';
-            const values: any[] = [];
-            let valIdx = 1;
-            
-            pmRes.rows.forEach((row, rowIdx) => {
-                if (rowIdx > 0) queryText += ', ';
-                queryText += `($${valIdx++}, $${valIdx++}, $${valIdx++}, $${valIdx++}, $${valIdx++})`;
-                values.push(
-                    row.prod_name,
-                    row.width !== null ? String(row.width) : null,
-                    row.depth !== null ? String(row.depth) : null,
-                    row.height !== null ? String(row.height) : null,
-                    row.prod_type
-                );
-            });
-            
-            await localClient.query(queryText, values);
-            offset += pmRes.rows.length;
-        }
-
-        await localClient.query('COMMIT');
-        console.log("Remote ➔ Local Database Sync Completed Successfully.");
-        
-        return {
-            success: true,
-            message: "성공적으로 원격 DB의 제품 정보 및 컨테이너 작업 데이터가 로컬 DB에 동기화되었습니다.",
-            stats: {
-                jobs: jobsRes.rows.length,
-                results: resultsRes.rows.length,
-                products: totalPmRows
-            }
-        };
-    } catch (err: any) {
-        await localClient.query('ROLLBACK');
-        console.error("Database Sync Error:", err);
-        return {
-            success: false,
-            message: `동기화 실패: ${err.message}`
-        };
-    } finally {
-        localClient.release();
-        remoteClient.release();
-    }
-}
 
 export async function fetchUsers(): Promise<{ id: string; name: string; username: string }[]> {
     try {
@@ -298,6 +146,136 @@ export async function fetchUsers(): Promise<{ id: string; name: string; username
     } catch (error) {
         console.error("fetchUsers Error:", error);
         return [];
+    }
+}
+
+export async function generateWorkReport(filters: JobFilters): Promise<{ success: boolean; reportText?: string; error?: string }> {
+    try {
+        const client = await pool.connect();
+        try {
+            const whereClauses: string[] = [];
+            const params: any[] = [];
+            let paramIdx = 1;
+
+            // Filter for incomplete (in-progress) container photos only
+            whereClauses.push(`(p.is_completed IS NOT TRUE)`);
+            whereClauses.push(`COALESCE(r.qty_plan, 0) > 0`);
+
+            if (filters.startDate) {
+                whereClauses.push(`j.saved_at >= $${paramIdx++}`);
+                params.push(filters.startDate);
+            }
+            if (filters.endDate) {
+                whereClauses.push(`j.saved_at < ($${paramIdx++}::date + 1)`);
+                params.push(filters.endDate);
+            }
+            if (filters.productName) {
+                whereClauses.push(`r.prod_name ILIKE $${paramIdx++}`);
+                params.push(`%${filters.productName}%`);
+            }
+            if (filters.containerNo) {
+                whereClauses.push(`r.cntr_no ILIKE $${paramIdx++}`);
+                params.push(`%${filters.containerNo}%`);
+            }
+
+            const whereSql = "WHERE " + whereClauses.join(" AND ");
+
+            // Query grouped strictly by uploader (User name/username) for in-progress containers
+            // Subquery on container_photos prevents Cartesian product multiplication by photo count
+            const query = `
+                SELECT 
+                    COALESCE(r.cntr_no, j.job_name, '미지정') as cntr_no,
+                    r.prod_name,
+                    r.division,
+                    SUM(COALESCE(r.qty_plan, 0)) as qty,
+                    COALESCE(u.name, u.username, '미지정 업로더') as uploader_name
+                FROM container_results r
+                JOIN container_jobs j ON r.job_id = j.id
+                LEFT JOIN (
+                    SELECT 
+                        job_id, 
+                        cntr_no, 
+                        MAX(uploaded_by::text) as uploaded_by,
+                        BOOL_OR(is_completed) as is_completed
+                    FROM container_photos
+                    WHERE (is_deleted IS NOT TRUE)
+                    GROUP BY job_id, cntr_no
+                ) p ON p.job_id = j.id AND (p.cntr_no = r.cntr_no OR (r.cntr_no IS NULL AND p.cntr_no IS NULL))
+                LEFT JOIN "User" u ON p.uploaded_by = u.id::text
+                ${whereSql}
+                GROUP BY COALESCE(r.cntr_no, j.job_name, '미지정'), r.prod_name, r.division, u.name, u.username
+                ORDER BY uploader_name, cntr_no, r.prod_name
+            `;
+
+            const res = await client.query(query, params);
+            const rows = res.rows;
+
+            if (rows.length === 0) {
+                return { success: false, error: '현재 작업 진행 중인 컨테이너가 없거나 조건에 일치하는 내역이 없습니다.' };
+            }
+
+            // Group by uploader_name -> cntr_no -> products
+            const uploaderMap = new Map<string, Map<string, { division: string; products: { name: string; qty: number; division: string }[] }>>();
+
+            for (const row of rows) {
+                const uploader = row.uploader_name;
+                // Exclude unassigned uploaders
+                if (!uploader || uploader === '미지정 업로더') {
+                    continue;
+                }
+                const cntrNo = row.cntr_no;
+                const division = row.division || '일반';
+                const prodName = row.prod_name;
+                const qty = Math.round(Number(row.qty)) || 0;
+
+                if (!uploaderMap.has(uploader)) {
+                    uploaderMap.set(uploader, new Map());
+                }
+                const cntrMap = uploaderMap.get(uploader)!;
+
+                if (!cntrMap.has(cntrNo)) {
+                    cntrMap.set(cntrNo, { division, products: [] });
+                }
+                const cntrData = cntrMap.get(cntrNo)!;
+                cntrData.products.push({ name: prodName, qty, division });
+            }
+
+            if (uploaderMap.size === 0) {
+                return { success: false, error: '현재 업로더가 지정된 진행 중인 컨테이너가 없습니다.' };
+            }
+
+            const today = new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit' });
+            let lines: string[] = [];
+            lines.push(`-----------------------------------------`);
+            lines.push(`📋 [작업 진행 현황 보고서] - ${today}`);
+            lines.push(`-----------------------------------------`);
+
+            uploaderMap.forEach((cntrMap, uploader) => {
+                const totalContainers = cntrMap.size;
+                lines.push(`■ ${uploader} 진행 중인 컨테이너 합계 ${totalContainers}개\n`);
+
+                cntrMap.forEach((cntrData, cntrNo) => {
+                    const modelCount = cntrData.products.length;
+                    const totalQty = cntrData.products.reduce((sum, p) => sum + p.qty, 0);
+                    lines.push(`${cntrNo} (${modelCount}모델, ${totalQty.toLocaleString()}개)`);
+                    for (const prod of cntrData.products) {
+                        lines.push(`- [${prod.division}] ${prod.name} ${prod.qty.toLocaleString()}개 장입`);
+                    }
+                    lines.push(`⏳ 작업 진행 중\n`);
+                });
+                lines.push(`-----------------------------------------`);
+            });
+
+            return {
+                success: true,
+                reportText: lines.join('\n')
+            };
+        } finally {
+            client.release();
+        }
+    } catch (error: any) {
+        console.error("generateWorkReport Error:", error);
+        return { success: false, error: `보고서 생성 오류: ${error?.message || '알 수 없는 오류'}` };
     }
 }
 

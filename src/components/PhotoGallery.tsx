@@ -4,7 +4,8 @@ import React, { useState, useEffect } from 'react';
 import { 
     X, Calendar, User, Download, Search, Image as ImageIcon, 
     ChevronLeft, ChevronRight, Loader2, ArrowLeft, Trash2, Folder,
-    ExternalLink, RotateCw, RotateCcw, Grid, LayoutGrid, Check, Undo
+    ExternalLink, RotateCw, RotateCcw, Grid, LayoutGrid, Check, Undo,
+    RefreshCw, SkipForward
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { fetchUsers } from '@/lib/actions';
@@ -292,7 +293,18 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
 
     // Local copy state
     const [isLocalCopyOpen, setIsLocalCopyOpen] = useState(false);
+    const [isConflictModalOpen, setIsConflictModalOpen] = useState(false);
     const [localCopyPath, setLocalCopyPath] = useState('');
+    const [isCopying, setIsCopying] = useState(false);
+    const [copyProgress, setCopyProgress] = useState<{ current: number; total: number; percent: number; currentFile: string; copiedCount: number; skippedCount: number }>({
+        current: 0,
+        total: 0,
+        percent: 0,
+        currentFile: '',
+        copiedCount: 0,
+        skippedCount: 0
+    });
+    const abortControllerRef = React.useRef<AbortController | null>(null);
 
     useEffect(() => {
         if (typeof window !== 'undefined') {
@@ -764,7 +776,7 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
         }
     };
 
-    const handleLocalCopy = async () => {
+    const handleLocalCopy = () => {
         if (selectedFolders.length === 0) {
             alert("복사할 폴더를 하나 이상 선택해 주세요.");
             return;
@@ -773,8 +785,24 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
             alert("대상 폴더 경로를 입력해 주세요.");
             return;
         }
+        setIsConflictModalOpen(true);
+    };
 
-        setIsLoading(true);
+    const handleStopCopy = () => {
+        if (abortControllerRef.current) {
+            abortControllerRef.current.abort();
+            abortControllerRef.current = null;
+        }
+    };
+
+    const executeLocalCopy = async (conflictAction: 'overwrite' | 'skip') => {
+        setIsConflictModalOpen(false);
+        setIsCopying(true);
+        setCopyProgress({ current: 0, total: 0, percent: 0, currentFile: '', copiedCount: 0, skippedCount: 0 });
+
+        const controller = new AbortController();
+        abortControllerRef.current = controller;
+
         try {
             const response = await fetch('/api/photos/local-copy', {
                 method: 'POST',
@@ -784,23 +812,82 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                 body: JSON.stringify({
                     cntrNos: selectedFolders,
                     targetPath: localCopyPath.trim(),
+                    conflictAction
                 }),
+                signal: controller.signal
             });
 
-            const data = await response.json();
-            if (response.ok && data.success) {
-                localStorage.setItem('localCopyTargetPath', localCopyPath.trim());
-                alert(data.message);
-                setIsLocalCopyOpen(false);
-                setSelectedFolders([]);
-            } else {
-                alert(`복사 실패: ${data.error || '알 수 없는 오류가 발생했습니다.'}`);
+            if (!response.ok || !response.body) {
+                setIsCopying(false);
+                const errData = await response.json().catch(() => ({}));
+                alert(`복사 실패: ${errData.error || '알 수 없는 오류가 발생했습니다.'}`);
+                return;
             }
-        } catch (error) {
-            console.error("Local copy error:", error);
-            alert("로컬 폴더 복사 중 오류가 발생했습니다.");
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n');
+                buffer = lines.pop() || '';
+
+                for (const line of lines) {
+                    if (!line.trim()) continue;
+                    try {
+                        const event = JSON.parse(line);
+                        if (event.type === 'start') {
+                            setCopyProgress(prev => ({
+                                ...prev,
+                                total: event.total,
+                                current: 0,
+                                percent: 0
+                            }));
+                        } else if (event.type === 'progress') {
+                            setCopyProgress({
+                                current: event.current,
+                                total: event.total,
+                                percent: event.percent,
+                                currentFile: event.currentFile,
+                                copiedCount: event.copiedCount,
+                                skippedCount: event.skippedCount
+                            });
+                        } else if (event.type === 'done') {
+                            localStorage.setItem('localCopyTargetPath', localCopyPath.trim());
+                            setCopyProgress(prev => ({
+                                ...prev,
+                                current: event.total,
+                                percent: 100
+                            }));
+                            setTimeout(() => {
+                                alert(event.message);
+                                setIsLocalCopyOpen(false);
+                                setSelectedFolders([]);
+                            }, 150);
+                        } else if (event.type === 'aborted') {
+                            setTimeout(() => {
+                                alert(`복사가 사용자에 의해 중단되었습니다. (완료: ${event.copiedCount}개)`);
+                            }, 150);
+                        }
+                    } catch (e) {
+                        console.error("NDJSON parse error:", e);
+                    }
+                }
+            }
+        } catch (error: any) {
+            if (error.name === 'AbortError') {
+                alert('복사 작업이 중지되었습니다.');
+            } else {
+                console.error("Local copy error:", error);
+                alert("로컬 폴더 복사 중 오류가 발생했습니다.");
+            }
         } finally {
-            setIsLoading(false);
+            setIsCopying(false);
+            abortControllerRef.current = null;
         }
     };
 
@@ -1904,20 +1991,140 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                                             </button>
                                         </div>
                                     </div>
+                                    {/* Progress Bar Display when copying */}
+                                    {isCopying && (
+                                        <div className="space-y-2 p-3 bg-black/40 border border-emerald-500/30 rounded-2xl">
+                                            <div className="flex items-center justify-between text-xs font-bold">
+                                                <span className="text-emerald-400 flex items-center gap-1.5">
+                                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                                    복사 진행 중 ({copyProgress.percent}%)
+                                                </span>
+                                                <span className="text-slate-400 font-mono">
+                                                    {copyProgress.current} / {copyProgress.total} 파일
+                                                </span>
+                                            </div>
+                                            <div className="w-full h-2.5 bg-white/10 rounded-full overflow-hidden">
+                                                <div 
+                                                    className="h-full bg-emerald-500 transition-all duration-200 rounded-full shadow-lg shadow-emerald-500/50"
+                                                    style={{ width: `${copyProgress.percent}%` }}
+                                                />
+                                            </div>
+                                            {copyProgress.currentFile && (
+                                                <div className="text-[11px] text-slate-400 truncate font-mono">
+                                                    현재 파일: {copyProgress.currentFile}
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
                                 </div>
 
                                 <div className="flex gap-3 mt-6">
-                                    <button 
-                                        onClick={() => setIsLocalCopyOpen(false)} 
-                                        className="flex-1 py-4 rounded-2xl bg-white/5 hover:bg-white/10 text-slate-400 font-bold text-sm transition-all"
-                                    >
-                                        취소
-                                    </button>
+                                    {isCopying ? (
+                                        <button 
+                                            onClick={handleStopCopy} 
+                                            className="flex-1 py-4 rounded-2xl bg-rose-500/20 border border-rose-500/40 hover:bg-rose-500 text-rose-400 hover:text-white font-bold text-sm transition-all flex items-center justify-center gap-2 shadow-lg shadow-rose-500/10 cursor-pointer"
+                                        >
+                                            <X className="w-4 h-4" />
+                                            복사 중지
+                                        </button>
+                                    ) : (
+                                        <button 
+                                            onClick={() => setIsLocalCopyOpen(false)} 
+                                            className="flex-1 py-4 rounded-2xl bg-white/5 hover:bg-white/10 text-slate-400 font-bold text-sm transition-all cursor-pointer"
+                                        >
+                                            취소
+                                        </button>
+                                    )}
+
                                     <button 
                                         onClick={handleLocalCopy} 
-                                        className="flex-2 py-4 px-8 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-white font-black text-sm transition-all shadow-lg shadow-emerald-500/20"
+                                        disabled={isCopying}
+                                        className={`flex-2 py-4 px-8 rounded-2xl font-black text-sm transition-all shadow-lg flex items-center justify-center gap-2 ${
+                                            isCopying 
+                                                ? 'bg-slate-700 text-slate-400 cursor-not-allowed shadow-none' 
+                                                : 'bg-emerald-500 hover:bg-emerald-400 text-white shadow-emerald-500/20 cursor-pointer'
+                                        }`}
                                     >
-                                        복사 시작
+                                        {isCopying ? (
+                                            <>
+                                                <Loader2 className="w-4 h-4 animate-spin text-emerald-400" />
+                                                복사 중... ({copyProgress.percent}%)
+                                            </>
+                                        ) : (
+                                            '복사 시작'
+                                        )}
+                                    </button>
+                                </div>
+                            </motion.div>
+                        </div>
+                    )}
+                </AnimatePresence>
+
+                {/* Duplicate Conflict Selection Modal */}
+                <AnimatePresence>
+                    {isConflictModalOpen && (
+                        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
+                            <motion.div 
+                                initial={{ opacity: 0 }} 
+                                animate={{ opacity: 1 }} 
+                                exit={{ opacity: 0 }} 
+                                onClick={() => setIsConflictModalOpen(false)} 
+                                className="absolute inset-0 bg-black/70 backdrop-blur-md" 
+                            />
+                            <motion.div 
+                                initial={{ scale: 0.9, opacity: 0, y: 20 }} 
+                                animate={{ scale: 1, opacity: 1, y: 0 }} 
+                                exit={{ scale: 0.9, opacity: 0, y: 20 }}
+                                className="relative w-full max-w-md bg-[#0f111a] border border-white/10 rounded-[2.5rem] shadow-2xl overflow-hidden p-8 z-10"
+                            >
+                                <div className="flex items-center gap-3 mb-4">
+                                    <div className="p-3 bg-amber-500/10 rounded-2xl text-amber-400">
+                                        <RefreshCw className="w-6 h-6 animate-spin-slow" />
+                                    </div>
+                                    <div>
+                                        <h2 className="text-lg font-black text-white">중복 파일 처리 방식 선택</h2>
+                                        <p className="text-xs text-slate-500 font-bold">복사 위치에 동일한 파일이 존재하는 경우</p>
+                                    </div>
+                                </div>
+
+                                <p className="text-xs text-slate-300 leading-relaxed mb-6">
+                                    지정한 로컬 폴더에 이미 동일한 이름의 파일이나 폴더가 존재할 때 어떻게 처리할까요?
+                                </p>
+
+                                <div className="space-y-3">
+                                    <button 
+                                        onClick={() => executeLocalCopy('overwrite')}
+                                        className="w-full p-4 rounded-2xl bg-sky-500/10 hover:bg-sky-500/20 border border-sky-500/30 text-left transition-all group flex items-start gap-3 cursor-pointer"
+                                    >
+                                        <div className="p-2 rounded-xl bg-sky-500/20 text-sky-400 mt-0.5 group-hover:scale-110 transition-transform">
+                                            <RefreshCw className="w-4 h-4" />
+                                        </div>
+                                        <div>
+                                            <div className="text-sm font-black text-sky-400 mb-0.5">🔄 덮어쓰기 (Overwrite)</div>
+                                            <div className="text-[11px] text-slate-400">기존 파일이 있으면 최신 파일로 자동 교체합니다.</div>
+                                        </div>
+                                    </button>
+
+                                    <button 
+                                        onClick={() => executeLocalCopy('skip')}
+                                        className="w-full p-4 rounded-2xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-left transition-all group flex items-start gap-3 cursor-pointer"
+                                    >
+                                        <div className="p-2 rounded-xl bg-amber-500/20 text-amber-400 mt-0.5 group-hover:scale-110 transition-transform">
+                                            <SkipForward className="w-4 h-4" />
+                                        </div>
+                                        <div>
+                                            <div className="text-sm font-black text-amber-400 mb-0.5">⏭️ 건너뛰기 (Skip)</div>
+                                            <div className="text-[11px] text-slate-400">동일한 기존 파일은 복사하지 않고 생략합니다.</div>
+                                        </div>
+                                    </button>
+                                </div>
+
+                                <div className="mt-6 pt-4 border-t border-white/10 flex justify-end">
+                                    <button 
+                                        onClick={() => setIsConflictModalOpen(false)}
+                                        className="px-5 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-400 font-bold text-xs transition-all cursor-pointer"
+                                    >
+                                        취소
                                     </button>
                                 </div>
                             </motion.div>

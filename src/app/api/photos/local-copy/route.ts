@@ -19,15 +19,17 @@ export async function POST(req: NextRequest) {
         }
 
         const body = await req.json();
-        const { cntrNos: cntrNosParam, targetPath } = body;
+        const { cntrNos: cntrNosParam, targetPath, conflictAction = 'overwrite' } = body;
 
         if (!cntrNosParam || !targetPath) {
             return NextResponse.json({ error: '필수 매개변수가 누락되었습니다.' }, { status: 400 });
         }
 
-        const cntrNos = Array.isArray(cntrNosParam) 
+        const cntrNos = (Array.isArray(cntrNosParam) 
             ? cntrNosParam 
-            : cntrNosParam.split(',').map((s: string) => s.trim().toUpperCase()).filter(Boolean);
+            : cntrNosParam.split(','))
+            .map((s: any) => String(s).trim().toUpperCase())
+            .filter(Boolean);
 
         if (cntrNos.length === 0) {
             return NextResponse.json({ error: '선택된 컨테이너가 없습니다.' }, { status: 400 });
@@ -50,7 +52,7 @@ export async function POST(req: NextRequest) {
             const query = `
                 SELECT cntr_no, photo_path 
                 FROM container_photos 
-                WHERE cntr_no = ANY($1)
+                WHERE UPPER(TRIM(cntr_no)) = ANY($1)
                   AND (is_deleted IS NULL OR is_deleted = false)
             `;
             const res = await client.query(query, [cntrNos]);
@@ -64,43 +66,107 @@ export async function POST(req: NextRequest) {
         }
 
         const uploadsDir = process.env.UPLOAD_DIR || path.join(process.cwd(), 'uploads');
-        let copiedCount = 0;
-        let failCount = 0;
+        const totalPhotos = photos.length;
 
-        // 2. Copy all files to the target path preserving container folder structure
-        for (const photo of photos) {
-            const relativePath = photo.photo_path; // e.g. "ECMU4970833/filename.jpg"
-            const sourceFilePath = path.resolve(uploadsDir, relativePath);
+        const stream = new ReadableStream({
+            async start(controller) {
+                const encoder = new TextEncoder();
+                const sendEvent = (obj: any) => {
+                    try {
+                        controller.enqueue(encoder.encode(JSON.stringify(obj) + '\n'));
+                    } catch (err) {
+                        // Controller might be closed
+                    }
+                };
 
-            if (sourceFilePath.startsWith(uploadsDir) && fs.existsSync(sourceFilePath)) {
-                // Determine destination directory and filename
-                const containerFolder = photo.cntr_no.replace(/[^a-zA-Z0-9]/g, '_').toUpperCase();
-                const destContainerDir = path.join(resolvedTargetDir, containerFolder);
-                
-                if (!fs.existsSync(destContainerDir)) {
-                    fs.mkdirSync(destContainerDir, { recursive: true });
+                // Send start event immediately so client knows total count
+                sendEvent({ type: 'start', total: totalPhotos });
+
+                let copiedCount = 0;
+                let skippedCount = 0;
+                let failCount = 0;
+                let processed = 0;
+
+                for (const photo of photos) {
+                    if (req.signal.aborted) {
+                        console.log("Local copy operation aborted by user client.");
+                        sendEvent({ type: 'aborted', copiedCount, skippedCount, failCount, total: totalPhotos });
+                        try { controller.close(); } catch (e) {}
+                        return;
+                    }
+
+                    const relativePath = photo.photo_path;
+                    const sourceFilePath = path.resolve(uploadsDir, relativePath);
+                    const filename = path.basename(relativePath);
+
+                    if (sourceFilePath.startsWith(uploadsDir) && fs.existsSync(sourceFilePath)) {
+                        const containerFolder = photo.cntr_no.replace(/[^a-zA-Z0-9]/g, '_').toUpperCase();
+                        const destContainerDir = path.join(resolvedTargetDir, containerFolder);
+                        
+                        if (!fs.existsSync(destContainerDir)) {
+                            fs.mkdirSync(destContainerDir, { recursive: true });
+                        }
+
+                        const destFilePath = path.join(destContainerDir, filename);
+
+                        if (fs.existsSync(destFilePath) && conflictAction === 'skip') {
+                            skippedCount++;
+                        } else {
+                            const tmpFilePath = `${destFilePath}.${Date.now()}_${Math.random().toString(36).substring(2, 7)}.tmp`;
+                            try {
+                                fs.copyFileSync(sourceFilePath, tmpFilePath);
+                                fs.renameSync(tmpFilePath, destFilePath);
+                                copiedCount++;
+                            } catch (copyErr) {
+                                console.error(`Failed to safely copy ${sourceFilePath}:`, copyErr);
+                                if (fs.existsSync(tmpFilePath)) {
+                                    try { fs.unlinkSync(tmpFilePath); } catch (cleanErr) {}
+                                }
+                                failCount++;
+                            }
+                        }
+                    } else {
+                        failCount++;
+                    }
+
+                    processed++;
+                    const percent = Math.round((processed / totalPhotos) * 100);
+
+                    sendEvent({
+                        type: 'progress',
+                        current: processed,
+                        total: totalPhotos,
+                        percent,
+                        currentFile: filename,
+                        copiedCount,
+                        skippedCount,
+                        failCount
+                    });
                 }
 
-                const filename = path.basename(relativePath);
-                const destFilePath = path.join(destContainerDir, filename);
+                let resultMsg = `성공적으로 ${copiedCount}개 파일을 복사했습니다.`;
+                if (skippedCount > 0) resultMsg += ` (중복 생략: ${skippedCount}개)`;
+                if (failCount > 0) resultMsg += ` (실패: ${failCount}개)`;
 
-                try {
-                    fs.copyFileSync(sourceFilePath, destFilePath);
-                    copiedCount++;
-                } catch (copyErr) {
-                    console.error(`Failed to copy ${sourceFilePath} to ${destFilePath}:`, copyErr);
-                    failCount++;
-                }
-            } else {
-                failCount++;
+                sendEvent({
+                    type: 'done',
+                    success: true,
+                    message: resultMsg,
+                    copiedCount,
+                    skippedCount,
+                    failCount,
+                    total: totalPhotos
+                });
+                try { controller.close(); } catch (e) {}
             }
-        }
+        });
 
-        return NextResponse.json({
-            success: true,
-            message: `성공적으로 ${copiedCount}개 파일을 복사했습니다.${failCount > 0 ? ` (실패: ${failCount}개)` : ''}`,
-            copiedCount,
-            failCount
+        return new NextResponse(stream, {
+            headers: {
+                'Content-Type': 'application/x-ndjson',
+                'Cache-Control': 'no-cache',
+                'Connection': 'keep-alive'
+            }
         });
 
     } catch (error: any) {

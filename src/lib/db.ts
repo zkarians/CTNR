@@ -55,31 +55,6 @@ export const pool = new Proxy({} as Pool, {
     }
 });
 
-let _remotePool: Pool | null = null;
-
-export function getRemotePool(): Pool {
-    if (!_remotePool) {
-        console.log("Remote DB Pool: Initializing with host idlezero.iptime.org");
-        _remotePool = new Pool({
-            user: 'postgres',
-            host: 'idlezero.iptime.org',
-            database: 'excel',
-            password: 'z456qwe12!@',
-            port: 5432,
-            ssl: false,
-            connectionTimeoutMillis: 10000,
-        });
-    }
-    return _remotePool;
-}
-
-export async function resetRemotePool() {
-    if (_remotePool) {
-        await _remotePool.end();
-        _remotePool = null;
-    }
-}
-
 
 /**
  * 폰 DB에서 최근 작업 리스트를 가져옵니다. (필터 지원)
