@@ -302,18 +302,60 @@ export async function DELETE(req: NextRequest) {
 
         const { searchParams } = new URL(req.url);
         const id = searchParams.get('id');
+        const idsParam = searchParams.get('ids');
         const cntrNo = searchParams.get('cntrNo');
         const startDate = searchParams.get('startDate');
         const endDate = searchParams.get('endDate');
         const userId = searchParams.get('userId');
         const permanent = searchParams.get('permanent') === 'true';
 
+        const ids = idsParam ? idsParam.split(',').map(s => s.trim()).filter(Boolean) : null;
+
         const sessionRole = session.role?.toUpperCase();
         const isAdmin = sessionRole === 'ADMIN' || sessionRole === 'MANAGER';
 
         const client = await pool.connect();
         try {
-            if (id) {
+            if (ids && ids.length > 0) {
+                if (permanent) {
+                    if (!isAdmin) {
+                        return NextResponse.json({ error: '영구 삭제 권한이 없습니다. 관리자만 영구 삭제할 수 있습니다.' }, { status: 403 });
+                    }
+                    const res = await client.query('SELECT photo_path FROM container_photos WHERE id = ANY($1)', [ids]);
+                    const filePaths = res.rows.map(r => r.photo_path);
+
+                    await client.query('DELETE FROM container_photos WHERE id = ANY($1)', [ids]);
+
+                    const uploadsDir = process.env.UPLOAD_DIR || path.join(process.cwd(), 'uploads');
+                    let deletedFilesCount = 0;
+                    for (const filename of filePaths) {
+                        const filePath = path.resolve(uploadsDir, filename);
+                        if (filePath.startsWith(uploadsDir) && fs.existsSync(filePath)) {
+                            fs.unlinkSync(filePath);
+                            deletedFilesCount++;
+                        }
+                    }
+
+                    return NextResponse.json({
+                        success: true,
+                        message: `선택한 사진 ${ids.length}장이 영구 삭제되었습니다.`
+                    });
+                } else {
+                    let targetIds = ids;
+                    if (!isAdmin) {
+                        const ownerRes = await client.query('SELECT id FROM container_photos WHERE id = ANY($1) AND uploaded_by = $2', [ids, session.id]);
+                        targetIds = ownerRes.rows.map(r => r.id);
+                        if (targetIds.length === 0) {
+                            return NextResponse.json({ error: '삭제 권한이 있는 본인 소유의 사진이 없습니다.' }, { status: 403 });
+                        }
+                    }
+                    const res = await client.query('UPDATE container_photos SET is_deleted = true, deleted_at = NOW() WHERE id = ANY($1) RETURNING id', [targetIds]);
+                    return NextResponse.json({
+                        success: true,
+                        message: `선택한 사진 ${res.rows.length}장이 휴지통으로 이동되었습니다.`
+                    });
+                }
+            } else if (id) {
                 // Get the photo to check ownership
                 const ownerRes = await client.query('SELECT uploaded_by FROM container_photos WHERE id = $1', [id]);
                 if (ownerRes.rows.length === 0) {
@@ -463,9 +505,11 @@ export async function PATCH(req: NextRequest) {
 
         const { searchParams } = new URL(req.url);
         const id = searchParams.get('id');
+        const idsParam = searchParams.get('ids');
         const cntrNo = searchParams.get('cntrNo');
         const complete = searchParams.get('complete');
 
+        const ids = idsParam ? idsParam.split(',').map(s => s.trim()).filter(Boolean) : null;
         const isCompleteAction = complete !== null;
         const sessionRole = session.role?.toUpperCase();
         const isAdmin = sessionRole === 'ADMIN' || sessionRole === 'MANAGER';
@@ -505,7 +549,10 @@ export async function PATCH(req: NextRequest) {
                 }
             } else {
                 // Restore deleted files from trash
-                if (id) {
+                if (ids && ids.length > 0) {
+                    await client.query('UPDATE container_photos SET is_deleted = false, deleted_at = NULL WHERE id = ANY($1)', [ids]);
+                    return NextResponse.json({ success: true, message: `선택한 사진 ${ids.length}장이 복구되었습니다.` });
+                } else if (id) {
                     await client.query('UPDATE container_photos SET is_deleted = false, deleted_at = NULL WHERE id = $1', [id]);
                     return NextResponse.json({ success: true, message: '사진이 복구되었습니다.' });
                 } else if (cntrNo) {

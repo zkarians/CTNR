@@ -67,6 +67,100 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
     const isTrashView = tabState === 'TRASH';
     const isCompletedView = tabState === 'COMPLETED';
     const [duplicatePhotoIds, setDuplicatePhotoIds] = useState<string[]>([]);
+    const [selectedPhotoIds, setSelectedPhotoIds] = useState<string[]>([]);
+
+    const toggleSelectPhoto = (photoId: string, e?: React.MouseEvent) => {
+        if (e) e.stopPropagation();
+        setSelectedPhotoIds(prev => 
+            prev.includes(photoId) ? prev.filter(id => id !== photoId) : [...prev, photoId]
+        );
+    };
+
+    const handleToggleSelectAllPhotos = (visiblePhotos: Photo[]) => {
+        const visibleIds = visiblePhotos.map(p => p.id);
+        const allSelected = visibleIds.length > 0 && visibleIds.every(id => selectedPhotoIds.includes(id));
+        if (allSelected) {
+            setSelectedPhotoIds(prev => prev.filter(id => !visibleIds.includes(id)));
+        } else {
+            setSelectedPhotoIds(prev => Array.from(new Set([...prev, ...visibleIds])));
+        }
+    };
+
+    const handleDeleteSelectedPhotos = async () => {
+        if (selectedPhotoIds.length === 0) return;
+        if (!confirm(`선택한 사진 총 ${selectedPhotoIds.length}장을 휴지통으로 이동하시겠습니까?`)) return;
+        
+        setIsLoading(true);
+        try {
+            const res = await fetch(`/api/photos?ids=${encodeURIComponent(selectedPhotoIds.join(','))}`, {
+                method: 'DELETE'
+            });
+            const data = await res.json();
+            if (data.success) {
+                alert(data.message || `선택한 사진 ${selectedPhotoIds.length}장이 휴지통으로 이동되었습니다.`);
+                setSelectedPhotoIds([]);
+                loadPhotos();
+            } else {
+                alert(`삭제 실패: ${data.error}`);
+            }
+        } catch (error) {
+            console.error("Delete selected photos error:", error);
+            alert("사진 삭제 중 오류가 발생했습니다.");
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const handleDeleteSelectedPhotosPermanently = async () => {
+        if (selectedPhotoIds.length === 0) return;
+        if (!confirm(`[영구 삭제 경고]\n\n선택한 사진 총 ${selectedPhotoIds.length}장을 완전히 영구 삭제하시겠습니까?\n이 작업은 복구할 수 없으며 파일이 영구히 삭제됩니다.`)) return;
+        if (!confirm("정말로 영구 삭제하시겠습니까? 이 작업은 절대 복구할 수 없습니다!")) return;
+
+        setIsLoading(true);
+        try {
+            const res = await fetch(`/api/photos?ids=${encodeURIComponent(selectedPhotoIds.join(','))}&permanent=true`, {
+                method: 'DELETE'
+            });
+            const data = await res.json();
+            if (data.success) {
+                alert(data.message || "사진이 영구 삭제되었습니다.");
+                setSelectedPhotoIds([]);
+                loadPhotos();
+            } else {
+                alert(`영구 삭제 실패: ${data.error}`);
+            }
+        } catch (error) {
+            console.error("Delete selected photos permanently error:", error);
+            alert("사진 영구 삭제 중 오류가 발생했습니다.");
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const handleRestoreSelectedPhotos = async () => {
+        if (selectedPhotoIds.length === 0) return;
+        if (!confirm(`선택한 사진 총 ${selectedPhotoIds.length}장을 복구하시겠습니까?`)) return;
+
+        setIsLoading(true);
+        try {
+            const res = await fetch(`/api/photos?ids=${encodeURIComponent(selectedPhotoIds.join(','))}`, {
+                method: 'PATCH'
+            });
+            const data = await res.json();
+            if (data.success) {
+                alert(data.message || "사진이 성공적으로 복구되었습니다.");
+                setSelectedPhotoIds([]);
+                loadPhotos();
+            } else {
+                alert(`복구 실패: ${data.error}`);
+            }
+        } catch (error) {
+            console.error("Restore selected photos error:", error);
+            alert("사진 복구 중 오류가 발생했습니다.");
+        } finally {
+            setIsLoading(false);
+        }
+    };
 
     // Callback ref to attach wheel listener to image with passive: false to prevent default page scrolling
     const imageRefCallback = React.useCallback((node: HTMLImageElement | null) => {
@@ -130,6 +224,10 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
     // Folder State
     const [selectedContainerFolder, setSelectedContainerFolder] = useState<string | null>(null);
     const [selectedFolders, setSelectedFolders] = useState<string[]>([]);
+
+    React.useEffect(() => {
+        setSelectedPhotoIds([]);
+    }, [selectedContainerFolder, tabState]);
     
     // Group photos by container number
     const folders = React.useMemo(() => {
@@ -1299,6 +1397,70 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                                     </div>
                                 </div>
                             </div>
+                            {/* Photo Selection & Bulk Actions Control Bar */}
+                            <div className="mb-4 p-3 rounded-2xl bg-[#11111a] border border-white/5 flex flex-wrap items-center justify-between gap-3 shadow-md">
+                                <div className="flex items-center gap-3">
+                                    <button 
+                                        onClick={() => handleToggleSelectAllPhotos(folderPhotos)}
+                                        className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 text-xs font-black text-slate-300 hover:text-white transition-all cursor-pointer"
+                                    >
+                                        <div className={`w-4 h-4 rounded border flex items-center justify-center transition-all ${
+                                            folderPhotos.length > 0 && folderPhotos.every(p => selectedPhotoIds.includes(p.id))
+                                                ? "bg-sky-500 border-sky-400 text-white"
+                                                : selectedPhotoIds.some(id => folderPhotos.some(p => p.id === id))
+                                                    ? "bg-sky-500/40 border-sky-400 text-white"
+                                                    : "bg-slate-900 border-slate-700"
+                                        }`}>
+                                            {folderPhotos.length > 0 && folderPhotos.every(p => selectedPhotoIds.includes(p.id)) ? (
+                                                <Check className="w-3 h-3 stroke-[3]" />
+                                            ) : selectedPhotoIds.some(id => folderPhotos.some(p => p.id === id)) ? (
+                                                <div className="w-2 h-0.5 bg-white rounded-full" />
+                                            ) : null}
+                                        </div>
+                                        <span>
+                                            전체 선택 {selectedPhotoIds.filter(id => folderPhotos.some(p => p.id === id)).length > 0 ? `(${selectedPhotoIds.filter(id => folderPhotos.some(p => p.id === id)).length} / ${folderPhotos.length}장)` : `(${folderPhotos.length}장)`}
+                                        </span>
+                                    </button>
+                                    {selectedPhotoIds.filter(id => folderPhotos.some(p => p.id === id)).length > 0 && (
+                                        <span className="text-xs font-black text-sky-400 bg-sky-500/10 border border-sky-500/20 px-2.5 py-1 rounded-lg">
+                                            {selectedPhotoIds.filter(id => folderPhotos.some(p => p.id === id)).length}장 선택됨
+                                        </span>
+                                    )}
+                                </div>
+
+                                {selectedPhotoIds.filter(id => folderPhotos.some(p => p.id === id)).length > 0 && (
+                                    <div className="flex items-center gap-2">
+                                        {isTrashView ? (
+                                            <>
+                                                {isAdmin && (
+                                                    <button
+                                                        onClick={handleRestoreSelectedPhotos}
+                                                        className="px-3.5 py-1.5 rounded-xl bg-sky-500/10 hover:bg-sky-500 border border-sky-500/20 text-sky-400 hover:text-white transition-all flex items-center gap-1.5 text-xs font-black cursor-pointer shadow-md"
+                                                    >
+                                                        <RotateCw className="w-3.5 h-3.5" /> 선택 사진 복구
+                                                    </button>
+                                                )}
+                                                {isAdmin && (
+                                                    <button
+                                                        onClick={handleDeleteSelectedPhotosPermanently}
+                                                        className="px-3.5 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-600 border border-rose-500/20 text-rose-400 hover:text-white transition-all flex items-center gap-1.5 text-xs font-black cursor-pointer shadow-md"
+                                                    >
+                                                        <Trash2 className="w-3.5 h-3.5" /> 선택 사진 영구 삭제
+                                                    </button>
+                                                )}
+                                            </>
+                                        ) : (
+                                            <button
+                                                onClick={handleDeleteSelectedPhotos}
+                                                className="px-3.5 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-600 border border-rose-500/20 text-rose-400 hover:text-white transition-all flex items-center gap-1.5 text-xs font-black cursor-pointer shadow-md"
+                                            >
+                                                <Trash2 className="w-3.5 h-3.5" /> 선택한 사진 삭제 ({selectedPhotoIds.filter(id => folderPhotos.some(p => p.id === id)).length}장)
+                                            </button>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+
                             {/* Duplicate Photos Banner */}
                             {duplicatePhotoIds.length > 0 && (
                                 <div className="mb-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-4 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-200">
@@ -1342,8 +1504,24 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                                                 ? "relative aspect-[4/3] bg-black overflow-hidden border-b border-white/5"
                                                 : "relative w-full bg-black/40 flex items-center justify-center overflow-hidden border-b border-white/5 aspect-auto min-h-[200px]"
                                         }>
+                                            {/* Selection Checkbox */}
+                                            <div 
+                                                onClick={(e) => toggleSelectPhoto(photo.id, e)}
+                                                className="absolute top-2.5 left-2.5 z-20 flex items-center justify-center p-0.5 cursor-pointer"
+                                                title={selectedPhotoIds.includes(photo.id) ? "선택 해제" : "사진 선택"}
+                                            >
+                                                <div className={`w-5 h-5 rounded-lg border flex items-center justify-center transition-all shadow-md ${
+                                                    selectedPhotoIds.includes(photo.id)
+                                                        ? "bg-sky-500 border-sky-400 text-white"
+                                                        : "bg-black/60 border-white/20 text-transparent hover:border-white/50 backdrop-blur-sm"
+                                                }`}>
+                                                    <Check className="w-3.5 h-3.5 stroke-[3]" />
+                                                </div>
+                                            </div>
+
+                                            {/* Duplicate badge shifted */}
                                             {duplicatePhotoIds.includes(photo.id) && (
-                                                <div className="absolute top-2.5 left-2.5 z-10 px-2 py-1 rounded-lg bg-amber-500 text-[#07070d] font-black text-[9px] uppercase tracking-wider shadow-md animate-pulse">
+                                                <div className="absolute top-2.5 left-9 z-10 px-2 py-1 rounded-lg bg-amber-500 text-[#07070d] font-black text-[9px] uppercase tracking-wider shadow-md animate-pulse">
                                                     중복
                                                 </div>
                                             )}
