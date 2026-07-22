@@ -6,6 +6,8 @@ import { getSession } from '@/lib/auth';
 import { pool } from '@/lib/db';
 // @ts-ignore
 import heicConvert from 'heic-convert';
+// @ts-ignore
+import ExifParser from 'exif-parser';
 
 export async function POST(req: NextRequest) {
     try {
@@ -260,15 +262,37 @@ export async function GET(req: NextRequest) {
         try {
             const res = await client.query(query, params);
             
-            // Get local file creation/modification times for "file creation date" sorting
+            // Get local EXIF / file creation times for "file creation date" sorting
             const uploadsDir = process.env.UPLOAD_DIR || path.join(process.cwd(), 'uploads');
             const photosWithStats = res.rows.map(row => {
                 let fileCreatedAt = row.uploaded_at;
                 try {
                     const filePath = path.join(uploadsDir, row.photo_path);
                     if (fs.existsSync(filePath)) {
-                        const stats = fs.statSync(filePath);
-                        fileCreatedAt = stats.mtime || stats.birthtime || row.uploaded_at;
+                        let parsedExif = false;
+                        try {
+                            const fd = fs.openSync(filePath, 'r');
+                            const buffer = Buffer.alloc(65536);
+                            const bytesRead = fs.readSync(fd, buffer, 0, 65536, 0);
+                            fs.closeSync(fd);
+
+                            const parser = ExifParser.create(buffer.slice(0, bytesRead));
+                            const result = parser.parse();
+                            if (result && result.tags) {
+                                const timestamp = result.tags.DateTimeOriginal || result.tags.CreateDate || result.tags.ModifyDate;
+                                if (timestamp) {
+                                    fileCreatedAt = new Date(timestamp * 1000).toISOString();
+                                    parsedExif = true;
+                                }
+                            }
+                        } catch (exifErr) {
+                            // Non-JPEG or missing EXIF header
+                        }
+
+                        if (!parsedExif) {
+                            const stats = fs.statSync(filePath);
+                            fileCreatedAt = stats.mtime || stats.birthtime || row.uploaded_at;
+                        }
                     }
                 } catch (e) {
                     // Ignore error and fallback to database time

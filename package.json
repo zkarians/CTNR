@@ -18,6 +18,7 @@
     "bcryptjs": "^3.0.3",
     "clsx": "latest",
     "dotenv": "^17.3.1",
+    "exif-parser": "^0.1.12",
     "framer-motion": "latest",
     "heic-convert": "^2.1.0",
     "jszip": "^3.10.1",
