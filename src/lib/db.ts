@@ -205,7 +205,8 @@ export async function getProductsForJob(jobId: number): Promise<Product[]> {
                     COALESCE(m.depth, 0) as length,
                     COALESCE(m.height, 0) as height,
                     SUM(COALESCE(r.qty_plan, 0)) as quantity,
-                    m.prod_type
+                    m.prod_type,
+                    MAX(r.division) as division
                 FROM container_results r
                 JOIN container_jobs j ON r.job_id = j.id
                 LEFT JOIN product_master_sync m ON r.prod_name = m.prod_name
@@ -222,16 +223,19 @@ export async function getProductsForJob(jobId: number): Promise<Product[]> {
             const res = await client.query(query, [jobId, cntr_no, job_name]);
             console.log(`Found ${res.rows.length} product types for logical job`);
 
-            return res.rows.map(row => ({
-                id: row.id,
-                model_name: row.model_name,
-                width: Number(row.width) || 0,
-                length: Number(row.length) || 0,
-                height: Number(row.height) || 0,
-                quantity: Math.round(Number(row.quantity)) || 0,
-                allow_rotate: true,
-                allow_lay_down: false
-            }));
+            return res.rows.map(row => {
+                const isDFZ = (row.division || '').toUpperCase().includes('DFZ');
+                return {
+                    id: row.id,
+                    model_name: row.model_name,
+                    width: Number(row.width) || 0,
+                    length: Number(row.length) || 0,
+                    height: Number(row.height) || 0,
+                    quantity: Math.round(Number(row.quantity)) || 0,
+                    allow_rotate: !isDFZ,
+                    allow_lay_down: false
+                };
+            });
         } finally {
             client.release();
         }
