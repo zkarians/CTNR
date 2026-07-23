@@ -166,20 +166,6 @@ export async function POST(req: NextRequest) {
             `;
             const values = [jobId, cntrNo, relativeDbPath, remark || '', validUploadedBy, session.teamId ?? null, durationMinutes];
             const res = await client.query(query, values);
-            const createdPhotoId = res.rows[0].id;
-            
-            // Background upload to Google Drive
-            uploadToGoogleDrive(filePath, filename)
-                .then(gRes => {
-                    pool.query(
-                        `UPDATE container_photos SET gdrive_file_id = $1, gdrive_url = $2 WHERE id = $3`,
-                        [gRes.fileId, gRes.gdriveUrl, createdPhotoId]
-                    ).catch(e => console.warn("GDrive DB update error:", e));
-                    console.log(`[Google Drive] Photo ${filename} uploaded to Google Drive. File ID: ${gRes.fileId}`);
-                })
-                .catch(err => {
-                    console.warn(`[Google Drive] Background upload warning for ${filename}:`, err);
-                });
             
             // Sync durationMinutes & remark to all existing photos for this container
             await client.query(`
@@ -305,7 +291,7 @@ export async function GET(req: NextRequest) {
                     p.team_id,
                     p.work_duration_minutes,
                     p.is_completed,
-                    p.completed_at,
+                    p.completed_at, p.gdrive_file_id, p.gdrive_url,
                     t.name as team_name,
                     COALESCE(NULLIF(u.name, ''), NULLIF(u.username, ''), '퇴사자') as uploader_name, 
                     COALESCE(u.username, '') as uploader_username, 
@@ -614,36 +600,73 @@ export async function PATCH(req: NextRequest) {
                 const completeVal = complete === 'true';
                 const completedAt = completeVal ? new Date() : null;
                 
+                // Fetch target photos
+                let targetPhotos: any[] = [];
                 if (ids && ids.length > 0) {
-                    await client.query(
-                        'UPDATE container_photos SET is_completed = $1, completed_at = $2 WHERE id = ANY($3)',
-                        [completeVal, completedAt, ids]
-                    );
-                    return NextResponse.json({
-                        success: true,
-                        message: `선택한 사진 ${ids.length}장의 작업이 ${completeVal ? '완료' : '진행 중'}으로 변경되었습니다.`
-                    });
+                    const pRes = await client.query(`SELECT id, photo_path, cntr_no, gdrive_file_id, gdrive_url FROM container_photos WHERE id = ANY($1) AND (is_deleted IS NOT TRUE)`, [ids]);
+                    targetPhotos = pRes.rows;
                 } else if (cntrNo) {
-                    await client.query(
-                        'UPDATE container_photos SET is_completed = $1, completed_at = $2 WHERE cntr_no = $3',
-                        [completeVal, completedAt, cntrNo]
-                    );
-                    return NextResponse.json({
-                        success: true,
-                        message: `컨테이너 '${cntrNo}' 폴더의 작업이 ${completeVal ? '완료' : '진행 중'}으로 변경되었습니다.`
-                    });
+                    const pRes = await client.query(`SELECT id, photo_path, cntr_no, gdrive_file_id, gdrive_url FROM container_photos WHERE cntr_no = $1 AND (is_deleted IS NOT TRUE)`, [cntrNo]);
+                    targetPhotos = pRes.rows;
                 } else if (id) {
-                    await client.query(
-                        'UPDATE container_photos SET is_completed = $1, completed_at = $2 WHERE id = $3',
-                        [completeVal, completedAt, id]
-                    );
-                    return NextResponse.json({
-                        success: true,
-                        message: `사진의 작업이 ${completeVal ? '완료' : '진행 중'}으로 변경되었습니다.`
-                    });
-                } else {
-                    return NextResponse.json({ error: '상태 변경할 대상이 지정되지 않았습니다.' }, { status: 400 });
+                    const pRes = await client.query(`SELECT id, photo_path, cntr_no, gdrive_file_id, gdrive_url FROM container_photos WHERE id = $1 AND (is_deleted IS NOT TRUE)`, [id]);
+                    targetPhotos = pRes.rows;
                 }
+
+                // Update is_completed status
+                if (ids && ids.length > 0) {
+                    await client.query('UPDATE container_photos SET is_completed = $1, completed_at = $2 WHERE id = ANY($3)', [completeVal, completedAt, ids]);
+                } else if (cntrNo) {
+                    await client.query('UPDATE container_photos SET is_completed = $1, completed_at = $2 WHERE cntr_no = $3', [completeVal, completedAt, cntrNo]);
+                } else if (id) {
+                    await client.query('UPDATE container_photos SET is_completed = $1, completed_at = $2 WHERE id = $3', [completeVal, completedAt, id]);
+                }
+
+                // If completing, upload to Google Drive, verify, and clean up local disk space
+                if (completeVal && targetPhotos.length > 0) {
+                    const uploadsDir = process.env.UPLOAD_DIR || path.join(process.cwd(), 'uploads');
+                    
+                    // Asynchronously transfer to Google Drive & delete local files
+                    (async () => {
+                        for (const photo of targetPhotos) {
+                            const localPath = path.resolve(uploadsDir, photo.photo_path);
+                            const filename = path.basename(photo.photo_path);
+
+                            try {
+                                let fileId = photo.gdrive_file_id;
+                                let gdriveUrl = photo.gdrive_url;
+
+                                // 1. Upload to Google Drive if not uploaded yet and local file exists
+                                if (!fileId && fs.existsSync(localPath)) {
+                                    const gRes = await uploadToGoogleDrive(localPath, filename);
+                                    fileId = gRes.fileId;
+                                    gdriveUrl = gRes.gdriveUrl;
+
+                                    await pool.query(
+                                        `UPDATE container_photos SET gdrive_file_id = $1, gdrive_url = $2 WHERE id = $3`,
+                                        [fileId, gdriveUrl, photo.id]
+                                    );
+                                    console.log(`[GDrive Completion Transfer] Photo ${filename} uploaded to Google Drive. File ID: ${fileId}`);
+                                }
+
+                                // 2. Verification & Local Cleanup: Delete local file once Google Drive backup is confirmed!
+                                if (fileId && fs.existsSync(localPath)) {
+                                    fs.unlinkSync(localPath);
+                                    console.log(`[Local Disk Cleanup] Verified GDrive backup for ${filename}. Local file deleted, freed disk space!`);
+                                }
+                            } catch (err) {
+                                console.error(`[GDrive Completion Transfer Error] Failed for ${filename}:`, err);
+                            }
+                        }
+                    })();
+                }
+
+                return NextResponse.json({
+                    success: true,
+                    message: completeVal 
+                        ? `선택한 컨테이너/사진이 완료로 변경되었습니다. 구글 드라이브로 백업되고 로컬 디스크 용량이 정리됩니다.`
+                        : `선택한 컨테이너/사진이 진행 중으로 변경되었습니다.`
+                });
             } else {
                 // Restore deleted files from trash
                 if (ids && ids.length > 0) {

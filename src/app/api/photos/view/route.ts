@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
 import { getSession } from '@/lib/auth';
+import { pool } from '@/lib/db';
 
 export async function GET(req: NextRequest) {
     try {
@@ -26,7 +27,18 @@ export async function GET(req: NextRequest) {
         }
 
         if (!fs.existsSync(filePath)) {
-            // Fallback: Attempt to fetch from remote server if not present locally
+            // Fallback 1: Redirect to Google Drive URL if present in DB
+            try {
+                const gRes = await pool.query('SELECT gdrive_url, gdrive_file_id FROM container_photos WHERE photo_path = $1 AND (is_deleted IS NOT TRUE) LIMIT 1', [filename]);
+                if (gRes.rows.length > 0 && (gRes.rows[0].gdrive_url || gRes.rows[0].gdrive_file_id)) {
+                    const redirectUrl = gRes.rows[0].gdrive_url || `https://lh3.googleusercontent.com/d/${gRes.rows[0].gdrive_file_id}`;
+                    return NextResponse.redirect(redirectUrl);
+                }
+            } catch (gErr) {
+                console.warn('[GDrive Fallback Warning]', gErr);
+            }
+
+            // Fallback 2: Attempt to fetch from remote server if not present locally
             const remoteHosts = [
                 'http://idlezero.iptime.org:4000',
                 'http://ungdong.iptime.org:4000',
