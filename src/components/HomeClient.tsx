@@ -19,6 +19,25 @@ import { packContainer } from '@/lib/packer';
 import { fetchJobs, fetchProductsByJob, searchProducts, getDbConfig, updateDbConfig, updatePassword, fetchAllUsers, createUserAccount, updateUserAccount, deleteUserAccount, deleteMultipleUserAccounts, generateWorkReport } from '@/lib/actions';
 import { SessionUser } from '@/lib/auth';
 
+
+function getLocalDateString(d: Date): string {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+function getWorkDateString(d: Date = new Date()): string {
+    const workDate = new Date(d);
+    if (workDate.getHours() < 19) {
+        workDate.setDate(workDate.getDate() - 1);
+    }
+    const year = workDate.getFullYear();
+    const month = String(workDate.getMonth() + 1).padStart(2, '0');
+    const day = String(workDate.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
 export default function Home({ user }: { user: SessionUser }) {
     const isAdmin = user && (user.role.toUpperCase() === 'ADMIN' || user.role.toUpperCase() === 'MANAGER');
 
@@ -204,23 +223,65 @@ export default function Home({ user }: { user: SessionUser }) {
     // Report Modal States
     const [isReportOpen, setIsReportOpen] = useState(false);
     const [reportText, setReportText] = useState('');
+    const [reportData, setReportData] = useState<any[]>([]);
     const [isReportGenerating, setIsReportGenerating] = useState(false);
     const [isCopied, setIsCopied] = useState(false);
+    const [reportStartDate, setReportStartDate] = useState('');
+    const [reportEndDate, setReportEndDate] = useState('');
 
     const handleGenerateReport = async () => {
+        const defaultWorkDate = getWorkDateString(new Date());
+        const start = filters.startDate || defaultWorkDate;
+        const end = filters.endDate || defaultWorkDate;
+        
+        setReportStartDate(start);
+        setReportEndDate(end);
+
         setIsReportGenerating(true);
         setIsReportOpen(true);
         setIsCopied(false);
         try {
-            const res = await generateWorkReport(filters);
+            const res = await generateWorkReport({
+                ...filters,
+                startDate: start,
+                endDate: end
+            });
             if (res.success && res.reportText) {
                 setReportText(res.reportText);
+                setReportData(res.reportData || []);
             } else {
                 setReportText(res.error || '보고서를 생성할 데이터가 없습니다.');
+                setReportData([]);
             }
         } catch (err) {
             console.error("Report error:", err);
             setReportText('보고서 생성 중 오류가 발생했습니다.');
+            setReportData([]);
+        } finally {
+            setIsReportGenerating(false);
+        }
+    };
+
+    const handleRegenerateReport = async () => {
+        setIsReportGenerating(true);
+        setIsCopied(false);
+        try {
+            const res = await generateWorkReport({
+                ...filters,
+                startDate: reportStartDate,
+                endDate: reportEndDate
+            });
+            if (res.success && res.reportText) {
+                setReportText(res.reportText);
+                setReportData(res.reportData || []);
+            } else {
+                setReportText(res.error || '보고서를 생성할 데이터가 없습니다.');
+                setReportData([]);
+            }
+        } catch (err) {
+            console.error("Report error:", err);
+            setReportText('보고서 생성 중 오류가 발생했습니다.');
+            setReportData([]);
         } finally {
             setIsReportGenerating(false);
         }
@@ -1445,7 +1506,7 @@ export default function Home({ user }: { user: SessionUser }) {
                             initial={{ scale: 0.95, opacity: 0, y: 20 }} 
                             animate={{ scale: 1, opacity: 1, y: 0 }} 
                             exit={{ scale: 0.95, opacity: 0, y: 20 }}
-                            className="relative w-full max-w-2xl bg-[#0f111a] border border-white/10 rounded-[2.5rem] shadow-2xl overflow-hidden p-6 md:p-8 z-10 max-h-[90vh] flex flex-col"
+                            className="relative w-full max-w-7xl bg-[#0f111a] border border-white/10 rounded-[2.5rem] shadow-2xl overflow-hidden p-6 md:p-8 z-10 max-h-[90vh] flex flex-col"
                         >
                             <div className="flex items-center justify-between pb-4 mb-4 border-b border-white/10 shrink-0">
                                 <div className="flex items-center gap-3">
@@ -1465,14 +1526,105 @@ export default function Home({ user }: { user: SessionUser }) {
                                 </button>
                             </div>
 
-                            <div className="flex-1 overflow-y-auto min-h-[300px] max-h-[50vh] bg-black/50 border border-white/5 rounded-2xl p-4 font-mono text-xs md:text-sm leading-relaxed text-slate-200 custom-scrollbar select-all whitespace-pre-wrap">
+                            {/* Date Selector inside Modal */}
+                            <div className="flex flex-wrap items-center gap-3 p-4 mb-4 bg-white/5 border border-white/5 rounded-2xl shrink-0">
+                                <span className="text-xs font-bold text-slate-400">조회 기간 설정:</span>
+                                <div className="flex items-center gap-2">
+                                    <input 
+                                        type="date"
+                                        value={reportStartDate}
+                                        onChange={(e) => setReportStartDate(e.target.value)}
+                                        className="bg-black/40 border border-white/10 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500 transition-all font-bold cursor-pointer"
+                                    />
+                                    <span className="text-xs text-slate-500 font-bold">~</span>
+                                    <input 
+                                        type="date"
+                                        value={reportEndDate}
+                                        onChange={(e) => setReportEndDate(e.target.value)}
+                                        className="bg-black/40 border border-white/10 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500 transition-all font-bold cursor-pointer"
+                                    />
+                                </div>
+                                <button
+                                    onClick={handleRegenerateReport}
+                                    className="ml-auto px-4 py-1.5 bg-emerald-500 text-black hover:bg-emerald-400 text-xs font-black rounded-xl transition-all shadow-md cursor-pointer flex items-center gap-1.5"
+                                >
+                                    <RotateCw className="w-3.5 h-3.5" />
+                                    보고서 조회
+                                </button>
+                            </div>
+
+                            <div className="flex-1 overflow-y-auto min-h-[350px] max-h-[60vh] bg-black/50 border border-white/5 rounded-2xl p-6 custom-scrollbar">
                                 {isReportGenerating ? (
                                     <div className="flex flex-col items-center justify-center h-48 gap-3 text-slate-400">
                                         <Loader2 className="w-8 h-8 animate-spin text-emerald-400" />
                                         <p className="text-xs font-bold">보고서를 생성하는 중입니다...</p>
                                     </div>
+                                ) : reportData && reportData.length > 0 ? (
+                                    <div className="space-y-8">
+                                        {reportData.map((dateGroup: any) => {
+                                            const totalCntr = dateGroup.uploaders.reduce((sum: number, u: any) => sum + u.containers.length, 0);
+                                            const dayNum = parseInt(dateGroup.dateStr.split('-')[2]);
+                                            return (
+                                                <div key={dateGroup.dateStr} className="bg-[#121422]/50 border border-white/5 rounded-3xl p-6">
+                                                    <div className="flex items-center justify-between border-b border-white/5 pb-3 mb-5">
+                                                        <h3 className="text-sm font-black text-sky-400 flex items-center gap-2">
+                                                            <Calendar className="w-4 h-4 text-sky-400 animate-pulse" />
+                                                            {dateGroup.dateStr} 작업 분량
+                                                        </h3>
+                                                        <span className="text-xs font-black text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-3 py-1 rounded-full">
+                                                            총합계: {dayNum}일 {totalCntr}개 작업완료
+                                                        </span>
+                                                    </div>
+                                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 items-start">
+                                                        {dateGroup.uploaders.map((upGroup: any) => (
+                                                            <div key={upGroup.uploaderName} className="bg-[#1a1d2e]/40 border border-white/5 rounded-2xl p-4 flex flex-col gap-4 max-h-[45vh] overflow-y-auto custom-scrollbar">
+                                                                <div className="flex items-center justify-between pb-2 border-b border-white/5">
+                                                                    <span className="text-xs font-black text-white flex items-center gap-1.5">
+                                                                        <div className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
+                                                                        {upGroup.uploaderName}
+                                                                    </span>
+                                                                    <span className="text-[10px] font-bold text-slate-500">합계 {upGroup.containers.length}개</span>
+                                                                </div>
+                                                                <div className="space-y-3">
+                                                                    {upGroup.containers.map((cntr: any) => {
+                                                                        const totalQty = cntr.products.reduce((sum: number, p: any) => sum + p.qty, 0);
+                                                                        return (
+                                                                            <div key={cntr.cntrNo} className="bg-white/5 border border-white/5 rounded-xl p-3 hover:bg-white/10 transition-all">
+                                                                                <div className="flex items-center justify-between gap-1.5 mb-1.5">
+                                                                                    <span className="text-[11px] font-black text-slate-200 truncate uppercase">{cntr.cntrNo}</span>
+                                                                                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-lg shrink-0 ${
+                                                                                        cntr.isCompleted 
+                                                                                            ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' 
+                                                                                            : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                                                                                    }`}>
+                                                                                        {cntr.isCompleted ? '완료' : '작업중'}
+                                                                                    </span>
+                                                                                </div>
+                                                                                <div className="text-[10px] text-slate-400 font-bold mb-2">
+                                                                                    {cntr.products.length}모델, {totalQty.toLocaleString()}개
+                                                                                </div>
+                                                                                <div className="space-y-1 pl-1.5 border-l border-white/5">
+                                                                                    {cntr.products.map((p: any, idx: number) => (
+                                                                                        <div key={idx} className="text-[10px] text-slate-500 font-bold truncate">
+                                                                                            - [{p.division}] {p.name} {p.qty.toLocaleString()}개
+                                                                                        </div>
+                                                                                    ))}
+                                                                                </div>
+                                                                            </div>
+                                                                        );
+                                                                    })}
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
                                 ) : (
-                                    reportText
+                                    <div className="font-mono text-xs md:text-sm leading-relaxed text-slate-200 select-all whitespace-pre-wrap">
+                                        {reportText}
+                                    </div>
                                 )}
                             </div>
 

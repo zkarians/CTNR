@@ -91,7 +91,7 @@ export async function fetchJobs(filters?: JobFilters): Promise<Job[]> {
             console.log("fetchJobs: No jobs returned from DB.");
         }
         return jobs;
-    } catch (error) {
+    } catch (error: any) {
         console.error("fetchJobs Server Action Error:", error);
         return [];
     }
@@ -126,7 +126,7 @@ export async function searchProducts(query: string): Promise<Product[]> {
 export async function fetchProductsByJob(jobId: number): Promise<Product[]> {
     try {
         return await getProductsForJob(jobId);
-    } catch (error) {
+    } catch (error: any) {
         console.error("Failed to fetch products for job:", error);
         return [];
     }
@@ -143,13 +143,50 @@ export async function fetchUsers(): Promise<{ id: string; name: string; username
         const res = await client.query('SELECT id, name, username FROM "User" ORDER BY name');
         client.release();
         return res.rows;
-    } catch (error) {
+    } catch (error: any) {
         console.error("fetchUsers Error:", error);
         return [];
     }
 }
 
-export async function generateWorkReport(filters: JobFilters): Promise<{ success: boolean; reportText?: string; error?: string }> {
+function getLocalDateString(d: Date): string {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+function getWorkDateString(d: Date = new Date()): string {
+    const workDate = new Date(d);
+    if (workDate.getHours() < 19) {
+        workDate.setDate(workDate.getDate() - 1);
+    }
+    return getLocalDateString(workDate);
+}
+
+
+function getVisualWidth(str: string): number {
+    let width = 0;
+    for (let i = 0; i < str.length; i++) {
+        const code = str.charCodeAt(i);
+        if ((code >= 0xac00 && code <= 0xd7a3) || (code >= 0x3130 && code <= 0x318f)) {
+            width += 2;
+        } else {
+            width += 1;
+        }
+    }
+    return width;
+}
+
+function padString(str: string, targetWidth: number): string {
+    const currentWidth = getVisualWidth(str);
+    if (currentWidth >= targetWidth) {
+        return str;
+    }
+    return str + ' '.repeat(targetWidth - currentWidth);
+}
+
+export async function generateWorkReport(filters: JobFilters): Promise<{ success: boolean; reportText?: string; reportData?: any[]; error?: string }> {
     try {
         const client = await pool.connect();
         try {
@@ -157,16 +194,14 @@ export async function generateWorkReport(filters: JobFilters): Promise<{ success
             const params: any[] = [];
             let paramIdx = 1;
 
-            // Filter for incomplete (in-progress) container photos only
-            whereClauses.push(`(p.is_completed IS NOT TRUE)`);
             whereClauses.push(`COALESCE(r.qty_plan, 0) > 0`);
 
             if (filters.startDate) {
-                whereClauses.push(`j.saved_at >= $${paramIdx++}`);
-                params.push(filters.startDate);
+                whereClauses.push(`COALESCE(p.uploaded_at, j.saved_at) AT TIME ZONE 'Asia/Seoul' >= $${paramIdx++}::timestamp`);
+                params.push(`${filters.startDate} 19:00:00`);
             }
             if (filters.endDate) {
-                whereClauses.push(`j.saved_at < ($${paramIdx++}::date + 1)`);
+                whereClauses.push(`COALESCE(p.uploaded_at, j.saved_at) AT TIME ZONE 'Asia/Seoul' <= ($${paramIdx++}::date + INTERVAL '1 day 18 hours 59 minutes 59.999 seconds')`);
                 params.push(filters.endDate);
             }
             if (filters.productName) {
@@ -180,15 +215,15 @@ export async function generateWorkReport(filters: JobFilters): Promise<{ success
 
             const whereSql = "WHERE " + whereClauses.join(" AND ");
 
-            // Query grouped strictly by uploader (User name/username) for in-progress containers
-            // Subquery on container_photos prevents Cartesian product multiplication by photo count
             const query = `
                 SELECT 
                     COALESCE(r.cntr_no, j.job_name, '미지정') as cntr_no,
                     r.prod_name,
                     r.division,
                     SUM(COALESCE(r.qty_plan, 0)) as qty,
-                    COALESCE(u.name, u.username, '미지정 업로더') as uploader_name
+                    COALESCE(u.name, u.username, '미지정 업로더') as uploader_name,
+                    BOOL_OR(p.is_completed) as is_completed,
+                    COALESCE(MAX(p.uploaded_at), MAX(j.saved_at)) as work_time
                 FROM container_results r
                 JOIN container_jobs j ON r.job_id = j.id
                 LEFT JOIN (
@@ -196,7 +231,8 @@ export async function generateWorkReport(filters: JobFilters): Promise<{ success
                         job_id, 
                         cntr_no, 
                         MAX(uploaded_by::text) as uploaded_by,
-                        BOOL_OR(is_completed) as is_completed
+                        BOOL_OR(is_completed) as is_completed,
+                        MAX(uploaded_at) as uploaded_at
                     FROM container_photos
                     WHERE (is_deleted IS NOT TRUE)
                     GROUP BY job_id, cntr_no
@@ -211,15 +247,14 @@ export async function generateWorkReport(filters: JobFilters): Promise<{ success
             const rows = res.rows;
 
             if (rows.length === 0) {
-                return { success: false, error: '현재 작업 진행 중인 컨테이너가 없거나 조건에 일치하는 내역이 없습니다.' };
+                return { success: false, error: '조건에 일치하는 작업 내역이 없습니다.' };
             }
 
-            // Group by uploader_name -> cntr_no -> products
-            const uploaderMap = new Map<string, Map<string, { division: string; products: { name: string; qty: number; division: string }[] }>>();
+            // Group by workDate -> uploader_name -> cntr_no -> products & completion
+            const dateMap = new Map<string, Map<string, Map<string, { isCompleted: boolean; division: string; products: { name: string; qty: number; division: string }[] }>>>();
 
             for (const row of rows) {
                 const uploader = row.uploader_name;
-                // Exclude unassigned uploaders
                 if (!uploader || uploader === '미지정 업로더') {
                     continue;
                 }
@@ -227,6 +262,14 @@ export async function generateWorkReport(filters: JobFilters): Promise<{ success
                 const division = row.division || '일반';
                 const prodName = row.prod_name;
                 const qty = Math.round(Number(row.qty)) || 0;
+                const isCompleted = !!row.is_completed;
+                const workTime = row.work_time ? new Date(row.work_time) : new Date();
+                const workDateStr = getWorkDateString(workTime);
+
+                if (!dateMap.has(workDateStr)) {
+                    dateMap.set(workDateStr, new Map());
+                }
+                const uploaderMap = dateMap.get(workDateStr)!;
 
                 if (!uploaderMap.has(uploader)) {
                     uploaderMap.set(uploader, new Map());
@@ -234,40 +277,104 @@ export async function generateWorkReport(filters: JobFilters): Promise<{ success
                 const cntrMap = uploaderMap.get(uploader)!;
 
                 if (!cntrMap.has(cntrNo)) {
-                    cntrMap.set(cntrNo, { division, products: [] });
+                    cntrMap.set(cntrNo, { isCompleted, division, products: [] });
                 }
                 const cntrData = cntrMap.get(cntrNo)!;
                 cntrData.products.push({ name: prodName, qty, division });
             }
 
-            if (uploaderMap.size === 0) {
-                return { success: false, error: '현재 업로더가 지정된 진행 중인 컨테이너가 없습니다.' };
+            if (dateMap.size === 0) {
+                return { success: false, error: '업로더가 지정된 작업 데이터가 없습니다.' };
             }
 
-            const today = new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit' });
+            const sortedDates = Array.from(dateMap.keys()).sort((a, b) => b.localeCompare(a));
             let lines: string[] = [];
-            lines.push(`-----------------------------------------`);
-            lines.push(`📋 [작업 진행 현황 보고서] - ${today}`);
-            lines.push(`-----------------------------------------`);
+            lines.push(`📋 [일자별 작업 현황 보고서]`);
 
-            uploaderMap.forEach((cntrMap, uploader) => {
-                const totalContainers = cntrMap.size;
-                lines.push(`■ ${uploader} 진행 중인 컨테이너 합계 ${totalContainers}개\n`);
-
-                cntrMap.forEach((cntrData, cntrNo) => {
-                    const modelCount = cntrData.products.length;
-                    const totalQty = cntrData.products.reduce((sum, p) => sum + p.qty, 0);
-                    lines.push(`${cntrNo} (${modelCount}모델, ${totalQty.toLocaleString()}개)`);
-                    for (const prod of cntrData.products) {
-                        lines.push(`- [${prod.division}] ${prod.name} ${prod.qty.toLocaleString()}개 장입`);
-                    }
-                    lines.push(`⏳ 작업 진행 중\n`);
+            sortedDates.forEach(dateStr => {
+                lines.push(`📅 ${dateStr} 작업 분량`);
+                
+                const uploaderMap = dateMap.get(dateStr)!;
+                let totalContainersSum = 0;
+                uploaderMap.forEach(cntrMap => {
+                    totalContainersSum += cntrMap.size;
                 });
-                lines.push(`-----------------------------------------`);
+
+                const dayNum = parseInt(dateStr.split('-')[2]);
+                lines.push(`총합계: ${dayNum}일 ${totalContainersSum}개 작업완료`);
+                lines.push(``);
+
+                const uploadersList: { name: string; lines: string[] }[] = [];
+
+                uploaderMap.forEach((cntrMap, uploader) => {
+                    const upLines = [];
+                    const totalContainers = cntrMap.size;
+                    upLines.push(`■ ${uploader} (합계 ${totalContainers}개)`);
+
+                    cntrMap.forEach((cntrData, cntrNo) => {
+                        const modelCount = cntrData.products.length;
+                        const totalQty = cntrData.products.reduce((sum, p) => sum + p.qty, 0);
+                        upLines.push(`${cntrNo} (${modelCount}모델, ${totalQty.toLocaleString()}개)`);
+                        for (const prod of cntrData.products) {
+                            upLines.push(`- [${prod.division}] ${prod.name} ${prod.qty.toLocaleString()}개`);
+                        }
+                        upLines.push(``);
+                    });
+
+                    uploadersList.push({
+                        name: uploader,
+                        lines: upLines
+                    });
+                });
+
+                const chunkSize = 4;
+                for (let i = 0; i < uploadersList.length; i += chunkSize) {
+                    const chunk = uploadersList.slice(i, i + chunkSize);
+                    const maxLines = Math.max(...chunk.map(up => up.lines.length));
+                    
+                    chunk.forEach(up => {
+                        while (up.lines.length < maxLines) {
+                            up.lines.push('');
+                        }
+                    });
+
+                    for (let lineIdx = 0; lineIdx < maxLines; lineIdx++) {
+                        const mergedLine = chunk
+                            .map(up => up.lines[lineIdx])
+                            .join('\t');
+                        lines.push(mergedLine);
+                    }
+                    lines.push(``);
+                }
+            });
+
+            const reportData = sortedDates.map(dateStr => {
+                const uploaderMap = dateMap.get(dateStr)!;
+                const uploadersList: any[] = [];
+                uploaderMap.forEach((cntrMap, uploader) => {
+                    const containersList: any[] = [];
+                    cntrMap.forEach((cntrData, cntrNo) => {
+                        containersList.push({
+                            cntrNo,
+                            isCompleted: cntrData.isCompleted,
+                            division: cntrData.division,
+                            products: cntrData.products
+                        });
+                    });
+                    uploadersList.push({
+                        uploaderName: uploader,
+                        containers: containersList
+                    });
+                });
+                return {
+                    dateStr,
+                    uploaders: uploadersList
+                };
             });
 
             return {
                 success: true,
+                reportData,
                 reportText: lines.join('\n')
             };
         } finally {
@@ -278,5 +385,3 @@ export async function generateWorkReport(filters: JobFilters): Promise<{ success
         return { success: false, error: `보고서 생성 오류: ${error?.message || '알 수 없는 오류'}` };
     }
 }
-
-

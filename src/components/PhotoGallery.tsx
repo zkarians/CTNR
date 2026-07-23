@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
     X, Calendar, User, Download, Search, Image as ImageIcon, 
-    ChevronLeft, ChevronRight, Loader2, ArrowLeft, Trash2, Folder,
+    ChevronLeft, ChevronRight, ChevronDown, Loader2, ArrowLeft, Trash2, Folder,
     ExternalLink, RotateCw, RotateCcw, Grid, LayoutGrid, Check, Undo,
     RefreshCw, SkipForward
 } from 'lucide-react';
@@ -35,6 +35,27 @@ interface PhotoGalleryProps {
     isOpen: boolean;
     onClose: () => void;
     user: SessionUser;
+}
+
+
+function getWorkDateString(d: Date = new Date()): string {
+    const workDate = new Date(d);
+    if (workDate.getHours() < 19) {
+        workDate.setDate(workDate.getDate() - 1);
+    }
+    return getLocalDateString(workDate);
+}
+
+function formatKoreanDate(dateStr: string): string {
+    try {
+        const [y, m, d] = dateStr.split('-').map(Number);
+        const dateObj = new Date(y, m - 1, d);
+        const dayNames = ['일', '월', '화', '수', '목', '금', '토'];
+        const dayName = dayNames[dateObj.getDay()];
+        return `${y}년 ${String(m).padStart(2, '0')}월 ${String(d).padStart(2, '0')}일 (${dayName})`;
+    } catch (e) {
+        return dateStr;
+    }
 }
 
 function getLocalDateString(d: Date): string {
@@ -230,30 +251,77 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
         setSelectedPhotoIds([]);
     }, [selectedContainerFolder, tabState]);
     
-    // Group photos by container number
+    // Group photos by container number and work date
     const folders = React.useMemo(() => {
-        const group: { [cntrNo: string]: Photo[] } = {};
+        const group: { [groupKey: string]: Photo[] } = {};
         photos.forEach(photo => {
             if (!photo.cntr_no) return;
-            const key = photo.cntr_no.toUpperCase().trim();
+            const cntrNo = photo.cntr_no.toUpperCase().trim();
+            const workDateStr = getWorkDateString(new Date(photo.uploaded_at));
+            const key = `${cntrNo}_${workDateStr}`;
             if (!group[key]) {
                 group[key] = [];
             }
             group[key].push(photo);
         });
         
-        return Object.entries(group).map(([cntrNo, list]) => ({
-            cntrNo,
-            photos: list,
-            transporter: list[0]?.transporter,
-            lastUploadedAt: new Date(Math.max(...list.map(p => new Date(p.uploaded_at).getTime()))),
-            uploaderNames: Array.from(new Set(list.map(p => p.uploader_name || p.uploader_username))).join(', ')
-        })).sort((a, b) => b.lastUploadedAt.getTime() - a.lastUploadedAt.getTime());
+        return Object.entries(group).map(([groupKey, list]) => {
+            const lastUnderscore = groupKey.lastIndexOf('_');
+            const cntrNo = groupKey.substring(0, lastUnderscore);
+            const workDateStr = groupKey.substring(lastUnderscore + 1);
+            return {
+                cntrNo,
+                workDateStr,
+                photos: list,
+                transporter: list[0]?.transporter,
+                lastUploadedAt: new Date(Math.max(...list.map(p => new Date(p.uploaded_at).getTime()))),
+                uploaderNames: Array.from(new Set(list.map(p => p.uploader_name || p.uploader_username))).join(', ')
+            };
+        }).sort((a, b) => b.lastUploadedAt.getTime() - a.lastUploadedAt.getTime());
     }, [photos]);
+
+    const [folderViewMode, setFolderViewMode] = useState<'DATE_GROUP' | 'FLAT'>('DATE_GROUP');
+    const [collapsedDates, setCollapsedDates] = useState<{ [dateStr: string]: boolean }>({});
+
+    const toggleCollapseDate = (dateStr: string) => {
+        setCollapsedDates(prev => ({ ...prev, [dateStr]: !prev[dateStr] }));
+    };
+
+    const foldersByWorkDate = React.useMemo(() => {
+        const dateMap = new Map<string, typeof folders>();
+        folders.forEach(folder => {
+            const workDateStr = folder.workDateStr;
+            if (!dateMap.has(workDateStr)) {
+                dateMap.set(workDateStr, []);
+            }
+            dateMap.get(workDateStr)!.push(folder);
+        });
+
+        return Array.from(dateMap.entries()).map(([dateStr, folderList]) => {
+            const totalPhotos = folderList.reduce((sum, f) => sum + f.photos.length, 0);
+            return {
+                dateStr,
+                folders: folderList,
+                totalPhotos
+            };
+        }).sort((a, b) => b.dateStr.localeCompare(a.dateStr));
+    }, [folders]);
+
+    const handleToggleSelectDateGroup = (dateFolders: typeof folders) => {
+        const cntrNos = dateFolders.map(f => f.cntrNo);
+        const allSelected = cntrNos.every(no => selectedFolders.includes(no));
+        if (allSelected) {
+            setSelectedFolders(prev => prev.filter(no => !cntrNos.includes(no)));
+        } else {
+            setSelectedFolders(prev => Array.from(new Set([...prev, ...cntrNos])));
+        }
+    };
+
 
     const folderPhotos = React.useMemo(() => {
         if (!selectedContainerFolder) return [];
-        const filtered = photos.filter(p => p.cntr_no === selectedContainerFolder);
+        const [cntrNo, workDateStr] = selectedContainerFolder.split('|');
+        const filtered = photos.filter(p => p.cntr_no === cntrNo && (!workDateStr || getWorkDateString(new Date(p.uploaded_at)) === workDateStr));
         
         // Apply sorting
         return [...filtered].sort((a, b) => {
@@ -284,6 +352,130 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
         if (!currentPhoto) return -1;
         return folderPhotos.findIndex(p => p.id === currentPhoto.id);
     }, [activePhotoIdx, photos, folderPhotos]);
+
+
+    const renderFolderItem = (folder: typeof folders[0]) => (
+        <div
+            key={folder.cntrNo + '_' + folder.workDateStr}
+            onClick={() => setSelectedContainerFolder(folder.cntrNo + '|' + folder.workDateStr)}
+            className="group relative flex flex-col bg-[#121422]/80 border border-white/5 rounded-2xl p-3 cursor-pointer shadow-md hover:shadow-lg hover:border-sky-500/20 hover:bg-[#15182e]/90 transition-all duration-300 hover:-translate-y-0.5 hover:scale-[1.01] select-none"
+        >
+            {/* Top row: Checkbox, Folder icon, Title/Carrier, Count Badge */}
+            <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0 flex-1">
+                    <div onClick={(e) => e.stopPropagation()} className="flex items-center">
+                        <input 
+                            type="checkbox"
+                            checked={selectedFolders.includes(folder.cntrNo + '|' + folder.workDateStr)}
+                            onChange={(e) => {
+                                const folderKey = folder.cntrNo + '|' + folder.workDateStr;
+                                setSelectedFolders(prev => 
+                                    prev.includes(folderKey) 
+                                        ? prev.filter(name => name !== folderKey)
+                                        : [...prev, folderKey]
+                                );
+                            }}
+                            className={`w-3.5 h-3.5 rounded border-white/20 bg-black/40 cursor-pointer ${
+                                isTrashView 
+                                    ? 'text-purple-500 focus:ring-purple-500' 
+                                    : isCompletedView 
+                                        ? 'text-emerald-500 focus:ring-emerald-500' 
+                                        : 'text-sky-500 focus:ring-sky-500'
+                            }`}
+                        />
+                    </div>
+                    <Folder className={`w-4 h-4 shrink-0 ${
+                        isTrashView 
+                            ? 'text-purple-400' 
+                            : isCompletedView 
+                                ? 'text-emerald-400' 
+                                : 'text-sky-400'
+                    }`} />
+                    <h4 className={`text-xs font-black truncate uppercase tracking-tight ${getCarrierColor(folder.transporter)}`}>
+                        {folder.cntrNo}
+                        {folder.transporter && (
+                            <span className="ml-1 text-[9px] font-bold text-slate-600 normal-case tracking-normal">
+                                [{folder.transporter.includes("천마") ? "천마" : (folder.transporter.includes("BNI") || folder.transporter.includes("비엔아이") ? "BNI" : folder.transporter.split('(')[0])}]
+                            </span>
+                        )}
+                    </h4>
+                </div>
+                <span className={`text-[10px] font-extrabold px-1.5 py-0.5 rounded-lg shrink-0 ${
+                    isTrashView 
+                        ? 'bg-purple-500/10 text-purple-400' 
+                        : isCompletedView 
+                            ? 'bg-emerald-500/10 text-emerald-400' 
+                            : 'bg-sky-500/10 text-sky-400'
+                }`}>
+                    {folder.photos.length}장
+                </span>
+            </div>
+
+            <div className="flex items-center justify-between mt-2 pt-2 border-t border-white/5 text-[9px] text-slate-500 font-bold">
+                <span className="truncate max-w-[120px]">
+                    작업자: {folder.uploaderNames}
+                </span>
+                <div className="flex items-center gap-2 shrink-0">
+                    <span>
+                        {folder.lastUploadedAt.toLocaleDateString('ko-KR', { month: '2-digit', day: '2-digit' })}
+                    </span>
+                    <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+                        {isTrashView ? (
+                            isAdmin && (
+                                <>
+                                    <button
+                                        onClick={(e) => handleRestoreFolder(folder, e)}
+                                        className="p-1 rounded bg-sky-500/10 border border-sky-500/20 text-sky-400 hover:text-white hover:bg-sky-500 transition-all cursor-pointer"
+                                        title="폴더 복구"
+                                    >
+                                        <RotateCw className="w-2.5 h-2.5" />
+                                    </button>
+                                    <button
+                                        onClick={(e) => handleDeleteFolderPermanently(folder, e)}
+                                        className="p-1 rounded bg-rose-500/10 border border-rose-500/20 text-rose-400 hover:text-white hover:bg-rose-500 transition-all cursor-pointer"
+                                        title="폴더 영구 삭제"
+                                    >
+                                        <Trash2 className="w-2.5 h-2.5" />
+                                    </button>
+                                </>
+                            )
+                        ) : (
+                            <>
+                                {/* Complete / Undo Complete (Everyone) */}
+                                {isCompletedView ? (
+                                    <button
+                                        onClick={(e) => handleToggleCompleteFolder(folder, true, e)}
+                                        className="p-1 rounded bg-amber-500/10 border border-amber-500/20 text-amber-400 hover:text-white hover:bg-amber-500 transition-all cursor-pointer"
+                                        title="진행 중인 작업으로 변경"
+                                    >
+                                        <Undo className="w-2.5 h-2.5" />
+                                    </button>
+                                ) : (
+                                    <button
+                                        onClick={(e) => handleToggleCompleteFolder(folder, false, e)}
+                                        className="p-1 rounded bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:text-white hover:bg-emerald-500 transition-all cursor-pointer"
+                                        title="작업 완료 처리"
+                                    >
+                                        <Check className="w-2.5 h-2.5" />
+                                    </button>
+                                )}
+                                {/* Delete (Admin Only) */}
+                                {isAdmin && (
+                                    <button
+                                        onClick={(e) => handleDeleteFolder(folder, e)}
+                                        className="p-1 rounded bg-rose-500/10 border border-rose-500/20 text-rose-400 hover:text-white hover:bg-rose-500 hover:border-rose-600 transition-all shrink-0 cursor-pointer"
+                                        title="폴더 삭제 (휴지통으로 이동)"
+                                    >
+                                        <Trash2 className="w-2.5 h-2.5" />
+                                    </button>
+                                )}
+                            </>
+                        )}
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
 
     // Filters
     const [startDate, setStartDate] = useState('');
@@ -386,7 +578,8 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
     // Fetch duplicate photo IDs when selectedContainerFolder changes
     useEffect(() => {
         if (selectedContainerFolder) {
-            fetch(`/api/photos/duplicates?cntrNo=${encodeURIComponent(selectedContainerFolder)}`)
+            const [cntrNo, workDateStr] = selectedContainerFolder.split('|');
+            fetch(`/api/photos/duplicates?cntrNo=${encodeURIComponent(cntrNo)}&workDate=${encodeURIComponent(workDateStr || '')}`)
                 .then(res => res.json())
                 .then(data => {
                     if (data.success && data.duplicateGroups) {
@@ -436,10 +629,10 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
         }
     };
 
-    const handleDeleteFolder = async (cntrNo: string, count: number, e: React.MouseEvent) => {
+    const handleDeleteFolder = async (folder: typeof folders[0], e: React.MouseEvent) => {
         e.stopPropagation();
         
-        const confirmMsg = `컨테이너 '${cntrNo}' 폴더와 그 안의 사진 총 ${count}장을 모두 휴지통으로 이동하시겠습니까?`;
+        const confirmMsg = `컨테이너 '${folder.cntrNo}' 폴더와 그 안의 사진 총 ${folder.photos.length}장을 모두 휴지통으로 이동하시겠습니까?`;
         if (!confirm(confirmMsg)) {
             return;
         }
@@ -449,13 +642,14 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
 
         setIsLoading(true);
         try {
-            const res = await fetch(`/api/photos?cntrNo=${encodeURIComponent(cntrNo)}`, {
+            const photoIds = folder.photos.map(p => p.id).join(',');
+            const res = await fetch(`/api/photos?ids=${encodeURIComponent(photoIds)}`, {
                 method: 'DELETE'
             });
             const data = await res.json();
             if (data.success) {
                 alert("폴더가 휴지통으로 이동되었습니다.");
-                if (selectedContainerFolder === cntrNo) {
+                if (selectedContainerFolder === (folder.cntrNo + '|' + folder.workDateStr)) {
                     setSelectedContainerFolder(null);
                 }
                 loadPhotos();
@@ -470,10 +664,10 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
         }
     };
 
-    const handleDeleteFolderPermanently = async (cntrNo: string, count: number, e: React.MouseEvent) => {
+    const handleDeleteFolderPermanently = async (folder: typeof folders[0], e: React.MouseEvent) => {
         e.stopPropagation();
         
-        const confirmMsg = `[영구 삭제 경고]\n\n컨테이너 '${cntrNo}' 폴더와 그 안의 사진 총 ${count}장을 완전히 영구 삭제하시겠습니까?\n이 작업은 복구할 수 없으며 서버 디스크에서 파일이 영구히 삭제됩니다.`;
+        const confirmMsg = `[영구 삭제 경고]\n\n컨테이너 '${folder.cntrNo}' 폴더와 그 안의 사진 총 ${folder.photos.length}장을 완전히 영구 삭제하시겠습니까?\n이 작업은 복구할 수 없으며 서버 디스크에서 파일이 영구히 삭제됩니다.`;
         if (!confirm(confirmMsg)) {
             return;
         }
@@ -483,13 +677,14 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
 
         setIsLoading(true);
         try {
-            const res = await fetch(`/api/photos?cntrNo=${encodeURIComponent(cntrNo)}&permanent=true`, {
+            const photoIds = folder.photos.map(p => p.id).join(',');
+            const res = await fetch(`/api/photos?ids=${encodeURIComponent(photoIds)}&permanent=true`, {
                 method: 'DELETE'
             });
             const data = await res.json();
             if (data.success) {
                 alert("폴더가 영구 삭제되었습니다.");
-                if (selectedContainerFolder === cntrNo) {
+                if (selectedContainerFolder === (folder.cntrNo + '|' + folder.workDateStr)) {
                     setSelectedContainerFolder(null);
                 }
                 loadPhotos();
@@ -557,16 +752,17 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
         }
     };
 
-    const handleRestoreFolder = async (cntrNo: string, e: React.MouseEvent) => {
+    const handleRestoreFolder = async (folder: typeof folders[0], e: React.MouseEvent) => {
         e.stopPropagation();
         
-        if (!confirm(`컨테이너 '${cntrNo}' 폴더의 모든 사진을 복구하시겠습니까?`)) {
+        if (!confirm(`컨테이너 '${folder.cntrNo}' 폴더의 모든 사진을 복구하시겠습니까?`)) {
             return;
         }
 
         setIsLoading(true);
         try {
-            const res = await fetch(`/api/photos?cntrNo=${encodeURIComponent(cntrNo)}`, {
+            const photoIds = folder.photos.map(p => p.id).join(',');
+            const res = await fetch(`/api/photos?ids=${encodeURIComponent(photoIds)}`, {
                 method: 'PATCH'
             });
             const data = await res.json();
@@ -584,7 +780,7 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
         }
     };
 
-    const handleToggleCompleteFolder = async (cntrNo: string, currentCompleted: boolean, e: React.MouseEvent) => {
+    const handleToggleCompleteFolder = async (folder: typeof folders[0], currentCompleted: boolean, e: React.MouseEvent) => {
         e.stopPropagation();
         const actionText = currentCompleted ? "진행 중으로 변경" : "완료 처리";
         if (!confirm(`정말로 이 작업을 ${actionText}하시겠습니까?`)) {
@@ -593,7 +789,8 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
 
         setIsLoading(true);
         try {
-            const res = await fetch(`/api/photos?cntrNo=${encodeURIComponent(cntrNo)}&complete=${!currentCompleted}`, {
+            const photoIds = folder.photos.map(p => p.id).join(',');
+            const res = await fetch(`/api/photos?ids=${encodeURIComponent(photoIds)}&complete=${!currentCompleted}`, {
                 method: 'PATCH'
             });
             const data = await res.json();
@@ -618,16 +815,19 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
 
         setIsLoading(true);
         try {
-            let successCount = 0;
-            for (const cntrNo of selectedFolders) {
-                const res = await fetch(`/api/photos?cntrNo=${encodeURIComponent(cntrNo)}&complete=${!currentCompleted}`, {
-                    method: 'PATCH'
-                });
-                if (res.ok) successCount++;
+            const foldersToProcess = folders.filter(f => selectedFolders.includes(f.cntrNo + '|' + f.workDateStr));
+            const photoIds = foldersToProcess.flatMap(f => f.photos.map(p => p.id)).join(',');
+            const res = await fetch(`/api/photos?ids=${encodeURIComponent(photoIds)}&complete=${!currentCompleted}`, {
+                method: 'PATCH'
+            });
+            if (res.ok) {
+                alert(`성공적으로 ${foldersToProcess.length}개 작업을 ${actionText}했습니다.`);
+                setSelectedFolders([]);
+                loadPhotos();
+            } else {
+                const data = await res.json();
+                alert(data.error || "상태 변경 중 오류가 발생했습니다.");
             }
-            alert(`성공적으로 ${successCount}개 폴더를 ${actionText}했습니다.`);
-            setSelectedFolders([]);
-            loadPhotos();
         } catch (error) {
             console.error("Error toggling completion for selected folders:", error);
             alert("상태 변경 중 오류가 발생했습니다.");
@@ -638,13 +838,14 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
 
     const handleCleanupSingleFolderDuplicates = async () => {
         if (!selectedContainerFolder) return;
+        const [cntrNo, workDateStr] = selectedContainerFolder.split('|');
         if (!confirm("이 폴더 내의 모든 중복 사진을 정리(휴지통 이동)하시겠습니까?")) {
             return;
         }
 
         setIsLoading(true);
         try {
-            const res = await fetch(`/api/photos/duplicates?cntrNo=${encodeURIComponent(selectedContainerFolder)}`, {
+            const res = await fetch(`/api/photos/duplicates?cntrNo=${encodeURIComponent(cntrNo)}&workDate=${encodeURIComponent(workDateStr || '')}`, {
                 method: 'POST'
             });
             const data = await res.json();
@@ -671,10 +872,14 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
 
         setIsLoading(true);
         try {
+            const foldersToClean = selectedFolders.map(key => {
+                const [cntrNo, workDateStr] = key.split('|');
+                return { cntrNo, workDate: workDateStr };
+            });
             const res = await fetch('/api/photos/duplicates', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ cntrNos: selectedFolders })
+                body: JSON.stringify({ folders: foldersToClean })
             });
             const data = await res.json();
             if (data.success) {
@@ -704,17 +909,20 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
         
         setIsLoading(true);
         try {
-            let successCount = 0;
-            for (const cntrNo of selectedFolders) {
-                const url = `/api/photos?cntrNo=${encodeURIComponent(cntrNo)}${isTrashView ? '&permanent=true' : ''}`;
-                const res = await fetch(url, {
-                    method: 'DELETE'
-                });
-                if (res.ok) successCount++;
+            const foldersToProcess = folders.filter(f => selectedFolders.includes(f.cntrNo + '|' + f.workDateStr));
+            const photoIds = foldersToProcess.flatMap(f => f.photos.map(p => p.id)).join(',');
+            const url = `/api/photos?ids=${encodeURIComponent(photoIds)}${isTrashView ? '&permanent=true' : ''}`;
+            const res = await fetch(url, {
+                method: 'DELETE'
+            });
+            if (res.ok) {
+                alert(`성공적으로 ${foldersToProcess.length}개 폴더를 ${actionText}했습니다.`);
+                setSelectedFolders([]);
+                loadPhotos();
+            } else {
+                const data = await res.json();
+                alert(data.error || "폴더 삭제 중 오류가 발생했습니다.");
             }
-            alert(`성공적으로 ${successCount}개 폴더를 ${actionText}했습니다.`);
-            setSelectedFolders([]);
-            loadPhotos();
         } catch (error) {
             console.error("Error deleting selected folders:", error);
             alert("폴더 처리 중 오류가 발생했습니다.");
@@ -730,16 +938,19 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
         
         setIsLoading(true);
         try {
-            let successCount = 0;
-            for (const cntrNo of selectedFolders) {
-                const res = await fetch(`/api/photos?cntrNo=${encodeURIComponent(cntrNo)}`, {
-                    method: 'PATCH'
-                });
-                if (res.ok) successCount++;
+            const foldersToProcess = folders.filter(f => selectedFolders.includes(f.cntrNo + '|' + f.workDateStr));
+            const photoIds = foldersToProcess.flatMap(f => f.photos.map(p => p.id)).join(',');
+            const res = await fetch(`/api/photos?ids=${encodeURIComponent(photoIds)}`, {
+                method: 'PATCH'
+            });
+            if (res.ok) {
+                alert(`성공적으로 ${foldersToProcess.length}개 폴더를 복구했습니다.`);
+                setSelectedFolders([]);
+                loadPhotos();
+            } else {
+                const data = await res.json();
+                alert(data.error || "폴더 복구 중 오류가 발생했습니다.");
             }
-            alert(`성공적으로 ${successCount}개 폴더를 복구했습니다.`);
-            setSelectedFolders([]);
-            loadPhotos();
         } catch (error) {
             console.error("Error restoring selected folders:", error);
             alert("폴더 복구 중 오류가 발생했습니다.");
@@ -752,7 +963,7 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
         if (selectedFolders.length === folders.length) {
             setSelectedFolders([]);
         } else {
-            setSelectedFolders(folders.map(f => f.cntrNo));
+            setSelectedFolders(folders.map(f => f.cntrNo + '|' + f.workDateStr));
         }
     };
 
@@ -810,7 +1021,7 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                    cntrNos: selectedFolders,
+                    ids: folders.filter(f => selectedFolders.includes(f.cntrNo + '|' + f.workDateStr)).flatMap(f => f.photos.map(p => p.id)),
                     targetPath: localCopyPath.trim(),
                     conflictAction
                 }),
@@ -893,17 +1104,17 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
 
     const handleDownloadSelectedFoldersZip = async () => {
         if (selectedFolders.length === 0) {
-            alert("다운로드할 폴더를 하나 이상 선택해 주세요.");
+            alert('다운로드할 폴더를 선택해주세요.');
             return;
         }
 
         setIsLoading(true);
         try {
+            const foldersToProcess = folders.filter(f => selectedFolders.includes(f.cntrNo + '|' + f.workDateStr));
+            const photoIds = foldersToProcess.flatMap(f => f.photos.map(p => p.id)).join(',');
+
             const params = new URLSearchParams();
-            params.append('cntrNos', selectedFolders.join(','));
-            if (startDate) params.append('startDate', startDate);
-            if (endDate) params.append('endDate', endDate);
-            if (selectedUserId) params.append('userId', selectedUserId);
+            params.append('ids', photoIds);
 
             const downloadUrl = `/api/photos/download?${params.toString()}`;
             
@@ -1157,26 +1368,27 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                                 </div>
                             </div>
 
-                            {/* Back to Folder List Button (only when a folder is selected) */}
+                            {/* Back Button (only when a folder is selected) */}
                             {selectedContainerFolder !== null && (
                                 <div className="space-y-1 flex items-end">
                                     <button 
                                         onClick={() => setSelectedContainerFolder(null)}
-                                        className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-slate-300 hover:text-white transition-all text-xs font-black cursor-pointer h-[38px] mb-[1px]"
+                                        className="flex items-center justify-center px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-slate-300 hover:text-white transition-all cursor-pointer h-[38px] mb-[1px]"
+                                        title="뒤로가기"
                                     >
-                                        <ArrowLeft className="w-3.5 h-3.5" /> 폴더 목록
+                                        <ArrowLeft className="w-4 h-4" />
                                     </button>
                                 </div>
                             )}
                         </div>
 
-                        {/* Search Button */}
+                        {/* Refresh Button */}
                         <div className="flex gap-2 items-center shrink-0">
                             <button 
                                 onClick={loadPhotos}
-                                className="flex-1 md:flex-none flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-sky-500 border border-sky-600 hover:bg-sky-400 text-white font-black text-xs transition-all shadow-lg shadow-sky-500/10 cursor-pointer"
+                                className="flex-1 md:flex-none flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-500 border border-emerald-600 hover:bg-emerald-400 text-white font-black text-xs transition-all shadow-lg shadow-emerald-500/10 cursor-pointer"
                             >
-                                <Search className="w-3.5 h-3.5" /> 검색
+                                <RefreshCw className="w-3.5 h-3.5" /> 새로고침
                             </button>
                         </div>
                     </div>
@@ -1207,6 +1419,34 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                                     >
                                         {selectedFolders.length === folders.length ? "선택 전체 해제" : "전체 선택"}
                                     </button>
+
+                                    {/* View Mode Toggle: Date Grouping vs Flat List */}
+                                    <div className="flex bg-black/40 border border-white/10 p-1 rounded-xl gap-1">
+                                        <button
+                                            onClick={() => setFolderViewMode('DATE_GROUP')}
+                                            className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer ${
+                                                folderViewMode === 'DATE_GROUP'
+                                                    ? 'bg-sky-500 text-white shadow-sm'
+                                                    : 'text-slate-400 hover:text-white'
+                                            }`}
+                                            title="작업일자별 그룹 보기"
+                                        >
+                                            <Calendar className="w-3.5 h-3.5" />
+                                            <span>작업일자별</span>
+                                        </button>
+                                        <button
+                                            onClick={() => setFolderViewMode('FLAT')}
+                                            className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer ${
+                                                folderViewMode === 'FLAT'
+                                                    ? 'bg-sky-500 text-white shadow-sm'
+                                                    : 'text-slate-400 hover:text-white'
+                                            }`}
+                                            title="전체 목록 바둑판 보기"
+                                        >
+                                            <LayoutGrid className="w-3.5 h-3.5" />
+                                            <span>전체 목록</span>
+                                        </button>
+                                    </div>
 
                                     {/* Action Buttons right next to Select All when folder(s) selected */}
                                     {/* Action Buttons right next to Select All when folder(s) selected */}
@@ -1299,129 +1539,85 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                                 )}
                             </div>
 
-                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-                                {folders.map(folder => (
-                                    <div
-                                        key={folder.cntrNo}
-                                        onClick={() => setSelectedContainerFolder(folder.cntrNo)}
-                                        className="group relative flex flex-col bg-[#121422]/80 border border-white/5 rounded-2xl p-3 cursor-pointer shadow-md hover:shadow-lg hover:border-sky-500/20 hover:bg-[#15182e]/90 transition-all duration-300 hover:-translate-y-0.5 hover:scale-[1.01] select-none"
-                                    >
-                                        {/* Top row: Checkbox, Folder icon, Title/Carrier, Count Badge */}
-                                        <div className="flex items-center justify-between gap-2">
-                                            <div className="flex items-center gap-2 min-w-0 flex-1">
-                                                <div onClick={(e) => e.stopPropagation()} className="flex items-center">
-                                                    <input 
-                                                        type="checkbox"
-                                                        checked={selectedFolders.includes(folder.cntrNo)}
-                                                        onChange={(e) => {
-                                                            setSelectedFolders(prev => 
-                                                                prev.includes(folder.cntrNo) 
-                                                                    ? prev.filter(name => name !== folder.cntrNo)
-                                                                    : [...prev, folder.cntrNo]
-                                                            );
-                                                        }}
-                                                        className={`w-3.5 h-3.5 rounded border-white/20 bg-black/40 cursor-pointer ${
-                                                            isTrashView 
-                                                                ? 'text-purple-500 focus:ring-purple-500' 
-                                                                : isCompletedView 
-                                                                    ? 'text-emerald-500 focus:ring-emerald-500' 
-                                                                    : 'text-sky-500 focus:ring-sky-500'
-                                                        }`}
-                                                    />
-                                                </div>
-                                                <Folder className={`w-4 h-4 shrink-0 ${
-                                                    isTrashView 
-                                                        ? 'text-purple-400' 
-                                                        : isCompletedView 
-                                                            ? 'text-emerald-400' 
-                                                            : 'text-sky-400'
-                                                }`} />
-                                                <h4 className={`text-xs font-black truncate uppercase tracking-tight ${getCarrierColor(folder.transporter)}`}>
-                                                    {folder.cntrNo}
-                                                    {folder.transporter && (
-                                                        <span className="ml-1 text-[9px] font-bold text-slate-600 normal-case tracking-normal">
-                                                            [{folder.transporter.includes("천마") ? "천마" : (folder.transporter.includes("BNI") || folder.transporter.includes("비엔아이") ? "BNI" : folder.transporter.split('(')[0])}]
-                                                        </span>
-                                                    )}
-                                                </h4>
-                                            </div>
-                                            <span className={`text-[10px] font-extrabold px-1.5 py-0.5 rounded-lg shrink-0 ${
-                                                isTrashView 
-                                                    ? 'bg-purple-500/10 text-purple-400' 
-                                                    : isCompletedView 
-                                                        ? 'bg-emerald-500/10 text-emerald-400' 
-                                                        : 'bg-sky-500/10 text-sky-400'
-                                            }`}>
-                                                {folder.photos.length}장
-                                            </span>
-                                        </div>
+                            {folderViewMode === 'DATE_GROUP' ? (
+                                <div className="space-y-6">
+                                    {foldersByWorkDate.map(group => {
+                                        const isCollapsed = !!collapsedDates[group.dateStr];
+                                        const allGroupSelected = group.folders.every(f => selectedFolders.includes(f.cntrNo));
+                                        const someGroupSelected = group.folders.some(f => selectedFolders.includes(f.cntrNo));
 
-                                        <div className="flex items-center justify-between mt-2 pt-2 border-t border-white/5 text-[9px] text-slate-500 font-bold">
-                                            <span className="truncate max-w-[120px]">
-                                                작업자: {folder.uploaderNames}
-                                            </span>
-                                            <div className="flex items-center gap-2 shrink-0">
-                                                <span>
-                                                    {folder.lastUploadedAt.toLocaleDateString('ko-KR', { month: '2-digit', day: '2-digit' })}
-                                                </span>
-                                                <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
-                                                    {isTrashView ? (
-                                                        isAdmin && (
-                                                            <>
-                                                                <button
-                                                                    onClick={(e) => handleRestoreFolder(folder.cntrNo, e)}
-                                                                    className="p-1 rounded bg-sky-500/10 border border-sky-500/20 text-sky-400 hover:text-white hover:bg-sky-500 transition-all cursor-pointer"
-                                                                    title="폴더 복구"
-                                                                >
-                                                                    <RotateCw className="w-2.5 h-2.5" />
-                                                                </button>
-                                                                <button
-                                                                    onClick={(e) => handleDeleteFolderPermanently(folder.cntrNo, folder.photos.length, e)}
-                                                                    className="p-1 rounded bg-rose-500/10 border border-rose-500/20 text-rose-400 hover:text-white hover:bg-rose-500 transition-all cursor-pointer"
-                                                                    title="폴더 영구 삭제"
-                                                                >
-                                                                    <Trash2 className="w-2.5 h-2.5" />
-                                                                </button>
-                                                            </>
-                                                        )
-                                                    ) : (
-                                                        <>
-                                                            {/* Complete / Undo Complete (Everyone) */}
-                                                            {isCompletedView ? (
-                                                                <button
-                                                                    onClick={(e) => handleToggleCompleteFolder(folder.cntrNo, true, e)}
-                                                                    className="p-1 rounded bg-amber-500/10 border border-amber-500/20 text-amber-400 hover:text-white hover:bg-amber-500 transition-all cursor-pointer"
-                                                                    title="진행 중인 작업으로 변경"
-                                                                >
-                                                                    <Undo className="w-2.5 h-2.5" />
-                                                                </button>
-                                                            ) : (
-                                                                <button
-                                                                    onClick={(e) => handleToggleCompleteFolder(folder.cntrNo, false, e)}
-                                                                    className="p-1 rounded bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:text-white hover:bg-emerald-500 transition-all cursor-pointer"
-                                                                    title="작업 완료 처리"
-                                                                >
-                                                                    <Check className="w-2.5 h-2.5" />
-                                                                </button>
-                                                            )}
-                                                            {/* Delete (Admin Only) */}
-                                                            {isAdmin && (
-                                                                <button
-                                                                    onClick={(e) => handleDeleteFolder(folder.cntrNo, folder.photos.length, e)}
-                                                                    className="p-1 rounded bg-rose-500/10 border border-rose-500/20 text-rose-400 hover:text-white hover:bg-rose-500 hover:border-rose-600 transition-all shrink-0 cursor-pointer"
-                                                                    title="폴더 삭제 (휴지통으로 이동)"
-                                                                >
-                                                                    <Trash2 className="w-2.5 h-2.5" />
-                                                                </button>
-                                                            )}
-                                                        </>
-                                                    )}
+                                        return (
+                                            <div key={group.dateStr} className="bg-[#0e0f18]/80 border border-white/5 rounded-3xl p-5 shadow-xl">
+                                                {/* Date Section Header */}
+                                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 mb-4 border-b border-white/5 select-none">
+                                                    <div className="flex items-center gap-3">
+                                                        <button
+                                                            onClick={() => toggleCollapseDate(group.dateStr)}
+                                                            className="p-2 rounded-xl bg-sky-500/10 border border-sky-500/20 text-sky-400 hover:bg-sky-500 hover:text-white transition-all cursor-pointer"
+                                                        >
+                                                            <Calendar className="w-4 h-4" />
+                                                        </button>
+                                                        <div>
+                                                            <div className="flex items-center gap-2">
+                                                                <h3 className="text-base font-black text-white tracking-tight">
+                                                                    {formatKoreanDate(group.dateStr)} 작업
+                                                                </h3>
+                                                                <span className="text-[10px] font-bold text-sky-400 bg-sky-500/10 border border-sky-500/20 px-2 py-0.5 rounded-md">
+                                                                    작업일
+                                                                </span>
+                                                            </div>
+                                                            <p className="text-xs font-bold text-slate-400 mt-0.5">
+                                                                컨테이너 <strong className="text-sky-400 font-extrabold">{group.folders.length}개</strong> · 총 <strong className="text-slate-200">{group.totalPhotos}장</strong> 사진
+                                                            </p>
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="flex items-center gap-2">
+                                                        <button
+                                                            onClick={() => handleToggleSelectDateGroup(group.folders)}
+                                                            className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 text-xs font-black text-slate-300 hover:text-white transition-all cursor-pointer"
+                                                        >
+                                                            <div className={`w-4 h-4 rounded border flex items-center justify-center transition-all ${
+                                                                allGroupSelected
+                                                                    ? "bg-sky-500 border-sky-400 text-white"
+                                                                    : someGroupSelected
+                                                                        ? "bg-sky-500/40 border-sky-400 text-white"
+                                                                        : "bg-slate-900 border-slate-700"
+                                                            }`}>
+                                                                {allGroupSelected ? (
+                                                                    <Check className="w-3 h-3 stroke-[3]" />
+                                                                ) : someGroupSelected ? (
+                                                                    <div className="w-2 h-0.5 bg-white rounded-full" />
+                                                                ) : null}
+                                                            </div>
+                                                            <span>이 날짜 전체 선택 ({group.folders.filter(f => selectedFolders.includes(f.cntrNo)).length}/{group.folders.length})</span>
+                                                        </button>
+
+                                                        <button
+                                                            onClick={() => toggleCollapseDate(group.dateStr)}
+                                                            className="p-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white transition-all cursor-pointer"
+                                                            title={isCollapsed ? "펼치기" : "접기"}
+                                                        >
+                                                            <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${isCollapsed ? "-rotate-90" : "rotate-0"}`} />
+                                                        </button>
+                                                    </div>
                                                 </div>
+
+                                                {/* Folder Grid for this Date Section */}
+                                                {!isCollapsed && (
+                                                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                                                        {group.folders.map(folder => renderFolderItem(folder))}
+                                                    </div>
+                                                )}
                                             </div>
-                                        </div>
-                                    </div>
-                                 ))}
-                            </div>
+                                        );
+                                    })}
+                                </div>
+                            ) : (
+                                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                                    {folders.map(folder => renderFolderItem(folder))}
+                                </div>
+                            )}
                         </div>
                     ) : (
                         /* PHOTO GRID VIEW (INSIDE SELECTED FOLDER) */
@@ -1429,7 +1625,7 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 shrink-0">
                                 <div className="flex items-center gap-3">
                                     <div className="text-xs font-black text-sky-400 uppercase tracking-widest bg-sky-500/10 border border-sky-500/20 px-4 py-2 rounded-xl">
-                                        폴더: {selectedContainerFolder} ({folderPhotos.length}장)
+                                        폴더: {selectedContainerFolder ? selectedContainerFolder.split('|')[0] : ''} ({folderPhotos.length}장)
                                     </div>
                                 </div>
 
@@ -1832,6 +2028,15 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
 
                             {/* Right Main View (Image Area) */}
                             <div className="flex-1 flex flex-col justify-between p-2 md:p-4 relative h-[70vh] md:h-full" onClick={(e) => e.stopPropagation()}>
+                                {/* Floating Close Button on Desktop */}
+                                <button 
+                                    onClick={() => { setActivePhotoIdx(null); resetZoom(); }}
+                                    className="hidden md:flex absolute top-6 right-6 p-3 rounded-2xl bg-black/40 border border-white/10 text-slate-400 hover:text-white hover:bg-black/80 transition-all z-20 cursor-pointer"
+                                    title="닫기"
+                                >
+                                    <X className="w-5 h-5" />
+                                </button>
+
                                 {/* Mobile Header only */}
                                 <div className="flex items-center justify-between z-10 shrink-0 md:hidden">
                                     <div className="text-left">

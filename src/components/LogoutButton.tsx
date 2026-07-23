@@ -30,10 +30,13 @@ export default function LogoutButton({ username, name, role }: LogoutButtonProps
             <button
                 onClick={handleLogout}
                 title="로그아웃"
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white/5 border border-white/10 text-slate-400 text-[10px] font-bold hover:bg-rose-500/10 hover:border-rose-500/30 hover:text-rose-400 transition-all"
+                className="flex items-center gap-1 px-2 py-1.5 rounded-lg bg-white/5 border border-white/10 text-slate-400 hover:bg-rose-500/10 hover:border-rose-500/30 hover:text-rose-400 transition-all cursor-pointer"
             >
-                <LogOut className="w-3 h-3" />
-                로그아웃
+                <LogOut className="w-3 h-3 shrink-0" />
+                <div className="flex flex-col text-left text-[9px] font-bold leading-tight shrink-0">
+                    <span>로그</span>
+                    <span>아웃</span>
+                </div>
             </button>
         </div>
     );
