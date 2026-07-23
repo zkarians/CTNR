@@ -28,6 +28,8 @@ export function getPool(): Pool {
             ALTER TABLE container_photos ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP;
             ALTER TABLE container_photos ADD COLUMN IF NOT EXISTS is_completed BOOLEAN DEFAULT FALSE;
             ALTER TABLE container_photos ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP;
+            ALTER TABLE container_photos ADD COLUMN IF NOT EXISTS gdrive_file_id VARCHAR(255);
+            ALTER TABLE container_photos ADD COLUMN IF NOT EXISTS gdrive_url TEXT;
         `).then(() => {
             console.log("DB Migration: container_photos soft delete and completion columns ensured.");
         }).catch(err => {

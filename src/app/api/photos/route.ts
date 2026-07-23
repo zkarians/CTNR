@@ -10,6 +10,8 @@ import heicConvert from 'heic-convert';
 import ExifParser from 'exif-parser';
 import sharp from 'sharp';
 
+import { uploadToGoogleDrive } from '@/lib/gdrive';
+
 export async function POST(req: NextRequest) {
     try {
         const session = await getSession();
@@ -164,6 +166,20 @@ export async function POST(req: NextRequest) {
             `;
             const values = [jobId, cntrNo, relativeDbPath, remark || '', validUploadedBy, session.teamId ?? null, durationMinutes];
             const res = await client.query(query, values);
+            const createdPhotoId = res.rows[0].id;
+            
+            // Background upload to Google Drive
+            uploadToGoogleDrive(filePath, filename)
+                .then(gRes => {
+                    pool.query(
+                        `UPDATE container_photos SET gdrive_file_id = $1, gdrive_url = $2 WHERE id = $3`,
+                        [gRes.fileId, gRes.gdriveUrl, createdPhotoId]
+                    ).catch(e => console.warn("GDrive DB update error:", e));
+                    console.log(`[Google Drive] Photo ${filename} uploaded to Google Drive. File ID: ${gRes.fileId}`);
+                })
+                .catch(err => {
+                    console.warn(`[Google Drive] Background upload warning for ${filename}:`, err);
+                });
             
             // Sync durationMinutes & remark to all existing photos for this container
             await client.query(`
