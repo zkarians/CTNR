@@ -19,20 +19,10 @@ export async function POST(req: NextRequest) {
         }
 
         const body = await req.json();
-        const { cntrNos: cntrNosParam, targetPath, conflictAction = 'overwrite' } = body;
+        const { cntrNos: cntrNosParam, ids: idsParam, targetPath, conflictAction = 'overwrite' } = body;
 
-        if (!cntrNosParam || !targetPath) {
+        if ((!cntrNosParam && !idsParam) || !targetPath) {
             return NextResponse.json({ error: '필수 매개변수가 누락되었습니다.' }, { status: 400 });
-        }
-
-        const cntrNos = (Array.isArray(cntrNosParam) 
-            ? cntrNosParam 
-            : cntrNosParam.split(','))
-            .map((s: any) => String(s).trim().toUpperCase())
-            .filter(Boolean);
-
-        if (cntrNos.length === 0) {
-            return NextResponse.json({ error: '선택된 컨테이너가 없습니다.' }, { status: 400 });
         }
 
         // Resolve local target directory
@@ -49,14 +39,35 @@ export async function POST(req: NextRequest) {
         const client = await pool.connect();
         let photos: { cntr_no: string; photo_path: string }[] = [];
         try {
-            const query = `
-                SELECT cntr_no, photo_path 
-                FROM container_photos 
-                WHERE UPPER(TRIM(cntr_no)) = ANY($1)
-                  AND (is_deleted IS NULL OR is_deleted = false)
-            `;
-            const res = await client.query(query, [cntrNos]);
-            photos = res.rows;
+            if (idsParam) {
+                const ids = (Array.isArray(idsParam) ? idsParam : String(idsParam).split(',')).map((s: any) => String(s).trim()).filter(Boolean);
+                const res = await client.query(
+                    `SELECT cntr_no, photo_path 
+                     FROM container_photos 
+                     WHERE id = ANY($1) AND (is_deleted IS NULL OR is_deleted = false)`,
+                    [ids]
+                );
+                photos = res.rows;
+            } else {
+                const cntrNos = (Array.isArray(cntrNosParam) 
+                    ? cntrNosParam 
+                    : cntrNosParam.split(','))
+                    .map((s: any) => String(s).trim().toUpperCase())
+                    .filter(Boolean);
+
+                if (cntrNos.length === 0) {
+                    return NextResponse.json({ error: '선택된 컨테이너가 없습니다.' }, { status: 400 });
+                }
+
+                const query = `
+                    SELECT cntr_no, photo_path 
+                    FROM container_photos 
+                    WHERE UPPER(TRIM(cntr_no)) = ANY($1)
+                      AND (is_deleted IS NULL OR is_deleted = false)
+                `;
+                const res = await client.query(query, [cntrNos]);
+                photos = res.rows;
+            }
         } finally {
             client.release();
         }

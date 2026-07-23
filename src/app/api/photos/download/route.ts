@@ -20,48 +20,55 @@ export async function GET(req: NextRequest) {
         }
 
         const { searchParams } = new URL(req.url);
+        const idsParam = searchParams.get('ids');
         const cntrNosParam = searchParams.get('cntrNos'); // comma-separated container numbers
         const startDate = searchParams.get('startDate');
         const endDate = searchParams.get('endDate');
         const userId = searchParams.get('userId');
 
-        if (!cntrNosParam) {
-            return new NextResponse('No containers specified', { status: 400 });
+        if (!cntrNosParam && !idsParam) {
+            return new NextResponse('No containers or IDs specified', { status: 400 });
         }
 
-        const cntrNos = cntrNosParam.split(',').map(s => s.trim().toUpperCase()).filter(Boolean);
-        if (cntrNos.length === 0) {
-            return new NextResponse('No containers specified', { status: 400 });
-        }
-
-        // 1. Fetch photo paths from the database for the selected containers and filters
         const client = await pool.connect();
         let photos: { cntr_no: string; photo_path: string }[] = [];
         try {
-            let query = `
-                SELECT cntr_no, photo_path 
-                FROM container_photos 
-                WHERE cntr_no = ANY($1)
-                  AND (is_deleted IS NULL OR is_deleted = false)
-            `;
-            const params: (string | Date | string[])[] = [cntrNos];
-            let paramIdx = 2;
+            if (idsParam) {
+                const ids = idsParam.split(',').map(s => s.trim()).filter(Boolean);
+                const res = await client.query(
+                    `SELECT cntr_no, photo_path 
+                     FROM container_photos 
+                     WHERE id = ANY($1) AND (is_deleted IS NULL OR is_deleted = false)`,
+                    [ids]
+                );
+                photos = res.rows;
+            } else {
+                const cntrNos = cntrNosParam!.split(',').map(s => s.trim().toUpperCase()).filter(Boolean);
+                let query = `
+                    SELECT cntr_no, photo_path 
+                    FROM container_photos 
+                    WHERE cntr_no = ANY($1)
+                      AND (is_deleted IS NULL OR is_deleted = false)
+                `;
+                const params: (string | Date | string[])[] = [cntrNos];
+                let paramIdx = 2;
 
-            if (startDate) {
-                query += ` AND uploaded_at AT TIME ZONE 'Asia/Seoul' >= $${paramIdx++}::timestamp`;
-                params.push(`${startDate} 00:00:00`);
-            }
-            if (endDate) {
-                query += ` AND uploaded_at AT TIME ZONE 'Asia/Seoul' <= $${paramIdx++}::timestamp`;
-                params.push(`${endDate} 23:59:59.999`);
-            }
-            if (userId) {
-                query += ` AND uploaded_by = $${paramIdx++}`;
-                params.push(userId);
-            }
+                if (startDate) {
+                    query += ` AND uploaded_at AT TIME ZONE 'Asia/Seoul' >= ${paramIdx++}::timestamp`;
+                    params.push(`${startDate} 19:00:00`);
+                }
+                if (endDate) {
+                    query += ` AND uploaded_at AT TIME ZONE 'Asia/Seoul' <= (${paramIdx++}::date + INTERVAL '1 day 18 hours 59 minutes 59.999 seconds')`;
+                    params.push(endDate);
+                }
+                if (userId) {
+                    query += ` AND uploaded_by = ${paramIdx++}`;
+                    params.push(userId);
+                }
 
-            const res = await client.query(query, params);
-            photos = res.rows;
+                const res = await client.query(query, params);
+                photos = res.rows;
+            }
         } finally {
             client.release();
         }

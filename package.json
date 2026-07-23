@@ -21,6 +21,7 @@
     "exif-parser": "^0.1.12",
     "framer-motion": "latest",
     "heic-convert": "^2.1.0",
+    "html-to-image": "^1.11.13",
     "jszip": "^3.10.1",
     "lucide-react": "latest",
     "next": "latest",

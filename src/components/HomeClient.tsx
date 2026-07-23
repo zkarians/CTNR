@@ -1,22 +1,33 @@
+
 "use client";
 
 import React, { useState, useEffect, useRef } from 'react';
 import {
     Search, Box, Package, Truck, RotateCw, Plus, Trash2,
-    Settings2, ChevronRight, Filter, Calendar, Briefcase, Move3d, X,
+    Settings2, ChevronLeft, ChevronRight, Filter, Calendar, Briefcase, Move3d, X,
     Camera, Upload, Loader2, Image as ImageIcon,
     Users, UserPlus, Edit3, Shield, KeyRound, Database, UserCheck, UserX,
     FileText, Copy, Download, Check, Clock
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { toPng } from 'html-to-image';
 import ContainerViewer from '@/components/ContainerViewer';
 import LogoutButton from '@/components/LogoutButton';
 import PhotoGallery from '@/components/PhotoGallery';
+
+function isSameTeam(t1?: string, t2?: string): boolean {
+    if (!t1 || !t2) return false;
+    if (t1 === t2) return true;
+    const clean1 = t1.replace(/\s*\([^)]*\)/g, '').trim();
+    const clean2 = t2.replace(/\s*\([^)]*\)/g, '').trim();
+    if (clean1 && clean2 && clean1 === clean2) return true;
+    return t1.includes(t2) || t2.includes(t1);
+}
 import {
     Product, PackingResult, ContainerType, CONTAINER_DATA, Job, JobFilters, DbConfig, UserAccount, Team
 } from '@/lib/types';
 import { packContainer } from '@/lib/packer';
-import { fetchJobs, fetchProductsByJob, searchProducts, getDbConfig, updateDbConfig, updatePassword, fetchAllUsers, createUserAccount, updateUserAccount, deleteUserAccount, deleteMultipleUserAccounts, generateWorkReport, fetchTeams, createTeam, updateTeam, deleteTeam, fetchTeamWorkProgress, TeamWorkProgress, updateContainerWorkDuration } from '@/lib/actions';
+import { fetchJobs, fetchProductsByJob, searchProducts, getDbConfig, updateDbConfig, updatePassword, fetchAllUsers, createUserAccount, updateUserAccount, deleteUserAccount, deleteMultipleUserAccounts, generateWorkReport, fetchTeams, createTeam, updateTeam, deleteTeam, fetchTeamWorkProgress, TeamWorkProgress, updateContainerWorkDuration, updateContainerAdminComment } from '@/lib/actions';
 import { SessionUser } from '@/lib/auth';
 
 
@@ -285,23 +296,110 @@ export default function Home({ user }: { user: SessionUser }) {
     const [isCopied, setIsCopied] = useState(false);
     const [reportStartDate, setReportStartDate] = useState('');
     const [reportEndDate, setReportEndDate] = useState('');
+    const reportCaptureRef = useRef<HTMLDivElement>(null);
+    const [reportViewMode, setReportViewMode] = useState<'full' | 'compact'>('full');
+    const [editingCommentCntr, setEditingCommentCntr] = useState<string | null>(null);
+    const [commentInput, setCommentInput] = useState<string>('');
+    const [isExportingImage, setIsExportingImage] = useState(false);
 
-    const handleGenerateReport = async () => {
-        const defaultWorkDate = getWorkDateString(new Date());
-        const start = filters.startDate || defaultWorkDate;
-        const end = filters.endDate || defaultWorkDate;
+    const handleSaveComment = async (cntrNo: string) => {
+        setEditingCommentCntr(null);
+        if (!isAdmin) return;
+        try {
+            await updateContainerAdminComment(cntrNo, commentInput);
+            setReportData((prevData: any[]) =>
+                prevData.map((dGroup) => ({
+                    ...dGroup,
+                    uploaders: dGroup.uploaders.map((uGroup: any) => ({
+                        ...uGroup,
+                        containers: uGroup.containers.map((cntr: any) =>
+                            cntr.cntrNo === cntrNo ? { ...cntr, adminComment: commentInput } : cntr
+                        )
+                    }))
+                }))
+            );
+        } catch (err) {
+            console.error("Save comment error:", err);
+        }
+    };
+
+    const handleDownloadReportImage = async () => {
+        if (!reportCaptureRef.current) return;
+        setIsExportingImage(true);
+        try {
+            const node = reportCaptureRef.current;
+
+            // Temporarily expand all inner scrollable children (team cards & container lists)
+            const scrollableChildren = node.querySelectorAll('.overflow-y-auto, [class*="max-h-"], .custom-scrollbar');
+            const originalStyles: { el: HTMLElement; maxHeight: string; height: string; overflowY: string }[] = [];
+            
+            scrollableChildren.forEach((child) => {
+                const htmlEl = child as HTMLElement;
+                originalStyles.push({
+                    el: htmlEl,
+                    maxHeight: htmlEl.style.maxHeight,
+                    height: htmlEl.style.height,
+                    overflowY: htmlEl.style.overflowY
+                });
+                htmlEl.style.maxHeight = 'none';
+                htmlEl.style.height = 'auto';
+                htmlEl.style.overflowY = 'visible';
+            });
+
+            // Measure full unclipped scroll dimensions
+            const finalWidth = Math.max(node.scrollWidth, node.offsetWidth);
+            const finalHeight = Math.max(node.scrollHeight, node.offsetHeight);
+
+            const dataUrl = await toPng(node, {
+                quality: 0.98,
+                pixelRatio: 2,
+                width: finalWidth,
+                height: finalHeight,
+                backgroundColor: '#ffffff',
+                style: {
+                    maxHeight: 'none',
+                    height: `${finalHeight}px`,
+                    width: `${finalWidth}px`,
+                    overflow: 'visible'
+                }
+            });
+
+            // Restore original styles
+            originalStyles.forEach(({ el, maxHeight, height, overflowY }) => {
+                el.style.maxHeight = maxHeight;
+                el.style.height = height;
+                el.style.overflowY = overflowY;
+            });
+
+            const dateStr = reportStartDate || getWorkDateString(new Date());
+            const link = document.createElement('a');
+            link.download = `작업완료보고서_${dateStr}.png`;
+            link.href = dataUrl;
+            link.click();
+        } catch (err) {
+            console.error("Download report image error:", err);
+            alert("보고서 이미지 저장 중 오류가 발생했습니다.");
+        } finally {
+            setIsExportingImage(false);
+        }
+    };
+
+    const handleNavigateDate = async (offsetDays: number) => {
+        const baseStr = reportStartDate || getWorkDateString(new Date());
+        const parts = baseStr.split('-').map(Number);
+        const currentDate = new Date(parts[0], parts[1] - 1, parts[2]);
+        currentDate.setDate(currentDate.getDate() + offsetDays);
+        const newDateStr = getLocalDateString(currentDate);
         
-        setReportStartDate(start);
-        setReportEndDate(end);
+        setReportStartDate(newDateStr);
+        setReportEndDate(newDateStr);
 
         setIsReportGenerating(true);
-        setIsReportOpen(true);
-        setIsCopied(false);
         try {
             const res = await generateWorkReport({
                 ...filters,
-                startDate: start,
-                endDate: end
+                startDate: newDateStr,
+                endDate: newDateStr
             });
             if (res.success && res.reportText) {
                 setReportText(res.reportText);
@@ -309,7 +407,44 @@ export default function Home({ user }: { user: SessionUser }) {
                 if (!isAdmin && user.teamName) {
                     data = data.map((dg: any) => ({
                         ...dg,
-                        uploaders: dg.uploaders.filter((u: any) => u.teamName === user.teamName)
+                        uploaders: dg.uploaders.filter((u: any) => isSameTeam(u.teamName, user.teamName))
+                    })).filter((dg: any) => dg.uploaders.length > 0);
+                }
+                setReportData(data);
+            } else {
+                setReportText(res.error || '보고서를 생성할 데이터가 없습니다.');
+                setReportData([]);
+            }
+        } catch (err) {
+            console.error("Single date report error:", err);
+        } finally {
+            setIsReportGenerating(false);
+        }
+    };
+
+    const handleGenerateReport = async () => {
+        const defaultWorkDate = getWorkDateString(new Date());
+        const singleDate = filters.startDate || defaultWorkDate;
+        
+        setReportStartDate(singleDate);
+        setReportEndDate(singleDate);
+
+        setIsReportGenerating(true);
+        setIsReportOpen(true);
+        setIsCopied(false);
+        try {
+            const res = await generateWorkReport({
+                ...filters,
+                startDate: singleDate,
+                endDate: singleDate
+            });
+            if (res.success && res.reportText) {
+                setReportText(res.reportText);
+                let data = res.reportData || [];
+                if (!isAdmin && user.teamName) {
+                    data = data.map((dg: any) => ({
+                        ...dg,
+                        uploaders: dg.uploaders.filter((u: any) => isSameTeam(u.teamName, user.teamName))
                     })).filter((dg: any) => dg.uploaders.length > 0);
                 }
                 setReportData(data);
@@ -341,7 +476,7 @@ export default function Home({ user }: { user: SessionUser }) {
                 if (!isAdmin && user.teamName) {
                     data = data.map((dg: any) => ({
                         ...dg,
-                        uploaders: dg.uploaders.filter((u: any) => u.teamName === user.teamName)
+                        uploaders: dg.uploaders.filter((u: any) => isSameTeam(u.teamName, user.teamName))
                     })).filter((dg: any) => dg.uploaders.length > 0);
                 }
                 setReportData(data);
@@ -786,7 +921,7 @@ export default function Home({ user }: { user: SessionUser }) {
                             );
                         }
 
-                        const myTeamProgress = user.teamName ? teamProgressMap[user.teamName] : null;
+                        const myTeamProgress = user.teamName ? (teamProgressMap[user.teamName] || Object.values(teamProgressMap).find((tp: any) => isSameTeam(tp.teamName, user.teamName))) : null;
                         return (
                             <div className="w-full bg-[#111625] border border-sky-500/30 rounded-lg px-2.5 py-1 flex items-center justify-between text-xs shadow-sm">
                                 <div className="flex items-center gap-1.5 min-w-0 pr-2">
@@ -1215,7 +1350,7 @@ export default function Home({ user }: { user: SessionUser }) {
                             );
                         }
 
-                        const myTeamProgress = user.teamName ? teamProgressMap[user.teamName] : null;
+                        const myTeamProgress = user.teamName ? (teamProgressMap[user.teamName] || Object.values(teamProgressMap).find((tp: any) => isSameTeam(tp.teamName, user.teamName))) : null;
                         return (
                             <div className="w-full bg-[#111625] border border-sky-500/30 rounded-lg px-2.5 py-1 flex items-center justify-between text-xs">
                                 <div className="flex items-center gap-1.5 min-w-0">
@@ -1921,7 +2056,21 @@ export default function Home({ user }: { user: SessionUser }) {
 
             {/* Work Report Modal */}
             <AnimatePresence>
-                {isReportOpen && (
+                {isReportOpen && (() => {
+                    const workerContainers = (!isAdmin && reportData) ? reportData.flatMap((dateGroup: any) =>
+                        dateGroup.uploaders.flatMap((upGroup: any) =>
+                            upGroup.containers
+                        )
+                    ) : [];
+
+                    const totalWorkerDuration = workerContainers.reduce((sum: number, cntr: any) => sum + (cntr.durationMinutes || 45), 0);
+                    const workerHours = Math.floor(totalWorkerDuration / 60);
+                    const workerMins = totalWorkerDuration % 60;
+                    const formattedWorkerTime = workerHours > 0 
+                        ? `${workerHours}시간 ${workerMins > 0 ? `${workerMins}분` : ''}` 
+                        : `${workerMins}분`;
+
+                    return (
                     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
                         <motion.div 
                             initial={{ opacity: 0 }} 
@@ -1934,57 +2083,104 @@ export default function Home({ user }: { user: SessionUser }) {
                             initial={{ scale: 0.95, opacity: 0, y: 20 }} 
                             animate={{ scale: 1, opacity: 1, y: 0 }} 
                             exit={{ scale: 0.95, opacity: 0, y: 20 }}
-                            className="relative w-full max-w-7xl bg-[#0f111a] border border-white/10 rounded-[2.5rem] shadow-2xl overflow-hidden p-6 md:p-8 z-10 max-h-[90vh] flex flex-col"
+                            className="relative w-full max-w-[99vw] md:max-w-[96vw] bg-white border border-slate-300 rounded-[1.5rem] md:rounded-[2rem] shadow-2xl overflow-hidden p-2.5 sm:p-4 md:p-5 z-10 h-[98vh] flex flex-col text-slate-900"
                         >
-                            <div className="flex items-center justify-between pb-4 mb-4 border-b border-white/10 shrink-0">
-                                <div className="flex items-center gap-3">
-                                    <div className="p-3 bg-emerald-500/10 rounded-2xl">
-                                        <FileText className="w-6 h-6 text-emerald-400" />
+                            <div className="flex items-start justify-between pb-3 mb-2 border-b border-slate-200 shrink-0 gap-2">
+                                <div className="flex items-start gap-3 min-w-0">
+                                    <div className="p-2 bg-emerald-500/10 rounded-xl shrink-0 mt-0.5">
+                                        <FileText className="w-5 h-5 text-emerald-600" />
                                     </div>
-                                    <div>
-                                        <h2 className="text-xl font-black text-white">{isAdmin ? "작업 완료 보고서" : `${user.teamName || ''} 작업 내역`}</h2>
-                                        <p className="text-xs text-slate-500 font-bold uppercase tracking-widest">Work Summary Report</p>
+                                    <div className="min-w-0 space-y-1">
+                                        <h2 className="text-lg md:text-xl font-black text-slate-900 leading-tight truncate">
+                                            {isAdmin ? "작업 완료 보고서" : `${user.teamName || ''} 작업 내역`}
+                                        </h2>
+                                        {!isAdmin && workerContainers.length > 0 && (
+                                            <div className="inline-flex flex-wrap items-center gap-1.5 text-xs font-bold text-sky-900 bg-sky-50 border border-sky-200 px-3 py-1 rounded-full shadow-sm">
+                                                <span>총 {workerContainers.length}개 컨테이너</span>
+                                                <span className="text-sky-300">|</span>
+                                                <span>총 작업시간 {formattedWorkerTime} ({totalWorkerDuration}분)</span>
+                                            </div>
+                                        )}
+                                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Work Completion Official Report</p>
                                     </div>
                                 </div>
                                 <button 
                                     onClick={() => setIsReportOpen(false)}
-                                    className="p-2 hover:bg-white/10 rounded-full text-slate-400 hover:text-white transition-all cursor-pointer"
+                                    className="p-2 hover:bg-slate-100 rounded-full text-slate-400 hover:text-slate-700 transition-all cursor-pointer shrink-0"
                                 >
                                     <X className="w-5 h-5" />
                                 </button>
                             </div>
 
                             {/* Date Selector inside Modal */}
-                            {isAdmin && (<div className="flex flex-wrap items-center gap-3 p-4 mb-4 bg-white/5 border border-white/5 rounded-2xl shrink-0">
-                                <span className="text-xs font-bold text-slate-400">조회 기간 설정:</span>
-                                <div className="flex items-center gap-2">
+                            {isAdmin && (<div className="flex flex-wrap items-center gap-2 p-2.5 mb-2 bg-slate-100 border border-slate-200 rounded-xl shrink-0 text-slate-900">
+                                <span className="text-xs font-bold text-slate-600">조회 일자:</span>
+                                <div className="flex items-center gap-1 bg-white border border-slate-300 rounded-xl p-1 shadow-sm">
+                                    <button
+                                        onClick={() => handleNavigateDate(-1)}
+                                        className="px-2.5 py-1 text-xs font-bold text-slate-700 hover:text-emerald-700 hover:bg-slate-100 rounded-lg transition-all flex items-center gap-1 cursor-pointer"
+                                        title="이전날 (어제)로 이동"
+                                    >
+                                        <ChevronLeft className="w-4 h-4" />
+                                        <span>이전날</span>
+                                    </button>
+
                                     <input 
                                         type="date"
                                         value={reportStartDate}
-                                        onChange={(e) => setReportStartDate(e.target.value)}
-                                        className="bg-black/40 border border-white/10 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500 transition-all font-bold cursor-pointer"
+                                        onChange={(e) => {
+                                            const val = e.target.value;
+                                            setReportStartDate(val);
+                                            setReportEndDate(val);
+                                        }}
+                                        className="bg-transparent border-x border-slate-200 px-3 py-0.5 text-xs text-slate-900 focus:outline-none font-black cursor-pointer text-center"
                                     />
-                                    <span className="text-xs text-slate-500 font-bold">~</span>
-                                    <input 
-                                        type="date"
-                                        value={reportEndDate}
-                                        onChange={(e) => setReportEndDate(e.target.value)}
-                                        className="bg-black/40 border border-white/10 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500 transition-all font-bold cursor-pointer"
-                                    />
+
+                                    <button
+                                        onClick={() => handleNavigateDate(1)}
+                                        className="px-2.5 py-1 text-xs font-bold text-slate-700 hover:text-emerald-700 hover:bg-slate-100 rounded-lg transition-all flex items-center gap-1 cursor-pointer"
+                                        title="다음날 (내일)로 이동"
+                                    >
+                                        <span>다음날</span>
+                                        <ChevronRight className="w-4 h-4" />
+                                    </button>
                                 </div>
+
                                 <button
                                     onClick={handleRegenerateReport}
-                                    className="ml-auto px-4 py-1.5 bg-emerald-500 text-black hover:bg-emerald-400 text-xs font-black rounded-xl transition-all shadow-md cursor-pointer flex items-center gap-1.5"
+                                    className="px-4 py-1.5 bg-emerald-600 text-white hover:bg-emerald-500 text-xs font-black rounded-xl transition-all shadow-md cursor-pointer flex items-center gap-1.5"
                                 >
                                     <RotateCw className="w-3.5 h-3.5" />
-                                    보고서 조회
+                                    조회
                                 </button>
+                                <div className="ml-auto flex items-center gap-1 bg-slate-200/80 p-1 rounded-xl shrink-0">
+                                    <button
+                                        onClick={() => setReportViewMode('full')}
+                                        className={`px-3 py-1 text-xs font-black rounded-lg transition-all cursor-pointer ${
+                                            reportViewMode === 'full' 
+                                                ? 'bg-white text-slate-900 shadow-sm' 
+                                                : 'text-slate-600 hover:text-slate-900'
+                                        }`}
+                                    >
+                                        📋 전체 상세
+                                    </button>
+                                    <button
+                                        onClick={() => setReportViewMode('compact')}
+                                        className={`px-3 py-1 text-xs font-black rounded-lg transition-all cursor-pointer ${
+                                            reportViewMode === 'compact' 
+                                                ? 'bg-white text-slate-900 shadow-sm' 
+                                                : 'text-slate-600 hover:text-slate-900'
+                                        }`}
+                                    >
+                                        ⚡ 요약 보기
+                                    </button>
+                                </div>
                             </div>)}
 
-                            <div className="flex-1 overflow-y-auto min-h-[350px] max-h-[60vh] bg-black/50 border border-white/5 rounded-2xl p-6 custom-scrollbar">
+                            <div ref={reportCaptureRef} className="overflow-y-auto flex-1 min-h-0 bg-white border border-slate-200 rounded-xl md:rounded-2xl p-2 sm:p-4 md:p-5 custom-scrollbar text-slate-900">
                                 {isReportGenerating ? (
                                     <div className="flex flex-col items-center justify-center h-48 gap-3 text-slate-400">
-                                        <Loader2 className="w-8 h-8 animate-spin text-emerald-400" />
+                                        <Loader2 className="w-8 h-8 animate-spin text-emerald-600" />
                                         <p className="text-xs font-bold">보고서를 생성하는 중입니다...</p>
                                     </div>
                                 ) : reportData && reportData.length > 0 ? (
@@ -1992,57 +2188,152 @@ export default function Home({ user }: { user: SessionUser }) {
                                     <div className="space-y-8">
                                         {reportData.map((dateGroup: any) => {
                                             const totalCntr = dateGroup.uploaders.reduce((sum: number, u: any) => sum + u.containers.length, 0);
-                                            const dayNum = parseInt(dateGroup.dateStr.split('-')[2]);
+                                            const numTeams = dateGroup.uploaders.length;
+                                            const gridColsStyle = numTeams === 1 
+                                                ? 'md:grid-cols-1' 
+                                                : numTeams === 2 
+                                                ? 'md:grid-cols-2' 
+                                                : numTeams === 3 
+                                                ? 'md:grid-cols-3' 
+                                                : 'md:grid-cols-4';
+
                                             return (
-                                                <div key={dateGroup.dateStr} className="bg-[#121422]/50 border border-white/5 rounded-3xl p-6">
-                                                    <div className="flex items-center justify-between border-b border-white/5 pb-3 mb-5">
-                                                        <h3 className="text-sm font-black text-sky-400 flex items-center gap-2">
-                                                            <Calendar className="w-4 h-4 text-sky-400 animate-pulse" />
+                                                <div key={dateGroup.dateStr} className="bg-slate-50 border border-slate-200 rounded-xl md:rounded-3xl p-2.5 sm:p-4 md:p-6 shadow-sm">
+                                                    <div className="flex items-center justify-between border-b border-slate-200 pb-3 mb-5 flex-wrap gap-2">
+                                                        <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
+                                                            <Calendar className="w-4 h-4 text-sky-600 animate-pulse" />
                                                             {dateGroup.dateStr} 작업 분량
                                                         </h3>
-                                                        <span className="text-xs font-black text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-3 py-1 rounded-full">
-                                                            총합계: {totalCntr}개 작업완료
+                                                        <span className="text-sm font-black text-slate-800 bg-white border border-slate-300 shadow-sm px-3.5 py-1 rounded-full flex items-center gap-1.5 flex-wrap">
+                                                            <span>총합계: {totalCntr}개 작업완료</span>
+                                                            {dateGroup.carrierCounts && Object.keys(dateGroup.carrierCounts).length > 0 && (
+                                                                <span className="text-slate-600 font-bold text-xs border-l border-slate-300 pl-2 ml-1 flex items-center gap-1.5 flex-wrap">
+                                                                    (
+                                                                    {Object.entries(dateGroup.carrierCounts).map(([cName, count]: [string, any], idx: number) => {
+                                                                        const carrierColorClass = cName.includes('천마') 
+                                                                            ? 'text-rose-600 font-black' 
+                                                                            : (cName.includes('BNI') || cName.includes('비엔아이')) 
+                                                                            ? 'text-indigo-600 font-black' 
+                                                                            : 'text-emerald-600 font-black';
+                                                                        return (
+                                                                            <span key={cName} className="flex items-center">
+                                                                                {idx > 0 && <span className="text-slate-400 mr-1.5">,</span>}
+                                                                                <span className={carrierColorClass}>{cName}: {count}개</span>
+                                                                            </span>
+                                                                        );
+                                                                    })}
+                                                                    )
+                                                                </span>
+                                                            )}
                                                         </span>
                                                     </div>
-                                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 items-start">
+                                                    <div className={`grid grid-cols-1 ${gridColsStyle} gap-4 items-start w-full`}>
                                                         {dateGroup.uploaders.map((upGroup: any) => (
-                                                            <div key={upGroup.teamName ?? upGroup.uploaderName} className="bg-[#1a1d2e]/40 border border-white/5 rounded-2xl p-4 flex flex-col gap-4 max-h-[45vh] overflow-y-auto custom-scrollbar">
-                                                                <div className="flex items-center justify-between pb-2 border-b border-white/5">
-                                                                    <span className="text-xs font-black text-white flex items-center gap-1.5">
-                                                                        <div className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
+                                                            <div key={upGroup.teamName ?? upGroup.uploaderName} className="bg-white border border-slate-200 rounded-xl md:rounded-2xl p-2.5 sm:p-4 flex flex-col gap-3 md:gap-4 h-auto shadow-sm">
+                                                                <div className="flex items-center justify-between pb-2 border-b border-slate-200">
+                                                                    <span className="text-sm font-black text-slate-900 flex items-center gap-1.5">
+                                                                        <div className="w-2.5 h-2.5 rounded-full bg-slate-900" />
                                                                         {upGroup.teamName ?? upGroup.uploaderName}
                                                                     </span>
-                                                                    <span className="text-[10px] font-bold text-slate-500">합계 {upGroup.containers.length}개</span>
+                                                                    <span className="text-xs font-bold text-slate-500">합계 {upGroup.containers.length}개</span>
                                                                 </div>
                                                                 <div className="space-y-3">
                                                                     {upGroup.containers.map((cntr: any) => {
                                                                         const totalQty = cntr.products.reduce((sum: number, p: any) => sum + p.qty, 0);
                                                                         return (
-                                                                            <div key={cntr.cntrNo} className="bg-white/5 border border-white/5 rounded-xl p-3 hover:bg-white/10 transition-all">
+                                                                            <div key={cntr.cntrNo} className="bg-slate-50 border border-slate-200 rounded-lg md:rounded-xl p-2.5 sm:p-3 hover:border-slate-300 transition-all space-y-1.5">
                                                                                 <div className="flex items-center justify-between gap-1.5 mb-1.5">
-                                                                                    <span className="text-[11px] font-black text-slate-200 truncate uppercase">{cntr.cntrNo}</span>
+                                                                                    <span className={`text-sm font-black truncate uppercase ${getCarrierColor(cntr.transporter)}`}>{cntr.cntrNo}</span>
                                                                                     {cntr.startTimeStr && cntr.endTimeStr && (
-                                                                                        <span className="text-sky-300 font-black text-[10px] bg-sky-500/10 px-1.5 py-0.5 rounded border border-sky-500/20 shrink-0">
+                                                                                        <span className="text-sky-900 font-bold text-xs bg-sky-100 px-1.5 py-0.5 rounded border border-sky-200 shrink-0">
                                                                                             {cntr.durationMinutes || 45}분 ({cntr.startTimeStr}~{cntr.endTimeStr})
                                                                                         </span>
                                                                                     )}
                                                                                 </div>
-                                                                                <div className="text-[10px] text-slate-400 font-bold mb-2">
-                                                                                    {cntr.products.length}모델, {totalQty.toLocaleString()}개
+                                                                                <div className="text-xs text-slate-700 font-bold mb-2 flex items-center flex-wrap gap-1">
+                                                                                    <span>{cntr.products.length}모델, {totalQty.toLocaleString()}개</span>
+                                                                                    {cntr.adminComment ? (
+                                                                                        <span className="text-rose-600 font-black ml-1 inline-flex items-center">
+                                                                                            (&nbsp;
+                                                                                            {editingCommentCntr === cntr.cntrNo ? (
+                                                                                                <input
+                                                                                                    type="text"
+                                                                                                    autoFocus
+                                                                                                    value={commentInput}
+                                                                                                    onChange={(e) => setCommentInput(e.target.value)}
+                                                                                                    onKeyDown={(e) => {
+                                                                                                        if (e.key === 'Enter') handleSaveComment(cntr.cntrNo);
+                                                                                                        if (e.key === 'Escape') setEditingCommentCntr(null);
+                                                                                                    }}
+                                                                                                    onBlur={() => handleSaveComment(cntr.cntrNo)}
+                                                                                                    placeholder="코멘트 수정..."
+                                                                                                    className="bg-white border border-rose-500 rounded px-1.5 py-0.5 text-xs text-slate-900 font-bold outline-none shadow-sm min-w-[70px]"
+                                                                                                />
+                                                                                            ) : (
+                                                                                                <span
+                                                                                                    onClick={() => {
+                                                                                                        if (isAdmin) {
+                                                                                                            setEditingCommentCntr(cntr.cntrNo);
+                                                                                                            setCommentInput(cntr.adminComment || '');
+                                                                                                        }
+                                                                                                    }}
+                                                                                                    className={`text-slate-900 font-bold ${isAdmin ? 'cursor-pointer hover:underline' : ''}`}
+                                                                                                    title={isAdmin ? "관리자 코멘트 수정 (클릭)" : undefined}
+                                                                                                >
+                                                                                                    {cntr.adminComment}
+                                                                                                </span>
+                                                                                            )}
+                                                                                            &nbsp;)
+                                                                                        </span>
+                                                                                    ) : isAdmin ? (
+                                                                                        editingCommentCntr === cntr.cntrNo ? (
+                                                                                            <span className="text-rose-600 font-black ml-1 inline-flex items-center">
+                                                                                                (&nbsp;
+                                                                                                <input
+                                                                                                    type="text"
+                                                                                                    autoFocus
+                                                                                                    value={commentInput}
+                                                                                                    onChange={(e) => setCommentInput(e.target.value)}
+                                                                                                    onKeyDown={(e) => {
+                                                                                                        if (e.key === 'Enter') handleSaveComment(cntr.cntrNo);
+                                                                                                        if (e.key === 'Escape') setEditingCommentCntr(null);
+                                                                                                    }}
+                                                                                                    onBlur={() => handleSaveComment(cntr.cntrNo)}
+                                                                                                    placeholder="코멘트 입력..."
+                                                                                                    className="bg-white border border-rose-500 rounded px-1.5 py-0.5 text-xs text-slate-900 font-bold outline-none shadow-sm min-w-[80px]"
+                                                                                                />
+                                                                                                &nbsp;)
+                                                                                            </span>
+                                                                                        ) : (
+                                                                                            <button
+                                                                                                onClick={() => {
+                                                                                                    setEditingCommentCntr(cntr.cntrNo);
+                                                                                                    setCommentInput('');
+                                                                                                }}
+                                                                                                className="ml-1 px-1.5 py-0.5 text-[11px] font-black text-rose-600 hover:text-white bg-rose-50 border border-rose-200 hover:bg-rose-600 rounded transition-all cursor-pointer inline-flex items-center justify-center leading-none"
+                                                                                                title="코멘트 추가"
+                                                                                            >
+                                                                                                +
+                                                                                            </button>
+                                                                                        )
+                                                                                    ) : null}
                                                                                 </div>
                                                                                 {cntr.remark && cntr.remark.trim() && (
-                                                                                    <div className="text-[10px] text-amber-300 font-bold bg-amber-500/10 border border-amber-500/20 px-2.5 py-1 rounded-lg mb-2 flex items-center gap-1.5">
-                                                                                        <span className="shrink-0 text-amber-400">💬</span>
+                                                                                    <div className="text-xs text-amber-900 font-bold bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-lg mb-2 flex items-center gap-1.5">
+                                                                                        <span className="shrink-0 text-amber-600">💬</span>
                                                                                         <span className="truncate">지연사유: {cntr.remark.trim()}</span>
                                                                                     </div>
                                                                                 )}
-                                                                                <div className="space-y-1 pl-1.5 border-l border-white/5">
-                                                                                    {cntr.products.map((p: any, idx: number) => (
-                                                                                        <div key={idx} className="text-[10px] text-slate-500 font-bold truncate">
-                                                                                            - [{p.division}] {p.name} {p.qty.toLocaleString()}개
-                                                                                        </div>
-                                                                                    ))}
-                                                                                </div>
+                                                                                {reportViewMode === 'full' && (
+                                                                                    <div className="space-y-1 pt-1.5 border-t border-slate-200/80 pl-1">
+                                                                                        {cntr.products.map((p: any, idx: number) => (
+                                                                                            <div key={idx} className="text-xs text-slate-600 font-medium flex items-center justify-between gap-1.5 leading-snug">
+                                                                                                <span className="break-words min-w-0 flex-1">- [{p.division}] {p.name}</span>
+                                                                                                <span className="font-bold text-slate-800 shrink-0">{p.qty.toLocaleString()}개</span>
+                                                                                            </div>
+                                                                                        ))}
+                                                                                    </div>
+                                                                                )}
                                                                             </div>
                                                                         );
                                                                     })}
@@ -2055,80 +2346,110 @@ export default function Home({ user }: { user: SessionUser }) {
                                         })}
                                     </div>
                                     ) : (
-                                    /* 근무자 간소화 뷰 */
-                                    <div className="space-y-3">
-                                        {reportData.flatMap((dateGroup: any) =>
-                                            dateGroup.uploaders.flatMap((upGroup: any) =>
-                                                upGroup.containers.map((cntr: any) => {
-                                                    const totalQty = cntr.products.reduce((sum: number, p: any) => sum + p.qty, 0);
-                                                    return (
-                                                        <div key={cntr.cntrNo} className="bg-white/5 border border-white/5 rounded-2xl p-4 hover:bg-white/10 transition-all">
-                                                            <div className="flex items-center justify-between gap-2 mb-2">
-                                                                <span className="text-[13px] font-black text-slate-100 uppercase">{cntr.cntrNo}</span>
-                                                                {cntr.startTimeStr && cntr.endTimeStr && (
-                                                                    <span className="text-sky-300 font-black text-[11px] bg-sky-500/10 px-2 py-0.5 rounded-lg border border-sky-500/20 shrink-0">
-                                                                        {cntr.durationMinutes || 45}분 ({cntr.startTimeStr}~{cntr.endTimeStr})
-                                                                    </span>
-                                                                )}
-                                                            </div>
-                                                            <div className="text-[11px] text-slate-400 font-bold mb-1">
-                                                                {cntr.products.length}모델, {totalQty.toLocaleString()}개
-                                                            </div>
-                                                            {cntr.remark && cntr.remark.trim() && (
-                                                                <div className="text-[11px] text-amber-300 font-bold bg-amber-500/10 border border-amber-500/20 px-2.5 py-1 rounded-lg mt-2 flex items-center gap-1.5">
-                                                                    <span className="shrink-0 text-amber-400">💬</span>
-                                                                    <span>지연사유: {cntr.remark.trim()}</span>
+                                    /* 근무자 작업 내역 뷰 */
+                                    <div className="space-y-4">
+                                        {reportData.map((dateGroup: any) => (
+                                            <div key={dateGroup.dateStr} className="bg-slate-50 border border-slate-200 rounded-xl md:rounded-2xl p-2.5 sm:p-3.5 shadow-sm space-y-3">
+                                                <div className="flex items-center justify-between pb-2 border-b border-slate-200">
+                                                    <span className="text-xs font-black text-slate-800 flex items-center gap-1.5">
+                                                        <Calendar className="w-3.5 h-3.5 text-sky-600" />
+                                                        {dateGroup.dateStr} 작업 분량
+                                                    </span>
+                                                </div>
+                                                <div className="space-y-3">
+                                                    {dateGroup.uploaders.flatMap((upGroup: any) =>
+                                                        upGroup.containers.map((cntr: any) => {
+                                                            const totalQty = cntr.products.reduce((sum: number, p: any) => sum + p.qty, 0);
+                                                            return (
+                                                                <div key={cntr.cntrNo} className="bg-white border border-slate-200 rounded-lg md:rounded-xl p-2.5 sm:p-3.5 shadow-sm space-y-2">
+                                                                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                                                                        <span className={`text-sm font-black uppercase tracking-wide ${getCarrierColor(cntr.transporter)}`}>{cntr.cntrNo}</span>
+                                                                        {cntr.startTimeStr && cntr.endTimeStr && (
+                                                                            <span className="text-sky-900 font-bold text-xs bg-sky-50 px-2 py-0.5 rounded-md border border-sky-200 shrink-0">
+                                                                                {cntr.durationMinutes || 45}분 ({cntr.startTimeStr}~{cntr.endTimeStr})
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+                                                                    
+                                                                    <div className="text-xs text-slate-700 font-bold flex items-center flex-wrap gap-1">
+                                                                        <span>{cntr.products.length}모델, {totalQty.toLocaleString()}개</span>
+                                                                        {cntr.adminComment && (
+                                                                            <span className="text-rose-600 font-black ml-1 inline-flex items-center">
+                                                                                (&nbsp;<span className="text-slate-900 font-bold">{cntr.adminComment}</span>&nbsp;)
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+
+                                                                    {/* 상세 제품 리스트 */}
+                                                                    <div className="pt-2 border-t border-slate-100 space-y-1 pl-1">
+                                                                        {cntr.products.map((p: any, idx: number) => (
+                                                                            <div key={idx} className="text-xs text-slate-600 font-medium flex items-center justify-between gap-2">
+                                                                                <span className="break-words min-w-0 flex-1 leading-snug">- [{p.division}] {p.name}</span>
+                                                                                <span className="font-bold text-slate-800 shrink-0">{p.qty.toLocaleString()}개</span>
+                                                                            </div>
+                                                                        ))}
+                                                                    </div>
+
+                                                                    {cntr.remark && cntr.remark.trim() && (
+                                                                        <div className="text-xs text-amber-900 font-bold bg-amber-50 border border-amber-200 px-2.5 py-1.5 rounded-lg mt-2 flex items-center gap-1.5">
+                                                                            <span className="shrink-0 text-amber-600">💬</span>
+                                                                            <span className="truncate">지연사유: {cntr.remark.trim()}</span>
+                                                                        </div>
+                                                                    )}
                                                                 </div>
-                                                            )}
-                                                        </div>
-                                                    );
-                                                })
-                                            )
-                                        )}
+                                                            );
+                                                        })
+                                                    )}
+                                                </div>
+                                            </div>
+                                        ))}
                                     </div>
                                     )
                                 ) : (
-                                    <div className="font-mono text-xs md:text-sm leading-relaxed text-slate-200 select-all whitespace-pre-wrap">
+                                    <div className="font-mono text-xs md:text-sm leading-relaxed text-slate-700 select-all whitespace-pre-wrap">
                                         {reportText}
                                     </div>
                                 )}
                             </div>
 
-                            <div className="flex flex-wrap gap-2.5 mt-6 shrink-0">
-                                {isAdmin && (<button
-                                    onClick={handleCopyReport}
-                                    disabled={isReportGenerating || !reportText}
-                                    className={`flex-1 py-3.5 px-4 rounded-2xl font-bold text-xs md:text-sm transition-all shadow-lg flex items-center justify-center gap-2 cursor-pointer ${
-                                        isCopied
-                                            ? 'bg-emerald-500 text-white shadow-emerald-500/20'
-                                            : 'bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 hover:bg-emerald-500 hover:text-white'
-                                    }`}
-                                >
-                                    {isCopied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                                    {isCopied ? '복사 완료!' : '📋 1초 텍스트 복사'}
-                                </button>)}
+                            <div className="flex flex-wrap items-center justify-end gap-2 mt-3 shrink-0">
+                                {isAdmin && (
+                                    <button
+                                        onClick={handleCopyReport}
+                                        disabled={isReportGenerating || !reportText}
+                                        className={`py-2.5 px-4 rounded-xl font-bold text-xs md:text-sm transition-all shadow-sm flex items-center gap-2 cursor-pointer disabled:opacity-50 ${
+                                            isCopied
+                                                ? 'bg-emerald-600 text-white'
+                                                : 'bg-slate-100 border border-slate-300 text-slate-700 hover:bg-slate-200'
+                                        }`}
+                                    >
+                                        {isCopied ? <Check className="w-4 h-4 text-emerald-100" /> : <Copy className="w-4 h-4 text-slate-500" />}
+                                        {isCopied ? '복사 완료!' : '📋 텍스트 복사'}
+                                    </button>
+                                )}
 
                                 {isAdmin && (
-                                <button
-                                    onClick={handleDownloadReport}
-                                    disabled={isReportGenerating || !reportText}
-                                    className="py-3.5 px-5 rounded-2xl bg-white/5 border border-white/10 hover:bg-white/10 text-slate-300 hover:text-white font-bold text-xs md:text-sm transition-all flex items-center gap-2 cursor-pointer"
-                                >
-                                    <Download className="w-4 h-4" />
-                                    .txt 파일 저장
-                                </button>
+                                    <button
+                                        onClick={handleDownloadReportImage}
+                                        disabled={isReportGenerating || isExportingImage || !reportData || reportData.length === 0}
+                                        className="py-2.5 px-4 md:px-5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs md:text-sm transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50 shadow-md"
+                                    >
+                                        {isExportingImage ? <Loader2 className="w-4 h-4 animate-spin text-white" /> : <Download className="w-4 h-4" />}
+                                        {isExportingImage ? '이미지 생성 중...' : '🖼️ 이미지 저장 (.png)'}
+                                    </button>
                                 )}
 
                                 <button
                                     onClick={() => setIsReportOpen(false)}
-                                    className="py-3.5 px-5 rounded-2xl bg-white/5 hover:bg-white/10 text-slate-400 font-bold text-xs md:text-sm transition-all cursor-pointer"
+                                    className="py-2.5 px-4 rounded-xl bg-slate-100 border border-slate-300 hover:bg-slate-200 text-slate-700 font-bold text-xs md:text-sm transition-all cursor-pointer"
                                 >
                                     닫기
                                 </button>
                             </div>
                         </motion.div>
                     </div>
-                )}
+                    );
+                })()}
             </AnimatePresence>
 
             <PhotoGallery user={user} isOpen={isGalleryOpen} onClose={() => { setIsGalleryOpen(false); refreshJobs(); loadTeamProgress(); }} />

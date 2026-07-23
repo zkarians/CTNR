@@ -76,8 +76,19 @@ export async function updateTeam(id: number, name: string): Promise<{ success: b
 
         const client = await pool.connect();
         try {
+            const oldRes = await client.query(`SELECT name FROM teams WHERE id = $1`, [id]);
+            const oldName = oldRes.rows[0]?.name;
+
             const res = await client.query(`UPDATE teams SET name = $1 WHERE id = $2`, [trimmed, id]);
             if (res.rowCount === 0) return { success: false, error: "조를 찾을 수 없습니다." };
+
+            if (oldName) {
+                const cleanOld = oldName.replace(/\s*\([^)]*\)/g, '').trim();
+                await client.query(
+                    `UPDATE users SET team_name = $1 WHERE team_name = $2 OR team_name = $3 OR team_name ILIKE $4`,
+                    [trimmed, oldName, cleanOld, `${cleanOld}(%`]
+                );
+            }
             return { success: true };
         } finally {
             client.release();
@@ -319,7 +330,9 @@ export async function generateWorkReport(filters: JobFilters): Promise<{ success
                     COALESCE(MAX(p.uploaded_at), MAX(j.saved_at)) as work_time,
                     COALESCE(MAX(p.work_duration_minutes), 45) as duration_minutes,
                     COALESCE(MIN(p.uploaded_at), MAX(j.saved_at)) as first_uploaded_at,
-                    MAX(p.remark) as remark
+                    MAX(p.remark) as remark,
+                    MAX(r.transporter) as transporter,
+                    MAX(cc.admin_comment) as admin_comment
                 FROM container_results r
                 JOIN container_jobs j ON r.job_id = j.id
                 LEFT JOIN (
@@ -336,6 +349,7 @@ export async function generateWorkReport(filters: JobFilters): Promise<{ success
                     GROUP BY job_id, cntr_no
                 ) p ON p.job_id = j.id AND (p.cntr_no = r.cntr_no OR (r.cntr_no IS NULL AND p.cntr_no IS NULL))
                 LEFT JOIN teams t ON p.team_id = t.id
+                LEFT JOIN container_comments cc ON cc.cntr_no = COALESCE(r.cntr_no, j.job_name, '미지정')
                 ${whereSql}
                 GROUP BY COALESCE(r.cntr_no, j.job_name, '미지정'), r.prod_name, r.division, t.name
                 ORDER BY team_name, cntr_no, r.prod_name
@@ -355,6 +369,8 @@ export async function generateWorkReport(filters: JobFilters): Promise<{ success
                 durationMinutes: number; 
                 firstUploadedAt: Date;
                 remark: string;
+                transporter: string;
+                adminComment: string;
                 products: { name: string; qty: number; division: string }[] 
             }>>>();
 
@@ -372,6 +388,8 @@ export async function generateWorkReport(filters: JobFilters): Promise<{ success
                 const durationMinutes = Number(row.duration_minutes) || 45;
                 const firstUploadedAt = row.first_uploaded_at ? new Date(row.first_uploaded_at) : workTime;
                 const remark = row.remark || '';
+                const transporter = row.transporter || '';
+                const adminComment = row.admin_comment || '';
                 const workDateStr = getWorkDateString(workTime);
 
                 if (!dateMap.has(workDateStr)) {
@@ -385,10 +403,12 @@ export async function generateWorkReport(filters: JobFilters): Promise<{ success
                 const cntrMap = teamMap.get(teamName)!;
 
                 if (!cntrMap.has(cntrNo)) {
-                    cntrMap.set(cntrNo, { isCompleted, division, durationMinutes, firstUploadedAt, remark, products: [] });
+                    cntrMap.set(cntrNo, { isCompleted, division, durationMinutes, firstUploadedAt, remark, transporter, adminComment, products: [] });
                 }
                 const cntrData = cntrMap.get(cntrNo)!;
                 if (remark && !cntrData.remark) cntrData.remark = remark;
+                if (transporter && !cntrData.transporter) cntrData.transporter = transporter;
+                if (adminComment && !cntrData.adminComment) cntrData.adminComment = adminComment;
                 cntrData.products.push({ name: prodName, qty, division });
             }
 
@@ -432,7 +452,8 @@ export async function generateWorkReport(filters: JobFilters): Promise<{ success
                         const modelCount = cntrData.products.length;
                         const totalQty = cntrData.products.reduce((sum, p) => sum + p.qty, 0);
                         const breakNote = cntrData.hasBreak ? ' *휴식/식사포함*' : '';
-                        upLines.push(`${cntrData.cntrNo} (${modelCount}모델, ${totalQty.toLocaleString()}개) [${cntrData.durationMinutes}분: ${cntrData.startTimeStr}~${cntrData.endTimeStr}${breakNote}]`);
+                        const adminCommentNote = cntrData.adminComment ? ` (${cntrData.adminComment})` : '';
+                        upLines.push(`${cntrData.cntrNo} (${modelCount}모델, ${totalQty.toLocaleString()}개${adminCommentNote}) [${cntrData.durationMinutes}분: ${cntrData.startTimeStr}~${cntrData.endTimeStr}${breakNote}]`);
                         if (cntrData.remark && cntrData.remark.trim()) {
                             upLines.push(`- 💬 지연사유: ${cntrData.remark.trim()}`);
                         }
@@ -472,6 +493,8 @@ export async function generateWorkReport(filters: JobFilters): Promise<{ success
             const reportData = sortedDates.map(dateStr => {
                 const teamMap = dateMap.get(dateStr)!;
                 const teamsList: any[] = [];
+                const carrierCounts: Record<string, number> = {};
+
                 teamMap.forEach((cntrMap, teamName) => {
                     const cntrList = Array.from(cntrMap.entries()).map(([cntrNo, data]) => ({
                         cntrNo,
@@ -480,17 +503,29 @@ export async function generateWorkReport(filters: JobFilters): Promise<{ success
 
                     const timelineList = calculateTeamTimeline(cntrList);
 
-                    const containersList = timelineList.map((cntrData) => ({
-                        cntrNo: cntrData.cntrNo,
-                        isCompleted: cntrData.isCompleted,
-                        division: cntrData.division,
-                        durationMinutes: cntrData.durationMinutes,
-                        startTimeStr: cntrData.startTimeStr,
-                        endTimeStr: cntrData.endTimeStr,
-                        hasBreak: cntrData.hasBreak,
-                        remark: cntrData.remark,
-                        products: cntrData.products
-                    }));
+                    const containersList = timelineList.map((cntrData) => {
+                        const transporter = cntrData.transporter || '기타';
+                        let carrierKey = '기타';
+                        if (transporter.includes('천마')) carrierKey = '천마';
+                        else if (transporter.includes('BNI') || transporter.includes('비엔아이')) carrierKey = 'BNI';
+                        else if (transporter.trim()) carrierKey = transporter.split('(')[0].trim();
+
+                        carrierCounts[carrierKey] = (carrierCounts[carrierKey] || 0) + 1;
+
+                        return {
+                            cntrNo: cntrData.cntrNo,
+                            isCompleted: cntrData.isCompleted,
+                            division: cntrData.division,
+                            durationMinutes: cntrData.durationMinutes,
+                            startTimeStr: cntrData.startTimeStr,
+                            endTimeStr: cntrData.endTimeStr,
+                            hasBreak: cntrData.hasBreak,
+                            remark: cntrData.remark,
+                            transporter: cntrData.transporter,
+                            adminComment: cntrData.adminComment,
+                            products: cntrData.products
+                        };
+                    });
 
                     teamsList.push({
                         teamName,
@@ -499,7 +534,8 @@ export async function generateWorkReport(filters: JobFilters): Promise<{ success
                 });
                 return {
                     dateStr,
-                    uploaders: teamsList
+                    uploaders: teamsList,
+                    carrierCounts
                 };
             });
 
@@ -643,7 +679,29 @@ export async function updateContainerWorkDuration(
         }
     } catch (error: any) {
         console.error("updateContainerWorkDuration Error:", error);
-        return { success: false, error: "작업시간 수정 중 오류가 발생했습니다." };
+        return { success: false, error: `수정 오류: ${error?.message || '알 수 없는 오류'}` };
     }
 }
-
+
+export async function updateContainerAdminComment(
+    cntrNo: string,
+    comment: string
+): Promise<{ success: boolean; error?: string }> {
+    try {
+        const client = await pool.connect();
+        try {
+            await client.query(`
+                INSERT INTO container_comments (cntr_no, admin_comment, updated_at)
+                VALUES ($1, $2, NOW())
+                ON CONFLICT (cntr_no)
+                DO UPDATE SET admin_comment = EXCLUDED.admin_comment, updated_at = NOW()
+            `, [cntrNo, comment]);
+            return { success: true };
+        } finally {
+            client.release();
+        }
+    } catch (error: any) {
+        console.error("updateContainerAdminComment Error:", error);
+        return { success: false, error: `코멘트 저장 오류: ${error?.message || '알 수 없는 오류'}` };
+    }
+}

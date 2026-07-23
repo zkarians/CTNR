@@ -1,3 +1,19 @@
+
+function getLocalDateString(d: Date): string {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+function getWorkDateString(d: Date = new Date()): string {
+    const workDate = new Date(d);
+    if (workDate.getHours() < 19) {
+        workDate.setDate(workDate.getDate() - 1);
+    }
+    return getLocalDateString(workDate);
+}
+
 import { NextRequest, NextResponse } from 'next/server';
 import path from 'path';
 import fs from 'fs';
@@ -26,6 +42,7 @@ export async function GET(req: NextRequest) {
 
         const { searchParams } = new URL(req.url);
         const cntrNo = searchParams.get('cntrNo');
+        const workDate = searchParams.get('workDate');
         if (!cntrNo) {
             return NextResponse.json({ error: '컨테이너 번호(cntrNo)가 누락되었습니다.' }, { status: 400 });
         }
@@ -41,7 +58,10 @@ export async function GET(req: NextRequest) {
             [cntrNo]
         );
 
-        const photos = dbRes.rows;
+        const photos = dbRes.rows.filter(photo => {
+            if (!workDate) return true;
+            return getWorkDateString(new Date(photo.uploaded_at)) === workDate;
+        });
         const hashMap: { [hash: string]: typeof photos } = {};
 
         for (const photo of photos) {
@@ -98,24 +118,27 @@ export async function POST(req: NextRequest) {
         const { searchParams } = new URL(req.url);
         const singleCntrNo = searchParams.get('cntrNo');
 
-        let cntrNos: string[] = [];
+        let foldersToClean: { cntrNo: string; workDate?: string | null }[] = [];
 
         // Try reading body for bulk action
         try {
             const body = await req.json();
-            if (body && Array.isArray(body.cntrNos)) {
-                cntrNos = body.cntrNos.map((c: string) => String(c).trim()).filter(Boolean);
+            if (body && Array.isArray(body.folders)) {
+                foldersToClean = body.folders;
+            } else if (body && Array.isArray(body.cntrNos)) {
+                foldersToClean = body.cntrNos.map((c: string) => ({ cntrNo: String(c).trim() }));
             }
         } catch (e) {
             // No body or invalid JSON, fall back to query param
         }
 
-        if (cntrNos.length === 0 && singleCntrNo) {
-            cntrNos = [singleCntrNo.trim()];
+        if (foldersToClean.length === 0 && singleCntrNo) {
+            const workDate = searchParams.get('workDate');
+            foldersToClean = [{ cntrNo: singleCntrNo.trim(), workDate }];
         }
 
-        if (cntrNos.length === 0) {
-            return NextResponse.json({ error: '중복 정리를 진행할 컨테이너 번호가 지정되지 않았습니다.' }, { status: 400 });
+        if (foldersToClean.length === 0) {
+            return NextResponse.json({ error: '중복 정리를 진행할 컨테이너 폴더가 지정되지 않았습니다.' }, { status: 400 });
         }
 
         const uploadsDir = process.env.UPLOAD_DIR || path.join(process.cwd(), 'uploads');
@@ -123,17 +146,20 @@ export async function POST(req: NextRequest) {
 
         const client = await pool.connect();
         try {
-            for (const cntrNo of cntrNos) {
+            for (const folder of foldersToClean) {
                 // Fetch active photos sorted by upload time
                 const dbRes = await client.query(
-                    `SELECT p.id, p.photo_path
+                    `SELECT p.id, p.photo_path, p.uploaded_at
                      FROM container_photos p
                      WHERE p.cntr_no = $1 AND (p.is_deleted = false OR p.is_deleted IS NULL)
                      ORDER BY p.uploaded_at ASC`,
-                    [cntrNo]
+                    [folder.cntrNo]
                 );
 
-                const photos = dbRes.rows;
+                const photos = dbRes.rows.filter(photo => {
+                    if (!folder.workDate) return true;
+                    return getWorkDateString(new Date(photo.uploaded_at)) === folder.workDate;
+                });
                 const hashMap: { [hash: string]: string[] } = {};
 
                 for (const photo of photos) {

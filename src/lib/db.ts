@@ -42,8 +42,14 @@ export function getPool(): Pool {
             );
             ALTER TABLE container_photos ADD COLUMN IF NOT EXISTS team_id INTEGER REFERENCES teams(id);
             ALTER TABLE container_photos ADD COLUMN IF NOT EXISTS work_duration_minutes INTEGER DEFAULT 45;
+
+            CREATE TABLE IF NOT EXISTS container_comments (
+                cntr_no VARCHAR(100) PRIMARY KEY,
+                admin_comment TEXT,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
         `).then(() => {
-            console.log("DB Migration: teams table, team_id, work_duration_minutes ensured.");
+            console.log("DB Migration: teams and container_comments table ensured.");
         }).catch(err => {
             console.error("DB Migration (teams/duration) Error:", err);
         });

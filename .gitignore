@@ -51,6 +51,8 @@ next-env.d.ts
 !next-env.d.ts
 !postcss.config.js
 !tailwind.config.ts
+*.bak*
+scratch/
 
 # debug scripts (optional: you might want to keep some, but usually they are for local testing)
 debug*.ts
@@ -60,3 +62,8 @@ inspect*.js
 test*.js
 verify*.js
 get*.js
+
+# uploads and backups
+/uploads/
+/backup_src_20260724/
+
