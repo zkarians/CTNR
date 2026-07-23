@@ -301,6 +301,98 @@ export default function Home({ user }: { user: SessionUser }) {
     const [editingCommentCntr, setEditingCommentCntr] = useState<string | null>(null);
     const [commentInput, setCommentInput] = useState<string>('');
     const [isExportingImage, setIsExportingImage] = useState(false);
+    
+    // Manual Report Entry States
+    const [isAddManualOpen, setIsAddManualOpen] = useState(false);
+    const [manualTeamName, setManualTeamName] = useState('1조(BNI)');
+    const [manualCntrNo, setManualCntrNo] = useState('');
+    const [manualCategory, setManualCategory] = useState('');
+    const [manualDuration, setManualDuration] = useState('60');
+    const [manualTimeRange, setManualTimeRange] = useState('');
+    const [manualRemark, setManualRemark] = useState('');
+    const [manualProducts, setManualProducts] = useState<Array<{ division: string; name: string; qty: number }>>([
+        { division: 'DFZ', name: '', qty: 0 }
+    ]);
+
+    const handleAddManualSubmit = () => {
+        if (!manualCntrNo.trim()) {
+            alert("컨테이너 번호를 입력해주세요.");
+            return;
+        }
+        const validProducts = manualProducts.filter(p => p.name.trim() && p.qty > 0);
+        if (validProducts.length === 0) {
+            alert("최소 1개 이상의 제품 모델명과 수량을 입력해 주세요.");
+            return;
+        }
+
+        const duration = parseInt(manualDuration) || 45;
+        const timeStr = manualTimeRange.trim() 
+            ? `${duration}분 (${manualTimeRange.trim()})`
+            : `${duration}분`;
+
+        const totalQty = validProducts.reduce((sum, p) => sum + p.qty, 0);
+        const modelSummaryStr = `${validProducts.length}모델, ${totalQty.toLocaleString()}개${manualCategory.trim() ? ` ( ${manualCategory.trim()} )`: ''}`;
+
+        const newContainer = {
+            cntrNo: manualCntrNo.trim().toUpperCase(),
+            isCompleted: true,
+            division: validProducts[0].division || 'DFZ',
+            durationMinutes: duration,
+            startTimeStr: manualTimeRange ? manualTimeRange.split('~')[0]?.trim() || '' : '',
+            endTimeStr: manualTimeRange ? manualTimeRange.split('~')[1]?.trim() || '' : '',
+            workTimeStr: timeStr,
+            hasBreak: false,
+            modelCount: validProducts.length,
+            totalQty: totalQty,
+            modelSummaryStr: modelSummaryStr,
+            lastRemark: manualRemark.trim() ? `지연사유: ${manualRemark.trim()}` : '',
+            transporter: manualTeamName.includes('천마') ? '천마' : 'BNI',
+            adminComment: manualCategory.trim(),
+            products: validProducts.map(p => ({
+                division: p.division.trim() || 'DFZ',
+                name: p.name.trim().toUpperCase(),
+                qty: p.qty
+            }))
+        };
+
+        setReportData((prevData: any[]) => {
+            if (!prevData || prevData.length === 0) {
+                return [{
+                    date: reportStartDate || getLocalDateString(new Date()),
+                    uploaders: [{
+                        teamName: manualTeamName,
+                        containers: [newContainer]
+                    }]
+                }];
+            }
+            const nextData = JSON.parse(JSON.stringify(prevData));
+            const targetDateGroup = nextData[0];
+            let teamGroup = targetDateGroup.uploaders.find((u: any) => isSameTeam(u.teamName, manualTeamName));
+            if (!teamGroup) {
+                teamGroup = { teamName: manualTeamName, containers: [] };
+                targetDateGroup.uploaders.push(teamGroup);
+            }
+            teamGroup.containers.push(newContainer);
+            return nextData;
+        });
+
+        setReportText((prevText: string) => {
+            let additionText = `\n${newContainer.cntrNo} (${newContainer.modelSummaryStr}) [${newContainer.workTimeStr}]\n`;
+            if (manualRemark.trim()) {
+                additionText += `- 💬 지연사유: ${manualRemark.trim()}\n`;
+            }
+            for (const p of validProducts) {
+                additionText += `- [${p.division || 'DFZ'}] ${p.name.toUpperCase()} ${p.qty}개\n`;
+            }
+            return (prevText || '') + additionText;
+        });
+
+        setIsAddManualOpen(false);
+        setManualCntrNo('');
+        setManualCategory('');
+        setManualRemark('');
+        setManualProducts([{ division: 'DFZ', name: '', qty: 0 }]);
+    };
 
     const handleSaveComment = async (cntrNo: string) => {
         setEditingCommentCntr(null);
@@ -2175,6 +2267,15 @@ export default function Home({ user }: { user: SessionUser }) {
                                         ⚡ 요약 보기
                                     </button>
                                 </div>
+
+                                <button
+                                    onClick={() => setIsAddManualOpen(true)}
+                                    className="px-3.5 py-1.5 bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white text-xs font-black rounded-xl transition-all shadow-md cursor-pointer flex items-center gap-1.5 shrink-0"
+                                    title="보고서 전용 수동 항목 추가"
+                                >
+                                    <Plus className="w-4 h-4" />
+                                    <span>수동 항목 추가</span>
+                                </button>
                             </div>)}
 
                             <div ref={reportCaptureRef} className="overflow-y-auto flex-1 min-h-0 bg-white border border-slate-200 rounded-xl md:rounded-2xl p-2 sm:p-4 md:p-5 custom-scrollbar text-slate-900">
