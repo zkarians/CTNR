@@ -70,6 +70,8 @@ export interface Job {
     transporter?: string;
     work_date?: string;
     photo_count?: number;
+    work_duration_minutes?: number;
+    remark?: string;
 }
 
 export interface JobFilters {
@@ -95,5 +97,10 @@ export interface UserAccount {
     name: string;
     role: string;
     isApproved: boolean;
+}
+
+export interface Team {
+    id: number;
+    name: string;
 }
 

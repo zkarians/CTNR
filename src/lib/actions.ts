@@ -8,17 +8,110 @@ import {
     pool,
     resetPool
 } from "./db";
-import { Product, Job, JobFilters, DbConfig } from "./types";
+import { Product, Job, JobFilters, DbConfig, Team } from "./types";
+import { calculateTeamTimeline } from "./timeline";
 import {
     updatePassword as updatePass,
     getAllUsers as fetchAllUsers,
     createUserAccount,
     updateUserAccount,
     deleteUserAccount,
-    deleteMultipleUserAccounts
+    deleteMultipleUserAccounts,
+    selectTeam as selectTeamInSession,
+    getSession
 } from "./auth";
 
 export { fetchAllUsers, createUserAccount, updateUserAccount, deleteUserAccount, deleteMultipleUserAccounts };
+
+// ────────────────────────────────────────────────────────
+// 조(Team) 관련 서버 액션
+// ────────────────────────────────────────────────────────
+
+export async function fetchTeams(): Promise<Team[]> {
+    try {
+        const client = await pool.connect();
+        try {
+            const res = await client.query(`SELECT id, name FROM teams ORDER BY id ASC`);
+            return res.rows;
+        } finally {
+            client.release();
+        }
+    } catch (error: any) {
+        console.error("fetchTeams Error:", error);
+        return [];
+    }
+}
+
+export async function createTeam(name: string): Promise<{ success: boolean; error?: string }> {
+    try {
+        const session = await getSession();
+        if (!session || (session.role.toUpperCase() !== 'ADMIN' && session.role.toUpperCase() !== 'MANAGER')) {
+            return { success: false, error: "관리자 권한이 필요합니다." };
+        }
+        const trimmed = name.trim();
+        if (!trimmed) return { success: false, error: "조 이름을 입력해주세요." };
+
+        const client = await pool.connect();
+        try {
+            await client.query(`INSERT INTO teams (name) VALUES ($1)`, [trimmed]);
+            return { success: true };
+        } finally {
+            client.release();
+        }
+    } catch (error: any) {
+        if (error.code === '23505') return { success: false, error: "이미 존재하는 조 이름입니다." };
+        console.error("createTeam Error:", error);
+        return { success: false, error: "조 추가 중 오류가 발생했습니다." };
+    }
+}
+
+export async function updateTeam(id: number, name: string): Promise<{ success: boolean; error?: string }> {
+    try {
+        const session = await getSession();
+        if (!session || (session.role.toUpperCase() !== 'ADMIN' && session.role.toUpperCase() !== 'MANAGER')) {
+            return { success: false, error: "관리자 권한이 필요합니다." };
+        }
+        const trimmed = name.trim();
+        if (!trimmed) return { success: false, error: "조 이름을 입력해주세요." };
+
+        const client = await pool.connect();
+        try {
+            const res = await client.query(`UPDATE teams SET name = $1 WHERE id = $2`, [trimmed, id]);
+            if (res.rowCount === 0) return { success: false, error: "조를 찾을 수 없습니다." };
+            return { success: true };
+        } finally {
+            client.release();
+        }
+    } catch (error: any) {
+        if (error.code === '23505') return { success: false, error: "이미 존재하는 조 이름입니다." };
+        console.error("updateTeam Error:", error);
+        return { success: false, error: "조 수정 중 오류가 발생했습니다." };
+    }
+}
+
+export async function deleteTeam(id: number): Promise<{ success: boolean; error?: string }> {
+    try {
+        const session = await getSession();
+        if (!session || (session.role.toUpperCase() !== 'ADMIN' && session.role.toUpperCase() !== 'MANAGER')) {
+            return { success: false, error: "관리자 권한이 필요합니다." };
+        }
+        const client = await pool.connect();
+        try {
+            await client.query(`UPDATE container_photos SET team_id = NULL WHERE team_id = $1`, [id]);
+            await client.query(`DELETE FROM teams WHERE id = $1`, [id]);
+            return { success: true };
+        } finally {
+            client.release();
+        }
+    } catch (error: any) {
+        console.error("deleteTeam Error:", error);
+        return { success: false, error: "조 삭제 중 오류가 발생했습니다." };
+    }
+}
+
+export async function selectTeam(teamId: number): Promise<{ success: boolean; error?: string }> {
+    return selectTeamInSession(teamId);
+}
 
 
 export async function getDbConfig(): Promise<DbConfig> {
@@ -221,26 +314,31 @@ export async function generateWorkReport(filters: JobFilters): Promise<{ success
                     r.prod_name,
                     r.division,
                     SUM(COALESCE(r.qty_plan, 0)) as qty,
-                    COALESCE(u.name, u.username, '미지정 업로더') as uploader_name,
+                    COALESCE(t.name, '미지정 조') as team_name,
                     BOOL_OR(p.is_completed) as is_completed,
-                    COALESCE(MAX(p.uploaded_at), MAX(j.saved_at)) as work_time
+                    COALESCE(MAX(p.uploaded_at), MAX(j.saved_at)) as work_time,
+                    COALESCE(MAX(p.work_duration_minutes), 45) as duration_minutes,
+                    COALESCE(MIN(p.uploaded_at), MAX(j.saved_at)) as first_uploaded_at,
+                    MAX(p.remark) as remark
                 FROM container_results r
                 JOIN container_jobs j ON r.job_id = j.id
                 LEFT JOIN (
                     SELECT 
                         job_id, 
                         cntr_no, 
-                        MAX(uploaded_by::text) as uploaded_by,
+                        MAX(team_id) as team_id,
+                        MAX(work_duration_minutes) as work_duration_minutes,
                         BOOL_OR(is_completed) as is_completed,
-                        MAX(uploaded_at) as uploaded_at
+                        MIN(uploaded_at) as uploaded_at,
+                        MAX(remark) as remark
                     FROM container_photos
                     WHERE (is_deleted IS NOT TRUE)
                     GROUP BY job_id, cntr_no
                 ) p ON p.job_id = j.id AND (p.cntr_no = r.cntr_no OR (r.cntr_no IS NULL AND p.cntr_no IS NULL))
-                LEFT JOIN "User" u ON p.uploaded_by = u.id::text
+                LEFT JOIN teams t ON p.team_id = t.id
                 ${whereSql}
-                GROUP BY COALESCE(r.cntr_no, j.job_name, '미지정'), r.prod_name, r.division, u.name, u.username
-                ORDER BY uploader_name, cntr_no, r.prod_name
+                GROUP BY COALESCE(r.cntr_no, j.job_name, '미지정'), r.prod_name, r.division, t.name
+                ORDER BY team_name, cntr_no, r.prod_name
             `;
 
             const res = await client.query(query, params);
@@ -250,12 +348,19 @@ export async function generateWorkReport(filters: JobFilters): Promise<{ success
                 return { success: false, error: '조건에 일치하는 작업 내역이 없습니다.' };
             }
 
-            // Group by workDate -> uploader_name -> cntr_no -> products & completion
-            const dateMap = new Map<string, Map<string, Map<string, { isCompleted: boolean; division: string; products: { name: string; qty: number; division: string }[] }>>>();
+            // Group by workDate -> teamName -> cntr_no -> products & completion & timeline info
+            const dateMap = new Map<string, Map<string, Map<string, { 
+                isCompleted: boolean; 
+                division: string; 
+                durationMinutes: number; 
+                firstUploadedAt: Date;
+                remark: string;
+                products: { name: string; qty: number; division: string }[] 
+            }>>>();
 
             for (const row of rows) {
-                const uploader = row.uploader_name;
-                if (!uploader || uploader === '미지정 업로더') {
+                const teamName = row.team_name;
+                if (!teamName || teamName === '미지정 조') {
                     continue;
                 }
                 const cntrNo = row.cntr_no;
@@ -264,27 +369,31 @@ export async function generateWorkReport(filters: JobFilters): Promise<{ success
                 const qty = Math.round(Number(row.qty)) || 0;
                 const isCompleted = !!row.is_completed;
                 const workTime = row.work_time ? new Date(row.work_time) : new Date();
+                const durationMinutes = Number(row.duration_minutes) || 45;
+                const firstUploadedAt = row.first_uploaded_at ? new Date(row.first_uploaded_at) : workTime;
+                const remark = row.remark || '';
                 const workDateStr = getWorkDateString(workTime);
 
                 if (!dateMap.has(workDateStr)) {
                     dateMap.set(workDateStr, new Map());
                 }
-                const uploaderMap = dateMap.get(workDateStr)!;
+                const teamMap = dateMap.get(workDateStr)!;
 
-                if (!uploaderMap.has(uploader)) {
-                    uploaderMap.set(uploader, new Map());
+                if (!teamMap.has(teamName)) {
+                    teamMap.set(teamName, new Map());
                 }
-                const cntrMap = uploaderMap.get(uploader)!;
+                const cntrMap = teamMap.get(teamName)!;
 
                 if (!cntrMap.has(cntrNo)) {
-                    cntrMap.set(cntrNo, { isCompleted, division, products: [] });
+                    cntrMap.set(cntrNo, { isCompleted, division, durationMinutes, firstUploadedAt, remark, products: [] });
                 }
                 const cntrData = cntrMap.get(cntrNo)!;
+                if (remark && !cntrData.remark) cntrData.remark = remark;
                 cntrData.products.push({ name: prodName, qty, division });
             }
 
             if (dateMap.size === 0) {
-                return { success: false, error: '업로더가 지정된 작업 데이터가 없습니다.' };
+                return { success: false, error: '조가 지정된 작업 데이터가 없습니다.' };
             }
 
             const sortedDates = Array.from(dateMap.keys()).sort((a, b) => b.localeCompare(a));
@@ -294,9 +403,9 @@ export async function generateWorkReport(filters: JobFilters): Promise<{ success
             sortedDates.forEach(dateStr => {
                 lines.push(`📅 ${dateStr} 작업 분량`);
                 
-                const uploaderMap = dateMap.get(dateStr)!;
+                const teamMap = dateMap.get(dateStr)!;
                 let totalContainersSum = 0;
-                uploaderMap.forEach(cntrMap => {
+                teamMap.forEach(cntrMap => {
                     totalContainersSum += cntrMap.size;
                 });
 
@@ -304,32 +413,44 @@ export async function generateWorkReport(filters: JobFilters): Promise<{ success
                 lines.push(`총합계: ${dayNum}일 ${totalContainersSum}개 작업완료`);
                 lines.push(``);
 
-                const uploadersList: { name: string; lines: string[] }[] = [];
+                const teamsList: { name: string; lines: string[] }[] = [];
 
-                uploaderMap.forEach((cntrMap, uploader) => {
+                teamMap.forEach((cntrMap, teamName) => {
                     const upLines = [];
                     const totalContainers = cntrMap.size;
-                    upLines.push(`■ ${uploader} (합계 ${totalContainers}개)`);
+                    upLines.push(`■ ${teamName} (합계 ${totalContainers}개)`);
 
-                    cntrMap.forEach((cntrData, cntrNo) => {
+                    // 컨테이너 업로드 순서대로 나열하여 타임라인 산출
+                    const cntrList = Array.from(cntrMap.entries()).map(([cntrNo, data]) => ({
+                        cntrNo,
+                        ...data
+                    })).sort((a, b) => a.firstUploadedAt.getTime() - b.firstUploadedAt.getTime());
+
+                    const timelineList = calculateTeamTimeline(cntrList);
+
+                    timelineList.forEach((cntrData) => {
                         const modelCount = cntrData.products.length;
                         const totalQty = cntrData.products.reduce((sum, p) => sum + p.qty, 0);
-                        upLines.push(`${cntrNo} (${modelCount}모델, ${totalQty.toLocaleString()}개)`);
+                        const breakNote = cntrData.hasBreak ? ' *휴식/식사포함*' : '';
+                        upLines.push(`${cntrData.cntrNo} (${modelCount}모델, ${totalQty.toLocaleString()}개) [${cntrData.durationMinutes}분: ${cntrData.startTimeStr}~${cntrData.endTimeStr}${breakNote}]`);
+                        if (cntrData.remark && cntrData.remark.trim()) {
+                            upLines.push(`- 💬 지연사유: ${cntrData.remark.trim()}`);
+                        }
                         for (const prod of cntrData.products) {
                             upLines.push(`- [${prod.division}] ${prod.name} ${prod.qty.toLocaleString()}개`);
                         }
                         upLines.push(``);
                     });
 
-                    uploadersList.push({
-                        name: uploader,
+                    teamsList.push({
+                        name: teamName,
                         lines: upLines
                     });
                 });
 
                 const chunkSize = 4;
-                for (let i = 0; i < uploadersList.length; i += chunkSize) {
-                    const chunk = uploadersList.slice(i, i + chunkSize);
+                for (let i = 0; i < teamsList.length; i += chunkSize) {
+                    const chunk = teamsList.slice(i, i + chunkSize);
                     const maxLines = Math.max(...chunk.map(up => up.lines.length));
                     
                     chunk.forEach(up => {
@@ -349,26 +470,36 @@ export async function generateWorkReport(filters: JobFilters): Promise<{ success
             });
 
             const reportData = sortedDates.map(dateStr => {
-                const uploaderMap = dateMap.get(dateStr)!;
-                const uploadersList: any[] = [];
-                uploaderMap.forEach((cntrMap, uploader) => {
-                    const containersList: any[] = [];
-                    cntrMap.forEach((cntrData, cntrNo) => {
-                        containersList.push({
-                            cntrNo,
-                            isCompleted: cntrData.isCompleted,
-                            division: cntrData.division,
-                            products: cntrData.products
-                        });
-                    });
-                    uploadersList.push({
-                        uploaderName: uploader,
+                const teamMap = dateMap.get(dateStr)!;
+                const teamsList: any[] = [];
+                teamMap.forEach((cntrMap, teamName) => {
+                    const cntrList = Array.from(cntrMap.entries()).map(([cntrNo, data]) => ({
+                        cntrNo,
+                        ...data
+                    })).sort((a, b) => a.firstUploadedAt.getTime() - b.firstUploadedAt.getTime());
+
+                    const timelineList = calculateTeamTimeline(cntrList);
+
+                    const containersList = timelineList.map((cntrData) => ({
+                        cntrNo: cntrData.cntrNo,
+                        isCompleted: cntrData.isCompleted,
+                        division: cntrData.division,
+                        durationMinutes: cntrData.durationMinutes,
+                        startTimeStr: cntrData.startTimeStr,
+                        endTimeStr: cntrData.endTimeStr,
+                        hasBreak: cntrData.hasBreak,
+                        remark: cntrData.remark,
+                        products: cntrData.products
+                    }));
+
+                    teamsList.push({
+                        teamName,
                         containers: containersList
                     });
                 });
                 return {
                     dateStr,
-                    uploaders: uploadersList
+                    uploaders: teamsList
                 };
             });
 
@@ -385,3 +516,134 @@ export async function generateWorkReport(filters: JobFilters): Promise<{ success
         return { success: false, error: `보고서 생성 오류: ${error?.message || '알 수 없는 오류'}` };
     }
 }
+
+// ────────────────────────────────────────────────────────
+// 팀 작업 진행 현황 산출 (오늘 근무일 기준)
+// ────────────────────────────────────────────────────────
+
+export interface TeamWorkProgress {
+    teamName: string;
+    completedCount: number;
+    totalDurationMinutes: number;
+    startTimeStr: string;
+    endTimeStr: string;
+    lastCntrNo?: string;
+    containers: {
+        cntrNo: string;
+        durationMinutes: number;
+        startTimeStr: string;
+        endTimeStr: string;
+    }[];
+}
+
+export async function fetchTeamWorkProgress(targetWorkDate?: string): Promise<Record<string, TeamWorkProgress>> {
+    try {
+        const client = await pool.connect();
+        try {
+            const query = `
+                SELECT 
+                    COALESCE(t.name, '미지정 조') as team_name,
+                    COALESCE(p.cntr_no, j.job_name, '미지정') as cntr_no,
+                    COALESCE(MAX(p.work_duration_minutes), 45) as duration_minutes,
+                    MIN(p.uploaded_at) as first_uploaded_at
+                FROM container_photos p
+                LEFT JOIN teams t ON p.team_id = t.id
+                LEFT JOIN container_jobs j ON p.job_id = j.id
+                WHERE (p.is_deleted IS NOT TRUE)
+                GROUP BY COALESCE(t.name, '미지정 조'), COALESCE(p.cntr_no, j.job_name, '미지정')
+                ORDER BY first_uploaded_at ASC
+            `;
+
+            const res = await client.query(query);
+            const workDate = targetWorkDate || getWorkDateString(new Date());
+
+            const teamContainersMap = new Map<string, Map<string, { durationMinutes: number; firstUploadedAt: Date }>>();
+
+            for (const row of res.rows) {
+                const uploadedAt = row.first_uploaded_at ? new Date(row.first_uploaded_at) : new Date();
+                if (getWorkDateString(uploadedAt) !== workDate) continue;
+
+                const teamName = row.team_name;
+                const cntrNo = row.cntr_no;
+                const durationMinutes = Number(row.duration_minutes) || 45;
+
+                if (!teamContainersMap.has(teamName)) {
+                    teamContainersMap.set(teamName, new Map());
+                }
+                const cntrMap = teamContainersMap.get(teamName)!;
+                if (!cntrMap.has(cntrNo)) {
+                    cntrMap.set(cntrNo, { durationMinutes, firstUploadedAt: uploadedAt });
+                }
+            }
+
+            const result: Record<string, TeamWorkProgress> = {};
+
+            teamContainersMap.forEach((cntrMap, teamName) => {
+                const cntrList = Array.from(cntrMap.entries()).map(([cntrNo, data]) => ({
+                    cntrNo,
+                    ...data
+                })).sort((a, b) => a.firstUploadedAt.getTime() - b.firstUploadedAt.getTime());
+
+                const timelineList = calculateTeamTimeline(cntrList);
+
+                if (timelineList.length > 0) {
+                    const last = timelineList[timelineList.length - 1];
+                    const totalDuration = timelineList.reduce((sum, c) => sum + c.durationMinutes, 0);
+                    result[teamName] = {
+                        teamName,
+                        completedCount: timelineList.length,
+                        totalDurationMinutes: totalDuration,
+                        startTimeStr: '19:00',
+                        endTimeStr: last.endTimeStr,
+                        lastCntrNo: last.cntrNo,
+                        containers: timelineList.map(c => ({
+                            cntrNo: c.cntrNo,
+                            durationMinutes: c.durationMinutes,
+                            startTimeStr: c.startTimeStr,
+                            endTimeStr: c.endTimeStr,
+                        }))
+                    };
+                }
+            });
+
+            return result;
+        } finally {
+            client.release();
+        }
+    } catch (error: any) {
+        console.error("fetchTeamWorkProgress Error:", error);
+        return {};
+    }
+}
+
+// ────────────────────────────────────────────────────────
+// 기존 등록된 컨테이너의 작업시간 및 메모 수정
+// ────────────────────────────────────────────────────────
+
+export async function updateContainerWorkDuration(
+    jobId: number,
+    cntrNo: string,
+    durationMinutes: number,
+    remark?: string
+): Promise<{ success: boolean; error?: string }> {
+    try {
+        const client = await pool.connect();
+        try {
+            await client.query(`
+                UPDATE container_photos 
+                SET work_duration_minutes = $1,
+                    remark = $2
+                WHERE job_id = $3 
+                  AND (cntr_no = $4 OR ($4 = '' AND cntr_no IS NULL)) 
+                  AND (is_deleted IS NOT TRUE)
+            `, [durationMinutes, remark || '', jobId, cntrNo]);
+            return { success: true };
+        } finally {
+            client.release();
+        }
+    } catch (error: any) {
+        console.error("updateContainerWorkDuration Error:", error);
+        return { success: false, error: "작업시간 수정 중 오류가 발생했습니다." };
+    }
+}
+

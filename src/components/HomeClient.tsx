@@ -6,17 +6,17 @@ import {
     Settings2, ChevronRight, Filter, Calendar, Briefcase, Move3d, X,
     Camera, Upload, Loader2, Image as ImageIcon,
     Users, UserPlus, Edit3, Shield, KeyRound, Database, UserCheck, UserX,
-    FileText, Copy, Download, Check
+    FileText, Copy, Download, Check, Clock
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import ContainerViewer from '@/components/ContainerViewer';
 import LogoutButton from '@/components/LogoutButton';
 import PhotoGallery from '@/components/PhotoGallery';
 import {
-    Product, PackingResult, ContainerType, CONTAINER_DATA, Job, JobFilters, DbConfig, UserAccount
+    Product, PackingResult, ContainerType, CONTAINER_DATA, Job, JobFilters, DbConfig, UserAccount, Team
 } from '@/lib/types';
 import { packContainer } from '@/lib/packer';
-import { fetchJobs, fetchProductsByJob, searchProducts, getDbConfig, updateDbConfig, updatePassword, fetchAllUsers, createUserAccount, updateUserAccount, deleteUserAccount, deleteMultipleUserAccounts, generateWorkReport } from '@/lib/actions';
+import { fetchJobs, fetchProductsByJob, searchProducts, getDbConfig, updateDbConfig, updatePassword, fetchAllUsers, createUserAccount, updateUserAccount, deleteUserAccount, deleteMultipleUserAccounts, generateWorkReport, fetchTeams, createTeam, updateTeam, deleteTeam, fetchTeamWorkProgress, TeamWorkProgress, updateContainerWorkDuration } from '@/lib/actions';
 import { SessionUser } from '@/lib/auth';
 
 
@@ -46,6 +46,7 @@ export default function Home({ user }: { user: SessionUser }) {
     const [result, setResult] = useState<PackingResult | null>(null);
     const [isLoading, setIsLoading] = useState(false);
     const [jobs, setJobs] = useState<Job[]>([]);
+    const [teamProgressMap, setTeamProgressMap] = useState<Record<string, TeamWorkProgress>>({});
     const [selectedJobId, setSelectedJobId] = useState<number | null>(null);
     const [isFilterOpen, setIsFilterOpen] = useState(false);
     const [uploadJob, setUploadJob] = useState<Job | null>(null);
@@ -60,11 +61,17 @@ export default function Home({ user }: { user: SessionUser }) {
     const [dbConfig, setDbConfig] = useState<DbConfig>({ host: '', database: '', user: '', password: '', port: 5432, trash_retention_days: 15, upload_dir: '' });
     const [passwordData, setPasswordData] = useState({ current: '', new: '', confirm: '' });
     const [isPasswordUpdating, setIsPasswordUpdating] = useState(false);
-    const [settingsTab, setSettingsTab] = useState<'db' | 'users' | 'password'>('db');
+    const [settingsTab, setSettingsTab] = useState<'db' | 'users' | 'teams' | 'password'>('db');
     const [userList, setUserList] = useState<UserAccount[]>([]);
     const [isUserLoading, setIsUserLoading] = useState(false);
     const [isUserModalOpen, setIsUserModalOpen] = useState(false);
     const [editingUser, setEditingUser] = useState<UserAccount | null>(null);
+    // Teams state
+    const [teamList, setTeamList] = useState<Team[]>([]);
+    const [isTeamLoading, setIsTeamLoading] = useState(false);
+    const [newTeamName, setNewTeamName] = useState('');
+    const [editingTeam, setEditingTeam] = useState<Team | null>(null);
+    const [editingTeamName, setEditingTeamName] = useState('');
     const [userForm, setUserForm] = useState({
         username: '',
         name: '',
@@ -85,6 +92,52 @@ export default function Home({ user }: { user: SessionUser }) {
             alert(res.error);
         }
         setIsUserLoading(false);
+    };
+
+    const loadTeamList = async () => {
+        setIsTeamLoading(true);
+        const data = await fetchTeams();
+        setTeamList(data);
+        setIsTeamLoading(false);
+    };
+
+    const handleCreateTeam = async () => {
+        if (!newTeamName.trim()) return;
+        setIsTeamLoading(true);
+        const res = await createTeam(newTeamName);
+        if (res.success) {
+            setNewTeamName('');
+            await loadTeamList();
+        } else {
+            alert(res.error || '오류가 발생했습니다.');
+        }
+        setIsTeamLoading(false);
+    };
+
+    const handleUpdateTeam = async () => {
+        if (!editingTeam || !editingTeamName.trim()) return;
+        setIsTeamLoading(true);
+        const res = await updateTeam(editingTeam.id, editingTeamName);
+        if (res.success) {
+            setEditingTeam(null);
+            setEditingTeamName('');
+            await loadTeamList();
+        } else {
+            alert(res.error || '오류가 발생했습니다.');
+        }
+        setIsTeamLoading(false);
+    };
+
+    const handleDeleteTeam = async (id: number, name: string) => {
+        if (!confirm(`"${name}" 조를 삭제하시겠습니까? 연결된 사진 기록의 조 정보가 초기화됩니다.`)) return;
+        setIsTeamLoading(true);
+        const res = await deleteTeam(id);
+        if (res.success) {
+            await loadTeamList();
+        } else {
+            alert(res.error || '오류가 발생했습니다.');
+        }
+        setIsTeamLoading(false);
     };
 
     const deletableUsers = userList.filter(u => u.id !== user.id);
@@ -125,6 +178,9 @@ export default function Home({ user }: { user: SessionUser }) {
     useEffect(() => {
         if (isSettingsOpen && isAdmin && settingsTab === 'users') {
             loadUserList();
+        }
+        if (isSettingsOpen && isAdmin && settingsTab === 'teams') {
+            loadTeamList();
         }
     }, [isSettingsOpen, settingsTab]);
 
@@ -217,6 +273,7 @@ export default function Home({ user }: { user: SessionUser }) {
     const [uploadFiles, setUploadFiles] = useState<File[]>([]);
     const [uploadRemark, setUploadRemark] = useState('');
     const [uploadCntrNo, setUploadCntrNo] = useState('');
+    const [uploadDurationMinutes, setUploadDurationMinutes] = useState<number | ''>('');
     const [isUploading, setIsUploading] = useState(false);
     const [uploadProgressText, setUploadProgressText] = useState('');
 
@@ -248,7 +305,14 @@ export default function Home({ user }: { user: SessionUser }) {
             });
             if (res.success && res.reportText) {
                 setReportText(res.reportText);
-                setReportData(res.reportData || []);
+                let data = res.reportData || [];
+                if (!isAdmin && user.teamName) {
+                    data = data.map((dg: any) => ({
+                        ...dg,
+                        uploaders: dg.uploaders.filter((u: any) => u.teamName === user.teamName)
+                    })).filter((dg: any) => dg.uploaders.length > 0);
+                }
+                setReportData(data);
             } else {
                 setReportText(res.error || '보고서를 생성할 데이터가 없습니다.');
                 setReportData([]);
@@ -273,7 +337,14 @@ export default function Home({ user }: { user: SessionUser }) {
             });
             if (res.success && res.reportText) {
                 setReportText(res.reportText);
-                setReportData(res.reportData || []);
+                let data = res.reportData || [];
+                if (!isAdmin && user.teamName) {
+                    data = data.map((dg: any) => ({
+                        ...dg,
+                        uploaders: dg.uploaders.filter((u: any) => u.teamName === user.teamName)
+                    })).filter((dg: any) => dg.uploaders.length > 0);
+                }
+                setReportData(data);
             } else {
                 setReportText(res.error || '보고서를 생성할 데이터가 없습니다.');
                 setReportData([]);
@@ -433,11 +504,26 @@ export default function Home({ user }: { user: SessionUser }) {
         setNumPasses(val);
     };
 
+    const loadTeamProgress = async () => {
+        try {
+            const progress = await fetchTeamWorkProgress();
+            setTeamProgressMap(progress);
+        } catch (e) {
+            console.error("Error loading team progress:", e);
+        }
+    };
+
+    useEffect(() => {
+        loadTeamProgress();
+        loadTeamList();
+    }, []);
+
     const refreshJobs = async () => {
         setIsLoading(true);
         try {
             const data = await fetchJobs(filters);
             setJobs(data);
+            loadTeamProgress();
         } catch (error) {
             console.error("Error refreshing jobs:", error);
         } finally {
@@ -491,8 +577,10 @@ export default function Home({ user }: { user: SessionUser }) {
     };
 
     const handlePhotoUpload = async () => {
-        if (uploadFiles.length === 0) {
-            alert("업로드할 사진을 선택해 주세요.");
+        if (!isAdmin && !user.teamName) {
+            if (confirm("사진 및 작업시간을 등록하려면 먼저 소속 조를 선택해야 합니다.\n조 선택 화면으로 이동하시겠습니까?")) {
+                window.location.href = "/select-team";
+            }
             return;
         }
         const targetJobId = uploadJob?.id || selectedJobId;
@@ -503,6 +591,35 @@ export default function Home({ user }: { user: SessionUser }) {
         if (!uploadCntrNo.trim()) {
             alert("컨테이너 번호를 입력해 주세요.");
             return;
+        }
+
+        if (uploadFiles.length === 0) {
+            if (uploadJob && uploadJob.photo_count && uploadJob.photo_count > 0) {
+                setIsUploading(true);
+                try {
+                    const finalDuration = uploadDurationMinutes === '' ? 45 : Number(uploadDurationMinutes);
+                    const res = await updateContainerWorkDuration(targetJobId, uploadCntrNo.trim(), finalDuration, uploadRemark.trim());
+                    if (res.success) {
+                        alert("작업시간 및 지연사유가 수정되었습니다.");
+                        setUploadFiles([]);
+                        setUploadRemark('');
+                        setUploadJob(null);
+                        refreshJobs();
+                        loadTeamProgress();
+                    } else {
+                        alert(res.error || "수정 중 오류가 발생했습니다.");
+                    }
+                } catch (e) {
+                    console.error("Update duration error:", e);
+                    alert("작업시간 수정 중 오류가 발생했습니다.");
+                } finally {
+                    setIsUploading(false);
+                }
+                return;
+            } else {
+                alert("업로드할 사진을 선택해 주세요.");
+                return;
+            }
         }
 
         setIsUploading(true);
@@ -518,6 +635,7 @@ export default function Home({ user }: { user: SessionUser }) {
                 formData.append('jobId', targetJobId.toString());
                 formData.append('cntrNo', uploadCntrNo.trim());
                 formData.append('remark', uploadRemark.trim());
+                formData.append('durationMinutes', (uploadDurationMinutes === '' ? 45 : uploadDurationMinutes).toString());
 
                 const res = await fetch('/api/photos', {
                     method: 'POST',
@@ -599,20 +717,106 @@ export default function Home({ user }: { user: SessionUser }) {
     // ────────────────────────────────
     const controlPanel = (
         <>
-            {/* Header - Desktop Only (Mobile has its own fixed header for better feel) */}
-            <div className="hidden md:flex items-center gap-3 mb-2 shrink-0">
-                <Package className="w-8 h-8 text-sky-500" />
-                <h1 className="text-xl font-black tracking-tight uppercase pr-4">
-                    CTNR <span className="text-sky-500">Optimizer</span>
-                </h1>
-                <div className="flex items-center gap-1">
-                    <button onClick={() => setIsGalleryOpen(true)} className="p-2 hover:bg-white/5 rounded-full text-slate-400 hover:text-sky-400 transition-all" title="사진 보관함">
-                        <ImageIcon className="w-5 h-5" />
-                    </button>
-                    <button onClick={() => setIsSettingsOpen(true)} className="p-2 hover:bg-white/5 rounded-full text-slate-400 hover:text-sky-400 transition-all" title="설정">
-                        <Settings2 className="w-5 h-5" />
-                    </button>
-                    <LogoutButton username={user.username} name={user.name} role={user.role} />
+            {/* Header - Desktop Only (Single Integrated Container, Ultra-Tight) */}
+            <div className="hidden md:flex flex-col gap-1 shrink-0 pb-1">
+                {/* Top Row: Logo & User info */}
+                <div className="flex items-center justify-between w-full">
+                    <div className="flex items-center gap-1.5">
+                        <Package className="w-5 h-5 text-sky-500 shrink-0" />
+                        <h1 className="text-base font-black tracking-tight uppercase">
+                            CTNR <span className="text-sky-500">Optimizer</span>
+                        </h1>
+                    </div>
+                    <div className="flex items-center gap-1">
+                        {user.teamName && (
+                            <a
+                                href="/select-team"
+                                className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[11px] font-black hover:bg-emerald-500/20 transition-all mr-0.5"
+                                title="조 변경"
+                            >
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                                {user.teamName}
+                            </a>
+                        )}
+                        <button onClick={() => setIsGalleryOpen(true)} className="p-1 hover:bg-white/5 rounded-full text-slate-400 hover:text-sky-400 transition-all" title="사진 보관함">
+                            <ImageIcon className="w-4 h-4" />
+                        </button>
+                        <button onClick={() => setIsSettingsOpen(true)} className="p-1 hover:bg-white/5 rounded-full text-slate-400 hover:text-sky-400 transition-all" title="설정">
+                            <Settings2 className="w-4 h-4" />
+                        </button>
+                        <LogoutButton username={user.username} name={user.name} role={user.role} />
+                    </div>
+                </div>
+
+                {/* Bottom Row: Team Work Completion Progress Bar (Directly Attached) */}
+                <div>
+                    {(() => {
+                        const allTeamNames = Array.from(new Set([
+                            ...teamList.map(t => t.name),
+                            ...Object.keys(teamProgressMap).filter(name => name !== '미지정 조')
+                        ])).sort();
+
+                        if (isAdmin) {
+                            return (
+                                <div className="w-full bg-[#111625] border border-sky-500/30 rounded-lg px-2.5 py-1 flex items-center justify-between gap-2 shadow-sm text-xs">
+                                    <div className="flex items-center gap-1.5 shrink-0">
+                                        <Clock className="w-3.5 h-3.5 text-sky-400 animate-pulse shrink-0" />
+                                        <span className="font-black text-slate-200 text-[11px]">전체 조 작업시간</span>
+                                    </div>
+                                    <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar max-w-full">
+                                        {allTeamNames.length > 0 ? (
+                                            allTeamNames.map(tName => {
+                                                const prog = teamProgressMap[tName];
+                                                return (
+                                                    <div key={tName} className="flex items-center gap-1 bg-white/5 border border-white/10 rounded px-1.5 py-0.5 text-[10px] whitespace-nowrap">
+                                                        <span className="font-bold text-slate-300">{tName}:</span>
+                                                        {prog ? (
+                                                            <span className="font-black text-emerald-400">~{prog.endTimeStr} ({prog.completedCount}대)</span>
+                                                        ) : (
+                                                            <span className="text-slate-500">19:00시작</span>
+                                                        )}
+                                                    </div>
+                                                );
+                                            })
+                                        ) : (
+                                            <span className="text-[10px] text-slate-500">등록된 조 없음</span>
+                                        )}
+                                    </div>
+                                </div>
+                            );
+                        }
+
+                        const myTeamProgress = user.teamName ? teamProgressMap[user.teamName] : null;
+                        return (
+                            <div className="w-full bg-[#111625] border border-sky-500/30 rounded-lg px-2.5 py-1 flex items-center justify-between text-xs shadow-sm">
+                                <div className="flex items-center gap-1.5 min-w-0 pr-2">
+                                    <Clock className="w-3.5 h-3.5 text-sky-400 animate-pulse shrink-0" />
+                                    <span className="font-black text-slate-200 text-[11px] truncate">
+                                        {user.teamName ? `${user.teamName} 완료 현황` : '소속 조 미지정'}
+                                    </span>
+                                    {!user.teamName && (
+                                        <a href="/select-team" className="px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-400 text-[10px] font-bold shrink-0 hover:bg-amber-500/30">
+                                            조 선택
+                                        </a>
+                                    )}
+                                </div>
+                                {myTeamProgress ? (
+                                    <div className="flex items-center gap-1.5 text-[11px] font-black shrink-0">
+                                        <span className="text-emerald-400 bg-emerald-500/15 px-2 py-0.5 rounded-md border border-emerald-500/30">
+                                            ~ {myTeamProgress.endTimeStr} 완료
+                                        </span>
+                                        <span className="text-slate-400 text-[10px] font-bold">
+                                            ({myTeamProgress.completedCount}대/{myTeamProgress.totalDurationMinutes}분)
+                                        </span>
+                                    </div>
+                                ) : (
+                                    <span className="text-[10px] text-slate-500 font-medium shrink-0">
+                                        19:00 shift 시작 (완료건 없음)
+                                    </span>
+                                )}
+                            </div>
+                        );
+                    })()}
                 </div>
             </div>
 
@@ -627,10 +831,10 @@ export default function Home({ user }: { user: SessionUser }) {
                         <button 
                             onClick={handleGenerateReport} 
                             className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500 hover:text-white text-xs md:text-[11px] font-black transition-all cursor-pointer shadow-sm"
-                            title="작업 완료 보고서 생성"
+                            title={isAdmin ? "작업 완료 보고서 생성" : `${user.teamName || '소속 조'} 작업내역 조회`}
                         >
                             <FileText className="w-3.5 h-3.5" />
-                            보고서 생성
+                            {isAdmin ? "보고서 생성" : "작업내역"}
                         </button>
                         <button onClick={refreshJobs} className={`p-1.5 hover:bg-white/5 rounded-lg text-slate-400 transition-all ${isLoading ? "animate-spin text-sky-500" : ""}`} title="새로고침">
                             <RotateCw className="w-4 h-4 md:w-3.5 md:h-3.5" />
@@ -703,10 +907,17 @@ export default function Home({ user }: { user: SessionUser }) {
                                         <button 
                                             onClick={(e) => {
                                                 e.stopPropagation();
+                                                if (!isAdmin && !user.teamName) {
+                                                    if (confirm("사진 및 작업시간을 등록하려면 먼저 소속 조를 선택해야 합니다.\n조 선택 화면으로 이동하시겠습니까?")) {
+                                                        window.location.href = "/select-team";
+                                                    }
+                                                    return;
+                                                }
                                                 setUploadJob(job);
                                                 setUploadCntrNo(job.cntr_no || '');
                                                 setUploadFiles([]);
-                                                setUploadRemark('');
+                                                setUploadRemark(job.remark || '');
+                                                setUploadDurationMinutes(job.work_duration_minutes ?? '');
                                             }}
                                             className={`p-1.5 hover:bg-white/10 rounded-lg transition-all flex items-center gap-1 ${
                                                 job.photo_count && job.photo_count > 0 
@@ -937,26 +1148,102 @@ export default function Home({ user }: { user: SessionUser }) {
             {/* ──────────── 모바일 레이아웃 (md 미만) ──────────── */}
             <div className="md:hidden flex flex-col h-screen bg-[#030712] text-slate-100 overflow-hidden">
 
-                {/* Mobile Floating Header (Always Fixed at Top) */}
-                <header className="fixed top-0 left-0 right-0 z-[60] px-4 py-4 bg-[#030712]/80 backdrop-blur-xl border-b border-white/5 flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                        <Package className="w-6 h-6 text-sky-500" />
-                        <h1 className="text-base font-black tracking-tight uppercase">
-                            CTNR <span className="text-sky-400">Optimizer</span>
-                        </h1>
+                {/* Mobile Floating Header (Single Fixed Container, Ultra-Tight) */}
+                <header className="fixed top-0 left-0 right-0 z-[60] px-3 py-1.5 bg-[#030712]/95 backdrop-blur-xl border-b border-white/10 flex flex-col gap-1">
+                    <div className="flex items-center justify-between w-full">
+                        <div className="flex items-center gap-1.5">
+                            <Package className="w-5 h-5 text-sky-500 shrink-0" />
+                            <h1 className="text-sm font-black tracking-tight uppercase">
+                                CTNR <span className="text-sky-400">Optimizer</span>
+                            </h1>
+                        </div>
+                        <div className="flex items-center gap-1">
+                            {user.teamName && (
+                                <a
+                                    href="/select-team"
+                                    className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[10px] font-black hover:bg-emerald-500/20 transition-all mr-0.5"
+                                    title="조 변경"
+                                >
+                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                                    {user.teamName}
+                                </a>
+                            )}
+                            <button onClick={() => setIsGalleryOpen(true)} className="p-1 hover:bg-white/5 rounded-full text-slate-400" title="사진 보관함">
+                                <ImageIcon className="w-4 h-4" />
+                            </button>
+                            <button onClick={() => setIsSettingsOpen(true)} className="p-1 hover:bg-white/5 rounded-full text-slate-400">
+                                <Settings2 className="w-4 h-4" />
+                            </button>
+                            <LogoutButton username={user.username} name={user.name} role={user.role} />
+                        </div>
                     </div>
-                    <div className="flex items-center gap-1">
-                        <button onClick={() => setIsGalleryOpen(true)} className="p-2 hover:bg-white/5 rounded-full text-slate-400" title="사진 보관함">
-                            <ImageIcon className="w-5 h-5" />
-                        </button>
-                        <button onClick={() => setIsSettingsOpen(true)} className="p-2 hover:bg-white/5 rounded-full text-slate-400">
-                            <Settings2 className="w-5 h-5" />
-                        </button>
-                        <LogoutButton username={user.username} name={user.name} role={user.role} />
-                    </div>
+
+                    {/* Sub Bar: Team Work Completion Time */}
+                    {(() => {
+                        const allTeamNames = Array.from(new Set([
+                            ...teamList.map(t => t.name),
+                            ...Object.keys(teamProgressMap).filter(name => name !== '미지정 조')
+                        ])).sort();
+
+                        if (isAdmin) {
+                            return (
+                                <div className="w-full bg-[#111625] border border-sky-500/30 rounded-lg px-2 py-0.5 flex items-center justify-between gap-1.5 text-xs">
+                                    <div className="flex items-center gap-1 shrink-0">
+                                        <Clock className="w-3.5 h-3.5 text-sky-400 animate-pulse shrink-0" />
+                                        <span className="font-bold text-slate-200 text-[10px]">전체조:</span>
+                                    </div>
+                                    <div className="flex items-center gap-1 overflow-x-auto no-scrollbar max-w-full">
+                                        {allTeamNames.length > 0 ? (
+                                            allTeamNames.map(tName => {
+                                                const prog = teamProgressMap[tName];
+                                                return (
+                                                    <div key={tName} className="flex items-center gap-1 bg-white/5 border border-white/10 rounded px-1.5 py-0.5 text-[9px] whitespace-nowrap">
+                                                        <span className="font-bold text-slate-300">{tName}:</span>
+                                                        {prog ? (
+                                                            <span className="font-black text-emerald-400">~{prog.endTimeStr}({prog.completedCount}대)</span>
+                                                        ) : (
+                                                            <span className="text-slate-500">19:00시작</span>
+                                                        )}
+                                                    </div>
+                                                );
+                                            })
+                                        ) : (
+                                            <span className="text-[9px] text-slate-500">조 없음</span>
+                                        )}
+                                    </div>
+                                </div>
+                            );
+                        }
+
+                        const myTeamProgress = user.teamName ? teamProgressMap[user.teamName] : null;
+                        return (
+                            <div className="w-full bg-[#111625] border border-sky-500/30 rounded-lg px-2.5 py-1 flex items-center justify-between text-xs">
+                                <div className="flex items-center gap-1.5 min-w-0">
+                                    <Clock className="w-3.5 h-3.5 text-sky-400 shrink-0 animate-pulse" />
+                                    <span className="font-bold text-slate-200 text-[11px] truncate">
+                                        {user.teamName ? `${user.teamName} 진행` : '작업 진행'}
+                                    </span>
+                                </div>
+                                {myTeamProgress ? (
+                                    <div className="flex items-center gap-1.5 text-[11px] font-black shrink-0">
+                                        <span className="text-emerald-400 bg-emerald-500/15 px-2 py-0.5 rounded-md border border-emerald-500/30">
+                                            ~ {myTeamProgress.endTimeStr} 완료
+                                        </span>
+                                        <span className="text-slate-400 text-[10px] font-medium">
+                                            ({myTeamProgress.completedCount}대)
+                                        </span>
+                                    </div>
+                                ) : (
+                                    <span className="text-[10px] text-slate-400 font-medium shrink-0">
+                                        완료건 없음 (19:00 시작)
+                                    </span>
+                                )}
+                            </div>
+                        );
+                    })()}
                 </header>
 
-                <div id="mobile-scroll-container" className="flex-1 flex flex-col overflow-y-auto mt-[68px] pb-32">
+                <div id="mobile-scroll-container" className="flex-1 flex flex-col overflow-y-auto mt-[70px] pb-32">
                     {/* 시뮬레이션 결과 뷰어 — 결과 있을 때만 상단 표시 */}
                     <AnimatePresence>
                         {result && (
@@ -1054,6 +1341,13 @@ export default function Home({ user }: { user: SessionUser }) {
                                         계정 관리
                                     </button>
                                     <button 
+                                        onClick={() => setSettingsTab('teams')}
+                                        className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${settingsTab === 'teams' ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}
+                                    >
+                                        <Users className="w-3.5 h-3.5" />
+                                        조 관리
+                                    </button>
+                                    <button 
                                         onClick={() => setSettingsTab('password')}
                                         className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${settingsTab === 'password' ? 'bg-sky-500 text-white shadow-lg shadow-sky-500/20' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}
                                     >
@@ -1062,6 +1356,26 @@ export default function Home({ user }: { user: SessionUser }) {
                                     </button>
                                 </div>
                             )}
+
+                            {/* Current Team Info & Quick Change */}
+                            <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-2xl p-4 flex items-center justify-between mb-5 shrink-0">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-400 font-black text-lg flex items-center justify-center border border-emerald-500/30">
+                                        {user.teamName ? user.teamName.charAt(0) : "조"}
+                                    </div>
+                                    <div>
+                                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">현재 선택된 작업 조</span>
+                                        <span className="text-sm font-black text-white">{user.teamName || "미선택 (조 선택 필요)"}</span>
+                                    </div>
+                                </div>
+                                <a
+                                    href="/select-team"
+                                    className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-white font-bold text-xs transition-all shadow-md shadow-emerald-500/20 flex items-center gap-1.5 whitespace-nowrap"
+                                >
+                                    <Users className="w-3.5 h-3.5" />
+                                    조 변경하기
+                                </a>
+                            </div>
 
                             {/* Tab Content */}
                             <div className="overflow-y-auto custom-scrollbar flex-1 pr-1 space-y-6">
@@ -1229,6 +1543,97 @@ export default function Home({ user }: { user: SessionUser }) {
                                                 })}
                                             </div>
                                         )}
+                                    </div>
+                                )}
+
+                                {(settingsTab === 'teams' && isAdmin) && (
+                                    <div className="space-y-5">
+                                        {/* 조 추가 */}
+                                        <div className="space-y-2">
+                                            <label className="text-[11px] font-black text-slate-500 ml-1 uppercase tracking-widest">새 조 추가</label>
+                                            <div className="flex gap-2">
+                                                <input
+                                                    value={newTeamName}
+                                                    onChange={e => setNewTeamName(e.target.value)}
+                                                    onKeyDown={e => e.key === 'Enter' && handleCreateTeam()}
+                                                    placeholder="조 이름 입력 (예: 1조, 2조)"
+                                                    className="flex-1 bg-black/40 border border-white/10 rounded-2xl px-4 py-3 text-sm focus:border-emerald-500/50 outline-none transition-all"
+                                                    disabled={isTeamLoading}
+                                                />
+                                                <button
+                                                    onClick={handleCreateTeam}
+                                                    disabled={isTeamLoading || !newTeamName.trim()}
+                                                    className="px-5 py-3 rounded-2xl bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-white font-bold text-sm transition-all flex items-center gap-1.5 whitespace-nowrap"
+                                                >
+                                                    + 추가
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        {/* 조 목록 */}
+                                        <div className="space-y-2">
+                                            <label className="text-[11px] font-black text-slate-500 ml-1 uppercase tracking-widest">등록된 조 목록</label>
+                                            {isTeamLoading ? (
+                                                <div className="flex items-center justify-center py-8">
+                                                    <div className="w-5 h-5 border-2 border-emerald-500/30 border-t-emerald-400 rounded-full animate-spin" />
+                                                </div>
+                                            ) : teamList.length === 0 ? (
+                                                <div className="text-center py-8 text-slate-600 text-sm">
+                                                    등록된 조가 없습니다. 위에서 추가해주세요.
+                                                </div>
+                                            ) : (
+                                                <div className="space-y-2">
+                                                    {teamList.map(team => (
+                                                        <div key={team.id} className="flex items-center gap-2 bg-black/30 border border-white/5 rounded-2xl px-4 py-3">
+                                                            {editingTeam?.id === team.id ? (
+                                                                <>
+                                                                    <input
+                                                                        value={editingTeamName}
+                                                                        onChange={e => setEditingTeamName(e.target.value)}
+                                                                        onKeyDown={e => { if (e.key === 'Enter') handleUpdateTeam(); if (e.key === 'Escape') { setEditingTeam(null); setEditingTeamName(''); } }}
+                                                                        className="flex-1 bg-black/40 border border-emerald-500/40 rounded-xl px-3 py-2 text-sm outline-none focus:border-emerald-500"
+                                                                        autoFocus
+                                                                        disabled={isTeamLoading}
+                                                                    />
+                                                                    <button
+                                                                        onClick={handleUpdateTeam}
+                                                                        disabled={isTeamLoading}
+                                                                        className="px-3 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-white text-xs font-bold transition-all"
+                                                                    >
+                                                                        저장
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={() => { setEditingTeam(null); setEditingTeamName(''); }}
+                                                                        className="px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-400 text-xs font-bold transition-all"
+                                                                    >
+                                                                        취소
+                                                                    </button>
+                                                                </>
+                                                            ) : (
+                                                                <>
+                                                                    <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 font-black text-sm shrink-0">
+                                                                        {team.name.charAt(0)}
+                                                                    </div>
+                                                                    <span className="flex-1 text-sm font-bold text-slate-200">{team.name}</span>
+                                                                    <button
+                                                                        onClick={() => { setEditingTeam(team); setEditingTeamName(team.name); }}
+                                                                        className="px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white text-xs font-bold transition-all"
+                                                                    >
+                                                                        수정
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={() => handleDeleteTeam(team.id, team.name)}
+                                                                        className="px-3 py-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 text-xs font-bold transition-all"
+                                                                    >
+                                                                        삭제
+                                                                    </button>
+                                                                </>
+                                                            )}
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
                                 )}
 
@@ -1418,43 +1823,66 @@ export default function Home({ user }: { user: SessionUser }) {
                                     }} 
                                 />
                                 
-                                <label htmlFor="photo-upload-modal-input" className={`flex flex-col items-center justify-center border-2 border-dashed border-white/10 rounded-2xl p-6 transition-all ${isUploading ? 'opacity-50 cursor-not-allowed' : 'hover:border-sky-500 hover:bg-sky-500/5 cursor-pointer'}`}>
+                                <label htmlFor="photo-upload-modal-input" className={`flex items-center justify-center gap-3 border-2 border-dashed border-white/10 rounded-2xl py-3.5 px-4 transition-all ${isUploading ? 'opacity-50 cursor-not-allowed' : 'hover:border-sky-500 hover:bg-sky-500/5 cursor-pointer'}`}>
                                     {uploadFiles.length > 0 ? (
-                                        <div className="flex flex-col items-center text-center">
-                                            <ImageIcon className="w-10 h-10 text-sky-400 mb-2 animate-pulse" />
-                                            <p className="text-sm font-bold text-slate-200 truncate max-w-[250px]">선택된 사진: {uploadFiles.length}장</p>
-                                            <p className="text-xs text-slate-500 mt-1">
-                                                총 용량: {(uploadFiles.reduce((sum, f) => sum + f.size, 0) / 1024 / 1024).toFixed(2)} MB
-                                            </p>
+                                        <div className="flex items-center gap-2 text-center">
+                                            <ImageIcon className="w-5 h-5 text-sky-400 shrink-0 animate-pulse" />
+                                            <p className="text-xs font-bold text-slate-200 truncate max-w-[200px]">선택된 사진: {uploadFiles.length}장</p>
+                                            <span className="text-[10px] text-slate-500">({(uploadFiles.reduce((sum, f) => sum + f.size, 0) / 1024 / 1024).toFixed(2)} MB)</span>
                                         </div>
                                     ) : (
-                                        <div className="flex flex-col items-center text-center text-slate-500">
-                                            <Camera className="w-10 h-10 mb-2" />
-                                            <p className="text-sm font-bold">사진 촬영 또는 파일 선택</p>
-                                            <p className="text-xs mt-1 px-4">카메라로 적재 완료된 컨테이너 촬영</p>
+                                        <div className="flex items-center gap-2 text-slate-400">
+                                            <Camera className="w-5 h-5 text-sky-400 shrink-0" />
+                                            <span className="text-xs font-bold text-slate-200">사진 촬영 또는 파일 선택</span>
+                                            <span className="text-[10px] text-slate-500">(터치하여 선택)</span>
                                         </div>
                                     )}
                                 </label>
 
                                 <div className="space-y-4 pt-1">
-                                    <div className="space-y-1.5">
-                                        <label className="text-xs text-slate-500 font-bold ml-1 block">컨테이너 번호</label>
-                                        <input 
-                                            value={uploadCntrNo} 
-                                            onChange={e => setUploadCntrNo(e.target.value)}
-                                            disabled={isUploading}
-                                            className="w-full bg-black/40 border border-white/10 rounded-2xl px-4 py-3 text-sm outline-none focus:border-sky-500 transition-colors uppercase font-bold text-slate-200 disabled:opacity-50"
-                                            placeholder="컨테이너 번호 입력"
-                                        />
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div className="space-y-1.5">
+                                            <label className="text-xs text-slate-500 font-bold ml-1 block">컨테이너 번호</label>
+                                            <input 
+                                                value={uploadCntrNo} 
+                                                onChange={e => setUploadCntrNo(e.target.value)}
+                                                disabled={isUploading}
+                                                className="w-full bg-black/40 border border-white/10 rounded-2xl px-4 py-2.5 text-sm outline-none focus:border-sky-500 transition-colors uppercase font-bold text-slate-200 disabled:opacity-50"
+                                                placeholder="컨테이너 번호 입력"
+                                            />
+                                        </div>
+                                        <div className="space-y-1.5">
+                                            <label className="text-xs text-slate-500 font-bold ml-1 block">작업 소요시간 (분)</label>
+                                            <input 
+                                                type="number"
+                                                min={1}
+                                                max={300}
+                                                value={uploadDurationMinutes} 
+                                                onChange={e => {
+                                                    const val = e.target.value;
+                                                    if (val === '') {
+                                                        setUploadDurationMinutes('');
+                                                    } else {
+                                                        const num = parseInt(val, 10);
+                                                        setUploadDurationMinutes(isNaN(num) ? '' : num);
+                                                    }
+                                                }}
+                                                disabled={isUploading}
+                                                className="w-full bg-black/40 border border-white/10 rounded-2xl px-4 py-2.5 text-sm outline-none focus:border-sky-500 transition-colors font-bold text-emerald-400 disabled:opacity-50"
+                                                placeholder="소요 분 (기본 45분)"
+                                            />
+                                        </div>
                                     </div>
+
                                     <div className="space-y-1.5">
-                                        <label className="text-xs text-slate-500 font-bold ml-1 block">작업자 메모</label>
-                                        <input 
+                                        <label className="text-xs text-slate-500 font-bold ml-1 block">작업자 메모 (작업시간 지연사유 등)</label>
+                                        <textarea 
+                                            rows={2}
                                             value={uploadRemark} 
                                             onChange={e => setUploadRemark(e.target.value)}
                                             disabled={isUploading}
-                                            className="w-full bg-black/40 border border-white/10 rounded-2xl px-4 py-3 text-sm outline-none focus:border-sky-500 transition-colors disabled:opacity-50"
-                                            placeholder="메모 입력 (예: 적재 완료, 상단 파손 등)"
+                                            className="w-full bg-black/40 border border-white/10 rounded-2xl p-3 text-xs outline-none focus:border-sky-500 transition-colors disabled:opacity-50 text-slate-200 resize-none"
+                                            placeholder="작업시간 지연사유 기재바람"
                                         />
                                     </div>
                                 </div>
@@ -1470,18 +1898,18 @@ export default function Home({ user }: { user: SessionUser }) {
                                 </button>
                                 <button 
                                     onClick={handlePhotoUpload} 
-                                    disabled={isUploading || uploadFiles.length === 0}
+                                    disabled={isUploading || (uploadFiles.length === 0 && (!uploadJob?.photo_count || uploadJob.photo_count === 0))}
                                     className="flex-2 py-4 px-8 rounded-2xl bg-sky-500 hover:bg-sky-400 text-white font-black text-sm transition-all shadow-lg shadow-sky-500/20 disabled:opacity-50 disabled:hover:bg-sky-500"
                                 >
                                     {isUploading ? (
                                         <span className="flex items-center justify-center gap-2">
                                             <Loader2 className="w-4 h-4 animate-spin" />
-                                            {uploadProgressText || "업로드 중..."}
+                                            {uploadProgressText || "처리 중..."}
                                         </span>
                                     ) : (
                                         <span className="flex items-center justify-center gap-2">
                                             <Upload className="w-4 h-4" />
-                                            사진 저장하기
+                                            {uploadFiles.length > 0 ? "사진 저장하기" : (uploadJob?.photo_count && uploadJob.photo_count > 0 ? "작업시간/메모 수정 저장" : "사진 저장하기")}
                                         </span>
                                     )}
                                 </button>
@@ -1514,7 +1942,7 @@ export default function Home({ user }: { user: SessionUser }) {
                                         <FileText className="w-6 h-6 text-emerald-400" />
                                     </div>
                                     <div>
-                                        <h2 className="text-xl font-black text-white">작업 완료 보고서</h2>
+                                        <h2 className="text-xl font-black text-white">{isAdmin ? "작업 완료 보고서" : `${user.teamName || ''} 작업 내역`}</h2>
                                         <p className="text-xs text-slate-500 font-bold uppercase tracking-widest">Work Summary Report</p>
                                     </div>
                                 </div>
@@ -1527,7 +1955,7 @@ export default function Home({ user }: { user: SessionUser }) {
                             </div>
 
                             {/* Date Selector inside Modal */}
-                            <div className="flex flex-wrap items-center gap-3 p-4 mb-4 bg-white/5 border border-white/5 rounded-2xl shrink-0">
+                            {isAdmin && (<div className="flex flex-wrap items-center gap-3 p-4 mb-4 bg-white/5 border border-white/5 rounded-2xl shrink-0">
                                 <span className="text-xs font-bold text-slate-400">조회 기간 설정:</span>
                                 <div className="flex items-center gap-2">
                                     <input 
@@ -1551,7 +1979,7 @@ export default function Home({ user }: { user: SessionUser }) {
                                     <RotateCw className="w-3.5 h-3.5" />
                                     보고서 조회
                                 </button>
-                            </div>
+                            </div>)}
 
                             <div className="flex-1 overflow-y-auto min-h-[350px] max-h-[60vh] bg-black/50 border border-white/5 rounded-2xl p-6 custom-scrollbar">
                                 {isReportGenerating ? (
@@ -1560,6 +1988,7 @@ export default function Home({ user }: { user: SessionUser }) {
                                         <p className="text-xs font-bold">보고서를 생성하는 중입니다...</p>
                                     </div>
                                 ) : reportData && reportData.length > 0 ? (
+                                    isAdmin ? (
                                     <div className="space-y-8">
                                         {reportData.map((dateGroup: any) => {
                                             const totalCntr = dateGroup.uploaders.reduce((sum: number, u: any) => sum + u.containers.length, 0);
@@ -1572,16 +2001,16 @@ export default function Home({ user }: { user: SessionUser }) {
                                                             {dateGroup.dateStr} 작업 분량
                                                         </h3>
                                                         <span className="text-xs font-black text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-3 py-1 rounded-full">
-                                                            총합계: {dayNum}일 {totalCntr}개 작업완료
+                                                            총합계: {totalCntr}개 작업완료
                                                         </span>
                                                     </div>
                                                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 items-start">
                                                         {dateGroup.uploaders.map((upGroup: any) => (
-                                                            <div key={upGroup.uploaderName} className="bg-[#1a1d2e]/40 border border-white/5 rounded-2xl p-4 flex flex-col gap-4 max-h-[45vh] overflow-y-auto custom-scrollbar">
+                                                            <div key={upGroup.teamName ?? upGroup.uploaderName} className="bg-[#1a1d2e]/40 border border-white/5 rounded-2xl p-4 flex flex-col gap-4 max-h-[45vh] overflow-y-auto custom-scrollbar">
                                                                 <div className="flex items-center justify-between pb-2 border-b border-white/5">
                                                                     <span className="text-xs font-black text-white flex items-center gap-1.5">
                                                                         <div className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
-                                                                        {upGroup.uploaderName}
+                                                                        {upGroup.teamName ?? upGroup.uploaderName}
                                                                     </span>
                                                                     <span className="text-[10px] font-bold text-slate-500">합계 {upGroup.containers.length}개</span>
                                                                 </div>
@@ -1592,17 +2021,21 @@ export default function Home({ user }: { user: SessionUser }) {
                                                                             <div key={cntr.cntrNo} className="bg-white/5 border border-white/5 rounded-xl p-3 hover:bg-white/10 transition-all">
                                                                                 <div className="flex items-center justify-between gap-1.5 mb-1.5">
                                                                                     <span className="text-[11px] font-black text-slate-200 truncate uppercase">{cntr.cntrNo}</span>
-                                                                                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-lg shrink-0 ${
-                                                                                        cntr.isCompleted 
-                                                                                            ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' 
-                                                                                            : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
-                                                                                    }`}>
-                                                                                        {cntr.isCompleted ? '완료' : '작업중'}
-                                                                                    </span>
+                                                                                    {cntr.startTimeStr && cntr.endTimeStr && (
+                                                                                        <span className="text-sky-300 font-black text-[10px] bg-sky-500/10 px-1.5 py-0.5 rounded border border-sky-500/20 shrink-0">
+                                                                                            {cntr.durationMinutes || 45}분 ({cntr.startTimeStr}~{cntr.endTimeStr})
+                                                                                        </span>
+                                                                                    )}
                                                                                 </div>
                                                                                 <div className="text-[10px] text-slate-400 font-bold mb-2">
                                                                                     {cntr.products.length}모델, {totalQty.toLocaleString()}개
                                                                                 </div>
+                                                                                {cntr.remark && cntr.remark.trim() && (
+                                                                                    <div className="text-[10px] text-amber-300 font-bold bg-amber-500/10 border border-amber-500/20 px-2.5 py-1 rounded-lg mb-2 flex items-center gap-1.5">
+                                                                                        <span className="shrink-0 text-amber-400">💬</span>
+                                                                                        <span className="truncate">지연사유: {cntr.remark.trim()}</span>
+                                                                                    </div>
+                                                                                )}
                                                                                 <div className="space-y-1 pl-1.5 border-l border-white/5">
                                                                                     {cntr.products.map((p: any, idx: number) => (
                                                                                         <div key={idx} className="text-[10px] text-slate-500 font-bold truncate">
@@ -1621,6 +2054,39 @@ export default function Home({ user }: { user: SessionUser }) {
                                             );
                                         })}
                                     </div>
+                                    ) : (
+                                    /* 근무자 간소화 뷰 */
+                                    <div className="space-y-3">
+                                        {reportData.flatMap((dateGroup: any) =>
+                                            dateGroup.uploaders.flatMap((upGroup: any) =>
+                                                upGroup.containers.map((cntr: any) => {
+                                                    const totalQty = cntr.products.reduce((sum: number, p: any) => sum + p.qty, 0);
+                                                    return (
+                                                        <div key={cntr.cntrNo} className="bg-white/5 border border-white/5 rounded-2xl p-4 hover:bg-white/10 transition-all">
+                                                            <div className="flex items-center justify-between gap-2 mb-2">
+                                                                <span className="text-[13px] font-black text-slate-100 uppercase">{cntr.cntrNo}</span>
+                                                                {cntr.startTimeStr && cntr.endTimeStr && (
+                                                                    <span className="text-sky-300 font-black text-[11px] bg-sky-500/10 px-2 py-0.5 rounded-lg border border-sky-500/20 shrink-0">
+                                                                        {cntr.durationMinutes || 45}분 ({cntr.startTimeStr}~{cntr.endTimeStr})
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                            <div className="text-[11px] text-slate-400 font-bold mb-1">
+                                                                {cntr.products.length}모델, {totalQty.toLocaleString()}개
+                                                            </div>
+                                                            {cntr.remark && cntr.remark.trim() && (
+                                                                <div className="text-[11px] text-amber-300 font-bold bg-amber-500/10 border border-amber-500/20 px-2.5 py-1 rounded-lg mt-2 flex items-center gap-1.5">
+                                                                    <span className="shrink-0 text-amber-400">💬</span>
+                                                                    <span>지연사유: {cntr.remark.trim()}</span>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    );
+                                                })
+                                            )
+                                        )}
+                                    </div>
+                                    )
                                 ) : (
                                     <div className="font-mono text-xs md:text-sm leading-relaxed text-slate-200 select-all whitespace-pre-wrap">
                                         {reportText}
@@ -1629,7 +2095,7 @@ export default function Home({ user }: { user: SessionUser }) {
                             </div>
 
                             <div className="flex flex-wrap gap-2.5 mt-6 shrink-0">
-                                <button
+                                {isAdmin && (<button
                                     onClick={handleCopyReport}
                                     disabled={isReportGenerating || !reportText}
                                     className={`flex-1 py-3.5 px-4 rounded-2xl font-bold text-xs md:text-sm transition-all shadow-lg flex items-center justify-center gap-2 cursor-pointer ${
@@ -1640,8 +2106,9 @@ export default function Home({ user }: { user: SessionUser }) {
                                 >
                                     {isCopied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
                                     {isCopied ? '복사 완료!' : '📋 1초 텍스트 복사'}
-                                </button>
+                                </button>)}
 
+                                {isAdmin && (
                                 <button
                                     onClick={handleDownloadReport}
                                     disabled={isReportGenerating || !reportText}
@@ -1650,6 +2117,7 @@ export default function Home({ user }: { user: SessionUser }) {
                                     <Download className="w-4 h-4" />
                                     .txt 파일 저장
                                 </button>
+                                )}
 
                                 <button
                                     onClick={() => setIsReportOpen(false)}
@@ -1663,7 +2131,7 @@ export default function Home({ user }: { user: SessionUser }) {
                 )}
             </AnimatePresence>
 
-            <PhotoGallery user={user} isOpen={isGalleryOpen} onClose={() => { setIsGalleryOpen(false); refreshJobs(); }} />
+            <PhotoGallery user={user} isOpen={isGalleryOpen} onClose={() => { setIsGalleryOpen(false); refreshJobs(); loadTeamProgress(); }} />
         </>
     );
 }

@@ -33,6 +33,20 @@ export function getPool(): Pool {
         }).catch(err => {
             console.error("DB Migration Error:", err);
         });
+
+        // Migration: teams table and team_id column
+        _pool.query(`
+            CREATE TABLE IF NOT EXISTS teams (
+                id   SERIAL PRIMARY KEY,
+                name VARCHAR(50) NOT NULL UNIQUE
+            );
+            ALTER TABLE container_photos ADD COLUMN IF NOT EXISTS team_id INTEGER REFERENCES teams(id);
+            ALTER TABLE container_photos ADD COLUMN IF NOT EXISTS work_duration_minutes INTEGER DEFAULT 45;
+        `).then(() => {
+            console.log("DB Migration: teams table, team_id, work_duration_minutes ensured.");
+        }).catch(err => {
+            console.error("DB Migration (teams/duration) Error:", err);
+        });
     }
     return _pool;
 }
@@ -105,7 +119,9 @@ export async function getJobsFromDB(filters?: JobFilters): Promise<Job[]> {
                         r.cntr_no,
                         r.transporter,
                         r.cntr_type,
-                        (SELECT COUNT(*)::integer FROM container_photos p WHERE p.job_id = j.id AND (r.cntr_no IS NULL OR p.cntr_no = r.cntr_no)) as photo_count
+                        (SELECT COUNT(*)::integer FROM container_photos p WHERE p.job_id = j.id AND (r.cntr_no IS NULL OR p.cntr_no = r.cntr_no) AND (p.is_deleted IS NOT TRUE)) as photo_count,
+                        (SELECT p.work_duration_minutes FROM container_photos p WHERE p.job_id = j.id AND (r.cntr_no IS NULL OR p.cntr_no = r.cntr_no) AND (p.is_deleted IS NOT TRUE) ORDER BY p.id DESC LIMIT 1) as work_duration_minutes,
+                        (SELECT p.remark FROM container_photos p WHERE p.job_id = j.id AND (r.cntr_no IS NULL OR p.cntr_no = r.cntr_no) AND (p.is_deleted IS NOT TRUE) AND p.remark IS NOT NULL AND p.remark != '' ORDER BY p.id DESC LIMIT 1) as last_remark
                     FROM container_jobs j
                     LEFT JOIN container_results r ON r.job_id = j.id
                     ${whereSql}
@@ -124,6 +140,8 @@ export async function getJobsFromDB(filters?: JobFilters): Promise<Job[]> {
                 cntr_no: row.cntr_no,
                 transporter: row.transporter,
                 photo_count: Number(row.photo_count) || 0,
+                work_duration_minutes: row.work_duration_minutes ? Number(row.work_duration_minutes) : undefined,
+                remark: row.last_remark || undefined,
                 work_date: (() => {
                     const savedAt = row.saved_at ? new Date(row.saved_at) : null;
                     if (savedAt && !isNaN(savedAt.getTime())) {

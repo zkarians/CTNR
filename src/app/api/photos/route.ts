@@ -22,6 +22,8 @@ export async function POST(req: NextRequest) {
         const jobIdStr = formData.get('jobId') as string | null;
         const cntrNo = formData.get('cntrNo') as string | null;
         const remark = formData.get('remark') as string | null;
+        const durationMinutesStr = formData.get('durationMinutes') as string | null;
+        const durationMinutes = durationMinutesStr && !isNaN(parseInt(durationMinutesStr, 10)) ? parseInt(durationMinutesStr, 10) : 45;
 
         if (!file || !jobIdStr || !cntrNo) {
             return NextResponse.json({ error: '필수 데이터가 누락되었습니다.' }, { status: 400 });
@@ -156,13 +158,21 @@ export async function POST(req: NextRequest) {
             const relativeDbPath = `${sanitizedCntrNo}/${filename}`;
 
             const query = `
-                INSERT INTO container_photos (job_id, cntr_no, photo_path, remark, uploaded_by)
-                VALUES ($1, $2, $3, $4, $5)
-                RETURNING id, job_id, cntr_no, photo_path, remark, uploaded_at
+                INSERT INTO container_photos (job_id, cntr_no, photo_path, remark, uploaded_by, team_id, work_duration_minutes)
+                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                RETURNING id, job_id, cntr_no, photo_path, remark, uploaded_at, work_duration_minutes
             `;
-            const values = [jobId, cntrNo, relativeDbPath, remark || '', validUploadedBy];
+            const values = [jobId, cntrNo, relativeDbPath, remark || '', validUploadedBy, session.teamId ?? null, durationMinutes];
             const res = await client.query(query, values);
             
+            // Sync durationMinutes & remark to all existing photos for this container
+            await client.query(`
+                UPDATE container_photos 
+                SET work_duration_minutes = $1,
+                    remark = COALESCE(NULLIF($2, ''), remark)
+                WHERE job_id = $3 AND (cntr_no = $4 OR ($4 = '' AND cntr_no IS NULL)) AND (is_deleted IS NOT TRUE)
+            `, [durationMinutes, remark || '', jobId, cntrNo]);
+
             return NextResponse.json({
                 success: true,
                 photo: res.rows[0],
@@ -190,6 +200,7 @@ export async function GET(req: NextRequest) {
         const startDate = searchParams.get('startDate'); // YYYY-MM-DD
         const endDate = searchParams.get('endDate');     // YYYY-MM-DD
         const userId = searchParams.get('userId');       // UUID
+        const teamId = searchParams.get('teamId');       // number
         const showTrash = searchParams.get('showTrash') === 'true';
         const showCompleted = searchParams.get('showCompleted') === 'true';
         const cntrNo = searchParams.get('cntrNo');
@@ -234,24 +245,28 @@ export async function GET(req: NextRequest) {
 
         if (startDate) {
             whereSuffix += ` AND p.uploaded_at AT TIME ZONE 'Asia/Seoul' >= $${paramIdx++}::timestamp`;
-            params.push(`${startDate} 00:00:00`);
+            params.push(`${startDate} 19:00:00`);
         }
 
         if (endDate) {
-            whereSuffix += ` AND p.uploaded_at AT TIME ZONE 'Asia/Seoul' <= $${paramIdx++}::timestamp`;
-            params.push(`${endDate} 23:59:59.999`);
+            whereSuffix += ` AND p.uploaded_at AT TIME ZONE 'Asia/Seoul' <= ($${paramIdx++}::date + INTERVAL '1 day 18 hours 59 minutes 59.999 seconds')`;
+            params.push(endDate);
         }
 
-        let targetUserId = userId;
         const sessionRole = session.role?.toUpperCase();
         const isAdmin = sessionRole === 'ADMIN' || sessionRole === 'MANAGER';
-        if (!isAdmin) {
-            targetUserId = session.id;
+        
+        let targetTeamId = teamId;
+        if (!isAdmin && !targetTeamId && session.teamId) {
+            targetTeamId = String(session.teamId);
         }
 
-        if (targetUserId) {
+        if (targetTeamId) {
+            whereSuffix += ` AND p.team_id = $${paramIdx++}`;
+            params.push(targetTeamId);
+        } else if (userId) {
             whereSuffix += ` AND p.uploaded_by = $${paramIdx++}`;
-            params.push(targetUserId);
+            params.push(userId);
         }
 
         if (cntrNo) {
@@ -271,13 +286,17 @@ export async function GET(req: NextRequest) {
                     p.remark, 
                     p.uploaded_at, 
                     p.uploaded_by, 
+                    p.team_id,
+                    p.work_duration_minutes,
                     p.is_completed,
                     p.completed_at,
-                    u.name as uploader_name, 
-                    u.username as uploader_username, 
+                    t.name as team_name,
+                    COALESCE(NULLIF(u.name, ''), NULLIF(u.username, ''), '퇴사자') as uploader_name, 
+                    COALESCE(u.username, '') as uploader_username, 
                     j.job_name,
                     r.transporter
                 FROM container_photos p
+                LEFT JOIN teams t ON p.team_id = t.id
                 LEFT JOIN "User" u ON p.uploaded_by = u.id
                 LEFT JOIN container_jobs j ON p.job_id = j.id
                 LEFT JOIN container_results r ON r.job_id = p.job_id AND r.cntr_no = p.cntr_no
@@ -516,14 +535,14 @@ export async function DELETE(req: NextRequest) {
                 let paramIdx = 1;
 
                 if (startDate) {
-                    updateQuery += ` AND uploaded_at >= $${paramIdx}`;
-                    params.push(new Date(startDate + 'T00:00:00.000Z'));
+                    updateQuery += ` AND uploaded_at AT TIME ZONE 'Asia/Seoul' >= $${paramIdx}::timestamp`;
+                    params.push(`${startDate} 19:00:00`);
                     paramIdx++;
                 }
 
                 if (endDate) {
-                    updateQuery += ` AND uploaded_at <= $${paramIdx}`;
-                    params.push(new Date(endDate + 'T23:59:59.999Z'));
+                    updateQuery += ` AND uploaded_at AT TIME ZONE 'Asia/Seoul' <= ($${paramIdx}::date + INTERVAL '1 day 18 hours 59 minutes 59.999 seconds')`;
+                    params.push(endDate);
                     paramIdx++;
                 }
 
@@ -579,7 +598,16 @@ export async function PATCH(req: NextRequest) {
                 const completeVal = complete === 'true';
                 const completedAt = completeVal ? new Date() : null;
                 
-                if (cntrNo) {
+                if (ids && ids.length > 0) {
+                    await client.query(
+                        'UPDATE container_photos SET is_completed = $1, completed_at = $2 WHERE id = ANY($3)',
+                        [completeVal, completedAt, ids]
+                    );
+                    return NextResponse.json({
+                        success: true,
+                        message: `선택한 사진 ${ids.length}장의 작업이 ${completeVal ? '완료' : '진행 중'}으로 변경되었습니다.`
+                    });
+                } else if (cntrNo) {
                     await client.query(
                         'UPDATE container_photos SET is_completed = $1, completed_at = $2 WHERE cntr_no = $3',
                         [completeVal, completedAt, cntrNo]

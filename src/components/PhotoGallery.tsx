@@ -8,8 +8,9 @@ import {
     RefreshCw, SkipForward
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { fetchUsers } from '@/lib/actions';
+import { fetchTeams } from '@/lib/actions';
 import { SessionUser } from '@/lib/auth';
+import { Team } from '@/lib/types';
 
 interface Photo {
     id: string;
@@ -19,16 +20,12 @@ interface Photo {
     remark: string;
     uploaded_at: string;
     uploaded_by: string;
+    team_id?: number;
+    team_name?: string;
     uploader_name: string;
     uploader_username: string;
     job_name: string;
     transporter?: string;
-}
-
-interface UserOption {
-    id: string;
-    name: string;
-    username: string;
 }
 
 interface PhotoGalleryProps {
@@ -69,7 +66,7 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
     const isAdmin = user && (user.role.toUpperCase() === 'ADMIN' || user.role.toUpperCase() === 'MANAGER');
 
     const [photos, setPhotos] = useState<Photo[]>([]);
-    const [users, setUsers] = useState<UserOption[]>([]);
+    const [teams, setTeams] = useState<Team[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     
     // Sort State
@@ -230,9 +227,9 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
         setStartDate(getLocalDateString(yesterday));
         
         if (isAdmin) {
-            setSelectedUserId('');
+            setSelectedTeamId('');
         } else {
-            setSelectedUserId(user.id);
+            setSelectedTeamId(user?.teamId ? String(user.teamId) : '');
         }
         
         setSearchCntrNo('');
@@ -275,7 +272,11 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                 photos: list,
                 transporter: list[0]?.transporter,
                 lastUploadedAt: new Date(Math.max(...list.map(p => new Date(p.uploaded_at).getTime()))),
-                uploaderNames: Array.from(new Set(list.map(p => p.uploader_name || p.uploader_username))).join(', ')
+                teamNames: Array.from(new Set(list.map(p => p.team_name || '미지정 조'))).join(', '),
+                uploaderNames: Array.from(new Set(list.map(p => {
+                    const name = p.uploader_name || p.uploader_username;
+                    return (name && name.trim()) ? name : '퇴사자';
+                }))).join(', ')
             };
         }).sort((a, b) => b.lastUploadedAt.getTime() - a.lastUploadedAt.getTime());
     }, [photos]);
@@ -412,8 +413,8 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
             </div>
 
             <div className="flex items-center justify-between mt-2 pt-2 border-t border-white/5 text-[9px] text-slate-500 font-bold">
-                <span className="truncate max-w-[120px]">
-                    작업자: {folder.uploaderNames}
+                <span className="truncate max-w-[140px]">
+                    조: {folder.teamNames} ({folder.uploaderNames && folder.uploaderNames.trim() ? folder.uploaderNames : '퇴사자'})
                 </span>
                 <div className="flex items-center gap-2 shrink-0">
                     <span>
@@ -480,7 +481,7 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
     // Filters
     const [startDate, setStartDate] = useState('');
     const [endDate, setEndDate] = useState('');
-    const [selectedUserId, setSelectedUserId] = useState('');
+    const [selectedTeamId, setSelectedTeamId] = useState('');
     const [searchCntrNo, setSearchCntrNo] = useState('');
 
     // Local copy state
@@ -505,19 +506,17 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
         }
     }, []);
     
-    // Load users (uploaders) once on mount
+    // Load teams once on mount
     useEffect(() => {
-        const loadUsers = async () => {
-            if (isAdmin) {
-                try {
-                    const data = await fetchUsers();
-                    setUsers(data);
-                } catch (error) {
-                    console.error("Error loading users:", error);
-                }
+        const loadTeamsList = async () => {
+            try {
+                const data = await fetchTeams();
+                setTeams(data);
+            } catch (error) {
+                console.error("Error loading teams:", error);
             }
         };
-        loadUsers();
+        loadTeamsList();
         
         // Initialize filters with yesterday as start date
         const today = new Date();
@@ -526,13 +525,13 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
         
         setEndDate(getLocalDateString(today));
         setStartDate(getLocalDateString(yesterday));
-    }, [user, isAdmin]);
+    }, [user]);
 
-    // Force non-admins to only see their own uploads
+    // Force non-admins to view their selected team if available
     useEffect(() => {
         if (isOpen && user) {
-            if (!isAdmin) {
-                setSelectedUserId(user.id);
+            if (!isAdmin && user.teamId) {
+                setSelectedTeamId(String(user.teamId));
             }
         }
     }, [isOpen, user, isAdmin]);
@@ -544,7 +543,7 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
             const params = new URLSearchParams();
             if (startDate) params.append('startDate', startDate);
             if (endDate) params.append('endDate', endDate);
-            if (selectedUserId) params.append('userId', selectedUserId);
+            if (selectedTeamId) params.append('teamId', selectedTeamId);
             if (isTrashView) params.append('showTrash', 'true');
             if (isCompletedView) params.append('showCompleted', 'true');
             if (searchCntrNo) params.append('cntrNo', searchCntrNo);
@@ -573,7 +572,7 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
             setSelectedFolders([]);
             setSearchCntrNo('');
         }
-    }, [isOpen, startDate, endDate, selectedUserId, tabState, searchCntrNo]);
+    }, [isOpen, startDate, endDate, selectedTeamId, tabState, searchCntrNo]);
 
     // Fetch duplicate photo IDs when selectedContainerFolder changes
     useEffect(() => {
@@ -1286,24 +1285,22 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                                 />
                             </div>
 
-                            {/* Uploader (User) - Admin Only */}
-                            {isAdmin && (
-                                <div className="space-y-1 col-span-2 md:w-48">
-                                    <label className="text-[10px] text-slate-500 font-bold tracking-wider uppercase flex items-center gap-1">
-                                        <User className="w-3 h-3 text-sky-400" /> 업로드 작업자
-                                    </label>
-                                    <select 
-                                        value={selectedUserId}
-                                        onChange={(e) => setSelectedUserId(e.target.value)}
-                                        className="w-full bg-[#12121a]/80 border border-white/5 rounded-xl px-3.5 py-2.5 text-xs text-slate-200 outline-none focus:border-sky-500/50 transition-colors appearance-none"
-                                    >
-                                        <option value="">전체 작업자</option>
-                                        {users.map(u => (
-                                            <option key={u.id} value={u.id}>{u.name} ({u.username})</option>
-                                        ))}
-                                    </select>
-                                </div>
-                            )}
+                            {/* Team Select */}
+                            <div className="space-y-1 col-span-2 md:w-48">
+                                <label className="text-[10px] text-slate-500 font-bold tracking-wider uppercase flex items-center gap-1">
+                                    <User className="w-3 h-3 text-emerald-400" /> 작업 조
+                                </label>
+                                <select 
+                                    value={selectedTeamId}
+                                    onChange={(e) => setSelectedTeamId(e.target.value)}
+                                    className="w-full bg-[#12121a]/80 border border-white/5 rounded-xl px-3.5 py-2.5 text-xs text-slate-200 outline-none focus:border-emerald-500/50 transition-colors appearance-none cursor-pointer"
+                                >
+                                    <option value="">전체 조</option>
+                                    {teams.map(t => (
+                                        <option key={t.id} value={t.id}>{t.name}</option>
+                                    ))}
+                                </select>
+                            </div>
 
                             {/* Container Number Search + Reset + Trash buttons inline */}
                             <div className="space-y-1 col-span-2">
@@ -1867,7 +1864,7 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
 
                                                 <div className="flex items-center justify-between pt-1.5 border-t border-white/5 text-[9px] text-slate-500 font-bold">
                                                     <span className="flex items-center gap-1 truncate max-w-[60px]">
-                                                        <User className="w-2.5 h-2.5 text-slate-600" /> {photo.uploader_name || photo.uploader_username}
+                                                        <User className="w-2.5 h-2.5 text-slate-600" /> {(photo.uploader_name && photo.uploader_name.trim()) || (photo.uploader_username && photo.uploader_username.trim()) || '퇴사자'}
                                                     </span>
                                                     <span>
                                                         {new Date(photo.uploaded_at).toLocaleDateString('ko-KR', { month: '2-digit', day: '2-digit' }).replace(' ', '')} {new Date(photo.uploaded_at).toTimeString().slice(0, 5)}

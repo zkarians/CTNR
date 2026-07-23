@@ -25,6 +25,49 @@ export interface SessionUser {
     username: string;
     name: string;
     role: string;
+    teamId?: number;
+    teamName?: string;
+    teamSelectedAt?: string; // ISO String
+}
+
+/**
+ * 조 선택의 유효성을 검사하는 함수
+ * - 13시 이전 선택: 당일 13시 KST까지 유효
+ * - 13시 이후 선택: 익일(다음날) 13시 KST까지 유효
+ * - 만료되었거나 조 미선택 시 false 반환
+ */
+export async function isTeamSelectionValid(user: SessionUser | null): Promise<boolean> {
+    if (!user || !user.teamId || !user.teamSelectedAt) {
+        return false;
+    }
+
+    try {
+        const selectedDate = new Date(user.teamSelectedAt);
+        if (isNaN(selectedDate.getTime())) return false;
+
+        // KST 기준 (UTC+9) 날짜/시간 변환
+        const kstOffsetMs = 9 * 60 * 60 * 1000;
+        const selectedKst = new Date(selectedDate.getTime() + kstOffsetMs);
+
+        // 만료 일시 산출 (KST 기준)
+        // 13시 이전 선택 시 -> 당일 13시 KST
+        // 13시 이후 선택 시 -> 익일 13시 KST
+        const expireKst = new Date(selectedKst);
+        expireKst.setUTCHours(13, 0, 0, 0); // KST 13:00 설정 (UTC 기준 04:00)
+
+        if (selectedKst.getUTCHours() >= 13) {
+            // 13시 이후 선택했으면 다음날 13시로 연장
+            expireKst.setUTCDate(expireKst.getUTCDate() + 1);
+        }
+
+        // expireKst (KST)를 UTC 타임스탬프로 환산하여 비교
+        const expireUtcMs = expireKst.getTime() - kstOffsetMs;
+        const nowMs = Date.now();
+
+        return nowMs < expireUtcMs;
+    } catch {
+        return false;
+    }
 }
 
 const SESSION_COOKIE = "ctnr_session";
@@ -329,4 +372,43 @@ export async function deleteMultipleUserAccounts(ids: string[]): Promise<{ succe
     }
 }
 
+export async function selectTeam(teamId: number): Promise<{ success: boolean; error?: string }> {
+    try {
+        const session = await getSession();
+        if (!session) {
+            return { success: false, error: "세션이 만료되었습니다. 다시 로그인해주세요." };
+        }
 
+        const client = await pool.connect();
+        let teamName = '';
+        try {
+            const res = await client.query(`SELECT name FROM teams WHERE id = $1 LIMIT 1`, [teamId]);
+            if (res.rows.length === 0) {
+                return { success: false, error: "존재하지 않는 조입니다." };
+            }
+            teamName = res.rows[0].name;
+        } finally {
+            client.release();
+        }
+
+        const updatedSession: SessionUser = {
+            ...session,
+            teamId,
+            teamName,
+            teamSelectedAt: new Date().toISOString(),
+        };
+
+        const cookieStore = await cookies();
+        cookieStore.set(SESSION_COOKIE, encodeSession(updatedSession), {
+            httpOnly: true,
+            secure: false,
+            maxAge: 60 * 60 * 24 * 30,
+            path: "/",
+        });
+
+        return { success: true };
+    } catch (error: any) {
+        console.error("selectTeam error:", error);
+        return { success: false, error: "조 선택 중 오류가 발생했습니다." };
+    }
+}

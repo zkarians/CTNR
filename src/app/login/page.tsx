@@ -27,7 +27,12 @@ export default function LoginPage() {
         const result = await login(username.trim(), password, rememberMe);
 
         if (result.success) {
-            router.push("/");
+            const role = result.user?.role?.toUpperCase();
+            if (role === 'ADMIN' || role === 'MANAGER') {
+                router.push("/");
+            } else {
+                router.push("/select-team");
+            }
             router.refresh();
         } else {
             setError(result.error || "로그인에 실패했습니다.");
