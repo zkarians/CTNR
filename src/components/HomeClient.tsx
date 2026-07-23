@@ -29,6 +29,7 @@ import {
 import { packContainer } from '@/lib/packer';
 import { fetchJobs, fetchProductsByJob, searchProducts, getDbConfig, updateDbConfig, updatePassword, fetchAllUsers, createUserAccount, updateUserAccount, deleteUserAccount, deleteMultipleUserAccounts, generateWorkReport, fetchTeams, createTeam, updateTeam, deleteTeam, fetchTeamWorkProgress, TeamWorkProgress, updateContainerWorkDuration, updateContainerAdminComment } from '@/lib/actions';
 import { SessionUser } from '@/lib/auth';
+import { calculateTeamTimeline } from '@/lib/timeline';
 
 
 function getLocalDateString(d: Date): string {
@@ -302,17 +303,54 @@ export default function Home({ user }: { user: SessionUser }) {
     const [commentInput, setCommentInput] = useState<string>('');
     const [isExportingImage, setIsExportingImage] = useState(false);
     
-    // Manual Report Entry States
+    // Manual Report Entry States & Position-based Timeline Recalculation
     const [isAddManualOpen, setIsAddManualOpen] = useState(false);
     const [manualTeamName, setManualTeamName] = useState('1조(BNI)');
+    const [manualInsertIndex, setManualInsertIndex] = useState<number | 'end'>('end');
     const [manualCntrNo, setManualCntrNo] = useState('');
     const [manualCategory, setManualCategory] = useState('');
-    const [manualDuration, setManualDuration] = useState('60');
-    const [manualTimeRange, setManualTimeRange] = useState('');
+    const [manualDuration, setManualDuration] = useState('45');
     const [manualRemark, setManualRemark] = useState('');
     const [manualProducts, setManualProducts] = useState<Array<{ division: string; name: string; qty: number }>>([
         { division: 'DFZ', name: '', qty: 0 }
     ]);
+
+    const currentTeamContainers = React.useMemo(() => {
+        if (!reportData || reportData.length === 0) return [];
+        const targetDateGroup = reportData[0];
+        const teamGroup = targetDateGroup?.uploaders?.find((u: any) => isSameTeam(u.teamName, manualTeamName));
+        return teamGroup?.containers || [];
+    }, [reportData, manualTeamName]);
+
+    const rebuildReportTextFromData = (dataArray: any[]) => {
+        if (!dataArray || dataArray.length === 0) return '';
+        let lines: string[] = [];
+        lines.push(`📋 [일자별 작업 현황 보고서]`);
+
+        dataArray.forEach((dateGroup: any) => {
+            lines.push(`📅 ${dateGroup.dateStr || dateGroup.date} 작업 분량`);
+            let totalCntr = 0;
+            dateGroup.uploaders.forEach((u: any) => totalCntr += u.containers.length);
+            lines.push(`총합계: ${totalCntr}개 작업완료\n`);
+
+            dateGroup.uploaders.forEach((team: any) => {
+                lines.push(`■ ${team.teamName} (합계 ${team.containers.length}개)`);
+                team.containers.forEach((cntr: any) => {
+                    const adminCommentNote = cntr.adminComment ? ` (${cntr.adminComment})` : '';
+                    lines.push(`${cntr.cntrNo} (${cntr.modelCount || cntr.products.length}모델, ${cntr.totalQty ? cntr.totalQty.toLocaleString() : cntr.products.reduce((s: number, p: any) => s + p.qty, 0).toLocaleString()}개${adminCommentNote}) [${cntr.workTimeStr}]`);
+                    if (cntr.lastRemark && cntr.lastRemark.trim()) {
+                        lines.push(`- 💬 ${cntr.lastRemark.trim()}`);
+                    }
+                    for (const p of cntr.products) {
+                        lines.push(`- [${p.division || 'DFZ'}] ${p.name} ${p.qty.toLocaleString()}개`);
+                    }
+                    lines.push(``);
+                });
+            });
+        });
+
+        return lines.join('\n');
+    };
 
     const handleAddManualSubmit = () => {
         if (!manualCntrNo.trim()) {
@@ -326,25 +364,17 @@ export default function Home({ user }: { user: SessionUser }) {
         }
 
         const duration = parseInt(manualDuration) || 45;
-        const timeStr = manualTimeRange.trim() 
-            ? `${duration}분 (${manualTimeRange.trim()})`
-            : `${duration}분`;
-
         const totalQty = validProducts.reduce((sum, p) => sum + p.qty, 0);
-        const modelSummaryStr = `${validProducts.length}모델, ${totalQty.toLocaleString()}개${manualCategory.trim() ? ` ( ${manualCategory.trim()} )`: ''}`;
 
-        const newContainer = {
+        const newRawContainer = {
             cntrNo: manualCntrNo.trim().toUpperCase(),
             isCompleted: true,
-            division: validProducts[0].division || 'DFZ',
+            division: validProducts[0]?.division || 'DFZ',
             durationMinutes: duration,
-            startTimeStr: manualTimeRange ? manualTimeRange.split('~')[0]?.trim() || '' : '',
-            endTimeStr: manualTimeRange ? manualTimeRange.split('~')[1]?.trim() || '' : '',
-            workTimeStr: timeStr,
             hasBreak: false,
             modelCount: validProducts.length,
             totalQty: totalQty,
-            modelSummaryStr: modelSummaryStr,
+            modelSummaryStr: `${validProducts.length}모델, ${totalQty.toLocaleString()}개${manualCategory.trim() ? ` ( ${manualCategory.trim()} )`: ''}`,
             lastRemark: manualRemark.trim() ? `지연사유: ${manualRemark.trim()}` : '',
             transporter: manualTeamName.includes('천마') ? '천마' : 'BNI',
             adminComment: manualCategory.trim(),
@@ -356,41 +386,64 @@ export default function Home({ user }: { user: SessionUser }) {
         };
 
         setReportData((prevData: any[]) => {
+            let dateStr = reportStartDate || getLocalDateString(new Date());
             if (!prevData || prevData.length === 0) {
-                return [{
-                    date: reportStartDate || getLocalDateString(new Date()),
+                const timelineList = calculateTeamTimeline<any>([newRawContainer]).map(item => ({
+                    ...item,
+                    workTimeStr: `${item.durationMinutes}분 (${item.startTimeStr}~${item.endTimeStr}${item.hasBreak ? ' *휴식/식사포함*' : ''})`
+                }));
+                const newReportData = [{
+                    dateStr,
                     uploaders: [{
                         teamName: manualTeamName,
-                        containers: [newContainer]
+                        containers: timelineList
                     }]
                 }];
+                setReportText(rebuildReportTextFromData(newReportData));
+                return newReportData;
             }
+
             const nextData = JSON.parse(JSON.stringify(prevData));
             const targetDateGroup = nextData[0];
             let teamGroup = targetDateGroup.uploaders.find((u: any) => isSameTeam(u.teamName, manualTeamName));
+
             if (!teamGroup) {
                 teamGroup = { teamName: manualTeamName, containers: [] };
                 targetDateGroup.uploaders.push(teamGroup);
             }
-            teamGroup.containers.push(newContainer);
-            return nextData;
-        });
 
-        setReportText((prevText: string) => {
-            let additionText = `\n${newContainer.cntrNo} (${newContainer.modelSummaryStr}) [${newContainer.workTimeStr}]\n`;
-            if (manualRemark.trim()) {
-                additionText += `- 💬 지연사유: ${manualRemark.trim()}\n`;
+            const existingCntrs = teamGroup.containers || [];
+            let insertIdx = existingCntrs.length;
+            if (manualInsertIndex !== 'end' && typeof manualInsertIndex === 'number') {
+                insertIdx = Math.min(Math.max(0, manualInsertIndex), existingCntrs.length);
             }
-            for (const p of validProducts) {
-                additionText += `- [${p.division || 'DFZ'}] ${p.name.toUpperCase()} ${p.qty}개\n`;
-            }
-            return (prevText || '') + additionText;
+
+            existingCntrs.splice(insertIdx, 0, newRawContainer);
+
+            // Recalculate team timeline for all containers in this team!
+            const recalculatedTimeline = calculateTeamTimeline<any>(existingCntrs).map(item => {
+                const catStr = item.adminComment ? ` ( ${item.adminComment} )`: '';
+                const modelCount = item.products ? item.products.length : item.modelCount || 1;
+                const totalQty = item.products ? item.products.reduce((s: number, p: any) => s + p.qty, 0) : item.totalQty || 0;
+                return {
+                    ...item,
+                    modelCount,
+                    totalQty,
+                    modelSummaryStr: `${modelCount}모델, ${totalQty.toLocaleString()}개${catStr}`,
+                    workTimeStr: `${item.durationMinutes}분 (${item.startTimeStr}~${item.endTimeStr}${item.hasBreak ? ' *휴식/식사포함*' : ''})`
+                };
+            });
+
+            teamGroup.containers = recalculatedTimeline;
+            setReportText(rebuildReportTextFromData(nextData));
+            return nextData;
         });
 
         setIsAddManualOpen(false);
         setManualCntrNo('');
         setManualCategory('');
         setManualRemark('');
+        setManualInsertIndex('end');
         setManualProducts([{ division: 'DFZ', name: '', qty: 0 }]);
     };
 
@@ -2602,27 +2655,34 @@ export default function Home({ user }: { user: SessionUser }) {
                                                 </div>
                                             </div>
 
-                                            <div className="grid grid-cols-2 gap-2">
-                                                <div>
-                                                    <label className="block font-black text-slate-700 mb-1">작업 시간 (분)</label>
-                                                    <input
-                                                        type="number"
-                                                        placeholder="예: 65"
-                                                        value={manualDuration}
-                                                        onChange={e => setManualDuration(e.target.value)}
-                                                        className="w-full px-3 py-1.5 border border-slate-300 rounded-xl font-bold focus:outline-none focus:border-sky-500 bg-slate-50 focus:bg-white"
-                                                    />
-                                                </div>
-                                                <div>
-                                                    <label className="block font-black text-slate-700 mb-1">시간대 (선택)</label>
-                                                    <input
-                                                        type="text"
-                                                        placeholder="예: 21:20~22:25"
-                                                        value={manualTimeRange}
-                                                        onChange={e => setManualTimeRange(e.target.value)}
-                                                        className="w-full px-3 py-1.5 border border-slate-300 rounded-xl font-bold focus:outline-none focus:border-sky-500 bg-slate-50 focus:bg-white"
-                                                    />
-                                                </div>
+                                            <div>
+                                                <label className="block font-black text-slate-700 mb-1">삽입 위치 (몇 번째 작업 뒤) *</label>
+                                                <select
+                                                    value={manualInsertIndex}
+                                                    onChange={e => setManualInsertIndex(e.target.value === 'end' ? 'end' : parseInt(e.target.value))}
+                                                    className="w-full px-3 py-1.5 border border-slate-300 rounded-xl font-bold focus:outline-none focus:border-sky-500 bg-slate-50 focus:bg-white text-slate-900 cursor-pointer"
+                                                >
+                                                    <option value={0}>1번째 (맨 앞에 삽입)</option>
+                                                    {currentTeamContainers.map((cntr: any, idx: number) => (
+                                                        <option key={cntr.cntrNo + '_' + idx} value={idx + 1}>
+                                                            {idx + 1}번 ({cntr.cntrNo}) 작업 뒤 {idx === currentTeamContainers.length - 1 ? '(맨 뒤)' : ''}
+                                                        </option>
+                                                    ))}
+                                                    {currentTeamContainers.length === 0 && (
+                                                        <option value="end">맨 처음 작업으로 삽입</option>
+                                                    )}
+                                                </select>
+                                            </div>
+
+                                            <div>
+                                                <label className="block font-black text-slate-700 mb-1">작업 소요시간 (분) *</label>
+                                                <input
+                                                    type="number"
+                                                    placeholder="예: 45 또는 60"
+                                                    value={manualDuration}
+                                                    onChange={e => setManualDuration(e.target.value)}
+                                                    className="w-full px-3 py-1.5 border border-slate-300 rounded-xl font-bold focus:outline-none focus:border-sky-500 bg-slate-50 focus:bg-white"
+                                                />
                                             </div>
 
                                             <div>
