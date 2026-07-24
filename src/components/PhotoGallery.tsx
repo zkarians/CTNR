@@ -1766,29 +1766,11 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                                                                 <Download className="w-4 h-4" /> 다운로드
                                                             </button>
                                                             <button onClick={handleUploadToGDriveAndCleanLocal}
-                                                         <Upload className="w-3.5 h-3.5" /> GDrive 백업 ({selectedFolders.length})
-                                                     </button>
-                                                     <button onClick={handleUploadToGDriveAndCleanLocal}
-                                                         className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 border border-sky-400 text-white font-black text-xs transition-all cursor-pointer shadow-md shadow-sky-500/20"
-                                                         title="선택한 폴더의 사진을 구글 드라이브로 백업하고 로컬 용량을 정리합니다.">
-                                                         <Upload className="w-3.5 h-3.5" /> GDrive 백업 ({selectedFolders.length})
-                                                     </button>
-                                                     <button onClick={handleUploadToGDriveAndCleanLocal}
-                                                         className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 border border-sky-400 text-white font-black text-xs transition-all cursor-pointer shadow-md shadow-sky-500/20"
-                                                         title="선택한 폴더의 사진을 구글 드라이브로 백업하고 로컬 용량을 정리합니다.">
-                                                         <Upload className="w-3.5 h-3.5" /> GDrive 백업 ({selectedFolders.length})
-                                                     </button>
-                                                     <button onClick={handleUploadToGDriveAndCleanLocal}
-                                                         className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 border border-sky-400 text-white font-black text-xs transition-all cursor-pointer shadow-md shadow-sky-500/20"
-                                                         title="선택한 폴더의 사진을 구글 드라이브로 백업하고 로컬 용량을 정리합니다.">
-                                                         <Upload className="w-3.5 h-3.5" /> ☁️ GDrive 백업 ({selectedFolders.length})
-                                                     </button>
-                                                     <button onClick={handleUploadToGDriveAndCleanLocal}
-                                                         className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 border border-sky-400 text-white font-black text-xs transition-all cursor-pointer shadow-md shadow-sky-500/20"
-                                                         title="선택한 폴더의 사진을 구글 드라이브로 백업하고 로컬 용량을 정리합니다.">
-                                                         <Upload className="w-3.5 h-3.5" /> ☁️ GDrive 백업 ({selectedFolders.length})
-                                                     </button>
-                                                     <button onClick={() => setIsLocalCopyOpen(true)}
+                                                                className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-sky-600 hover:bg-sky-500 border border-sky-400 text-white font-black text-xs transition-all cursor-pointer shadow-md shadow-sky-500/20"
+                                                                title="선택한 폴더의 사진을 구글 드라이브로 백업하고 로컬 용량을 정리합니다.">
+                                                                <Upload className="w-4 h-4" /> GDrive 백업 ({selectedFolders.length})
+                                                            </button>
+                                                            <button onClick={() => setIsLocalCopyOpen(true)}
                                                                 className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-white/10 border border-white/10 text-slate-300 hover:text-white font-black text-xs transition-all cursor-pointer">
                                                                 <Folder className="w-4 h-4" /> 로컬 복사
                                                             </button>
