@@ -618,6 +618,7 @@ export async function PATCH(req: NextRequest) {
         const sessionRole = session.role?.toUpperCase();
         const isAdmin = sessionRole === 'ADMIN' || sessionRole === 'MANAGER';
 
+        const action = body.action || searchParams.get('action');
         const isUploadGDriveAction = action === 'upload_gdrive';
 
         // Only admins can restore deleted files from trash.
