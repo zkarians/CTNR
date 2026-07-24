@@ -592,6 +592,7 @@ export async function fetchTeamWorkProgress(targetWorkDate?: string): Promise<Re
                 LEFT JOIN teams t ON p.team_id = t.id
                 LEFT JOIN container_jobs j ON p.job_id = j.id
                 WHERE (p.is_deleted IS NOT TRUE)
+                  AND (p.is_completed IS NOT TRUE)
                   AND (
                     CASE
                       WHEN EXTRACT(HOUR FROM (p.uploaded_at + INTERVAL '9 hours')) < 13
