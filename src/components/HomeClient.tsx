@@ -7,7 +7,7 @@ import {
     Settings2, ChevronLeft, ChevronRight, Filter, Calendar, Briefcase, Move3d, X,
     Camera, Upload, Loader2, Image as ImageIcon,
     Users, UserPlus, Edit3, Shield, KeyRound, Database, UserCheck, UserX,
-    FileText, Copy, Download, Check, Clock
+    FileText, Copy, Download, Check, Clock, Ban
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toPng } from 'html-to-image';
@@ -305,6 +305,7 @@ export default function Home({ user }: { user: SessionUser }) {
     
     // Manual Report Entry States & Position-based Timeline Recalculation
     const [isAddManualOpen, setIsAddManualOpen] = useState(false);
+    const [isCancelManageOpen, setIsCancelManageOpen] = useState(false);
     const [manualTeamName, setManualTeamName] = useState('1조(BNI)');
     const [manualInsertIndex, setManualInsertIndex] = useState<number | 'end'>('end');
     const [manualCntrNo, setManualCntrNo] = useState('');
@@ -2400,6 +2401,14 @@ export default function Home({ user }: { user: SessionUser }) {
                                             <RotateCw className="w-3.5 h-3.5" />
                                             조회
                                         </button>
+                                        <button
+                                            onClick={() => setIsCancelManageOpen(true)}
+                                            className="px-3.5 py-1.5 bg-rose-50 border border-rose-200 hover:bg-rose-600 hover:text-white text-rose-600 font-black text-xs rounded-xl transition-all shadow-sm cursor-pointer flex items-center gap-1.5 shrink-0"
+                                            title="조별 작업취소 선택 및 관리"
+                                        >
+                                            <Ban className="w-3.5 h-3.5 text-rose-500" />
+                                            <span>작업취소관리</span>
+                                        </button>
                                         <div className="ml-auto flex items-center gap-1 bg-slate-200/80 p-1 rounded-xl shrink-0">
                                             <button
                                                 onClick={() => setReportViewMode('full')}
@@ -2531,17 +2540,13 @@ export default function Home({ user }: { user: SessionUser }) {
                                                                                         )}
                                                                                     </div>
                                                                                     <div className="flex items-center gap-1.5 shrink-0">
-                                                                                        {isAdmin && !isExportingImage && (
+                                                                                        {isAdmin && !isExportingImage && isCancelled && (
                                                                                             <button
                                                                                                 onClick={() => handleToggleCancelCntr(cntr.cntrNo)}
-                                                                                                className={`px-2 py-0.5 rounded text-[11px] font-black transition-all cursor-pointer shadow-sm ${
-                                                                                                    isCancelled
-                                                                                                        ? 'bg-emerald-600 text-white hover:bg-emerald-500 border border-emerald-600'
-                                                                                                        : 'bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-600 hover:text-white'
-                                                                                                }`}
-                                                                                                title={isCancelled ? "취소 해제 (정상 작업으로 복원)" : "취소 작업으로 지정"}
+                                                                                                className="px-2 py-0.5 rounded text-[11px] font-black transition-all cursor-pointer shadow-sm bg-emerald-600 text-white hover:bg-emerald-500 border border-emerald-600"
+                                                                                                title="취소 해제 (정상 작업으로 복원)"
                                                                                             >
-                                                                                                {isCancelled ? '🔄 취소 해제' : '🚫 취소'}
+                                                                                                🔄 취소 해제
                                                                                             </button>
                                                                                         )}
                                                                                         {cntr.startTimeStr && cntr.endTimeStr && (
@@ -2861,7 +2866,7 @@ export default function Home({ user }: { user: SessionUser }) {
                                             </div>
 
                                             <div className="pt-2 border-t border-slate-200">
-                                                <div className="flex items-center justify-between mb-2">
+                                                                    <div className="flex items-center justify-between mb-2">
                                                     <label className="font-black text-slate-700">제품 모델 및 수량 목록 *</label>
                                                     <button
                                                         type="button"
