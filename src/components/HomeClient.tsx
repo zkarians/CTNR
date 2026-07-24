@@ -314,6 +314,7 @@ export default function Home({ user }: { user: SessionUser }) {
     const [manualProducts, setManualProducts] = useState<Array<{ division: string; name: string; qty: number }>>([
         { division: 'DFZ', name: '', qty: 0 }
     ]);
+    const [isManualCancelled, setIsManualCancelled] = useState(false);
 
     const currentTeamContainers = React.useMemo(() => {
         if (!reportData || reportData.length === 0) return [];
@@ -330,14 +331,20 @@ export default function Home({ user }: { user: SessionUser }) {
         dataArray.forEach((dateGroup: any) => {
             lines.push(`📅 ${dateGroup.dateStr || dateGroup.date} 작업 분량`);
             let totalCntr = 0;
-            dateGroup.uploaders.forEach((u: any) => totalCntr += u.containers.length);
+            dateGroup.uploaders.forEach((u: any) => {
+                const activeCntrs = u.containers.filter((c: any) => !c.isCancelled && !c.adminComment?.includes('[취소]'));
+                totalCntr += activeCntrs.length;
+            });
             lines.push(`총합계: ${totalCntr}개 작업완료\n`);
 
             dateGroup.uploaders.forEach((team: any) => {
-                lines.push(`■ ${team.teamName} (합계 ${team.containers.length}개)`);
+                const activeTeamCntrs = team.containers.filter((c: any) => !c.isCancelled && !c.adminComment?.includes('[취소]'));
+                lines.push(`■ ${team.teamName} (합계 ${activeTeamCntrs.length}개)`);
                 team.containers.forEach((cntr: any) => {
+                    const isCancelled = cntr.isCancelled || cntr.adminComment?.includes('[취소]');
+                    const cancelTag = isCancelled ? ' [취소]' : '';
                     const adminCommentNote = cntr.adminComment ? ` (${cntr.adminComment})` : '';
-                    lines.push(`${cntr.cntrNo} (${cntr.modelCount || cntr.products.length}모델, ${cntr.totalQty ? cntr.totalQty.toLocaleString() : cntr.products.reduce((s: number, p: any) => s + p.qty, 0).toLocaleString()}개${adminCommentNote}) [${cntr.workTimeStr}]`);
+                    lines.push(`${cntr.cntrNo}${cancelTag} (${cntr.modelCount || cntr.products.length}모델, ${cntr.totalQty ? cntr.totalQty.toLocaleString() : cntr.products.reduce((s: number, p: any) => s + p.qty, 0).toLocaleString()}개${adminCommentNote}) [${cntr.workTimeStr}]`);
                     if (cntr.lastRemark && cntr.lastRemark.trim()) {
                         lines.push(`- 💬 ${cntr.lastRemark.trim()}`);
                     }
@@ -350,6 +357,35 @@ export default function Home({ user }: { user: SessionUser }) {
         });
 
         return lines.join('\n');
+    };
+
+    const handleToggleCancelCntr = (cntrNo: string) => {
+        setReportData((prevData: any[]) => {
+            if (!prevData || prevData.length === 0) return prevData;
+            const nextData = JSON.parse(JSON.stringify(prevData));
+            
+            nextData.forEach((dateGroup: any) => {
+                dateGroup.uploaders.forEach((team: any) => {
+                    team.containers.forEach((cntr: any) => {
+                        if (cntr.cntrNo === cntrNo) {
+                            const currentlyCancelled = cntr.isCancelled || cntr.adminComment?.includes('[취소]');
+                            if (currentlyCancelled) {
+                                cntr.isCancelled = false;
+                                if (cntr.adminComment) {
+                                    cntr.adminComment = cntr.adminComment.replace(/\[취소\]/g, '').trim();
+                                }
+                            } else {
+                                cntr.isCancelled = true;
+                                cntr.adminComment = cntr.adminComment ? `${cntr.adminComment} [취소]`.trim() : '[취소]';
+                            }
+                        }
+                    });
+                });
+            });
+
+            setReportText(rebuildReportTextFromData(nextData));
+            return nextData;
+        });
     };
 
     const handleAddManualSubmit = () => {
@@ -366,18 +402,23 @@ export default function Home({ user }: { user: SessionUser }) {
         const duration = parseInt(manualDuration) || 45;
         const totalQty = validProducts.reduce((sum, p) => sum + p.qty, 0);
 
+        const adminCommentStr = isManualCancelled 
+            ? (manualCategory.trim() ? `${manualCategory.trim()} [취소]` : '[취소]')
+            : manualCategory.trim();
+
         const newRawContainer = {
             cntrNo: manualCntrNo.trim().toUpperCase(),
             isCompleted: true,
+            isCancelled: isManualCancelled,
             division: validProducts[0]?.division || 'DFZ',
             durationMinutes: duration,
             hasBreak: false,
             modelCount: validProducts.length,
             totalQty: totalQty,
-            modelSummaryStr: `${validProducts.length}모델, ${totalQty.toLocaleString()}개${manualCategory.trim() ? ` ( ${manualCategory.trim()} )`: ''}`,
+            modelSummaryStr: `${validProducts.length}모델, ${totalQty.toLocaleString()}개${adminCommentStr ? ` ( ${adminCommentStr} )`: ''}`,
             lastRemark: manualRemark.trim() ? `지연사유: ${manualRemark.trim()}` : '',
             transporter: manualTeamName.includes('천마') ? '천마' : 'BNI',
-            adminComment: manualCategory.trim(),
+            adminComment: adminCommentStr,
             products: validProducts.map(p => ({
                 division: p.division.trim() || 'DFZ',
                 name: p.name.trim().toUpperCase(),
@@ -445,6 +486,7 @@ export default function Home({ user }: { user: SessionUser }) {
         setManualRemark('');
         setManualInsertIndex('end');
         setManualProducts([{ division: 'DFZ', name: '', qty: 0 }]);
+        setIsManualCancelled(false);
     };
 
     const handleSaveComment = async (cntrNo: string) => {
@@ -2410,7 +2452,18 @@ export default function Home({ user }: { user: SessionUser }) {
                                     isAdmin ? (
                                     <div className="space-y-8">
                                         {reportData.map((dateGroup: any) => {
-                                            const totalCntr = dateGroup.uploaders.reduce((sum: number, u: any) => sum + u.containers.length, 0);
+                                            const activeContainers = dateGroup.uploaders.flatMap((u: any) => u.containers).filter((c: any) => !c.isCancelled && !c.adminComment?.includes('[취소]'));
+                                            const totalCntr = activeContainers.length;
+                                            
+                                            const activeCarrierCounts: Record<string, number> = {};
+                                            dateGroup.uploaders.forEach((u: any) => {
+                                                u.containers.forEach((c: any) => {
+                                                    if (c.isCancelled || c.adminComment?.includes('[취소]')) return;
+                                                    const cName = c.transporter ? (c.transporter.includes("천마") ? "천마" : (c.transporter.includes("BNI") || c.transporter.includes("비엔아이") ? "BNI" : c.transporter.split('(')[0])) : "기타";
+                                                    activeCarrierCounts[cName] = (activeCarrierCounts[cName] || 0) + 1;
+                                                });
+                                            });
+
                                             const numTeams = dateGroup.uploaders.length;
                                             const gridColsStyle = numTeams === 1 
                                                 ? 'md:grid-cols-1' 
@@ -2429,10 +2482,10 @@ export default function Home({ user }: { user: SessionUser }) {
                                                         </h3>
                                                         <span className="text-sm font-black text-slate-800 bg-white border border-slate-300 shadow-sm px-3.5 py-1 rounded-full flex items-center gap-1.5 flex-wrap">
                                                             <span>총합계: {totalCntr}개 작업완료</span>
-                                                            {dateGroup.carrierCounts && Object.keys(dateGroup.carrierCounts).length > 0 && (
+                                                            {Object.keys(activeCarrierCounts).length > 0 && (
                                                                 <span className="text-slate-600 font-bold text-xs border-l border-slate-300 pl-2 ml-1 flex items-center gap-1.5 flex-wrap">
                                                                     (
-                                                                    {Object.entries(dateGroup.carrierCounts).map(([cName, count]: [string, any], idx: number) => {
+                                                                    {Object.entries(activeCarrierCounts).map(([cName, count]: [string, any], idx: number) => {
                                                                         const carrierColorClass = cName.includes('천마') 
                                                                             ? 'text-rose-600 font-black' 
                                                                             : (cName.includes('BNI') || cName.includes('비엔아이')) 
@@ -2451,27 +2504,52 @@ export default function Home({ user }: { user: SessionUser }) {
                                                         </span>
                                                     </div>
                                                     <div className={`grid grid-cols-1 ${gridColsStyle} gap-4 items-start w-full`}>
-                                                        {dateGroup.uploaders.map((upGroup: any) => (
+                                                        {dateGroup.uploaders.map((upGroup: any) => {
+                                                            const activeTeamCntrs = upGroup.containers.filter((c: any) => !c.isCancelled && !c.adminComment?.includes('[취소]'));
+                                                            return (
                                                             <div key={upGroup.teamName ?? upGroup.uploaderName} className="bg-white border border-slate-200 rounded-xl md:rounded-2xl p-2.5 sm:p-4 flex flex-col gap-3 md:gap-4 h-auto shadow-sm">
                                                                 <div className="flex items-center justify-between pb-2 border-b border-slate-200">
                                                                     <span className="text-sm font-black text-slate-900 flex items-center gap-1.5">
                                                                         <div className="w-2.5 h-2.5 rounded-full bg-slate-900" />
                                                                         {upGroup.teamName ?? upGroup.uploaderName}
                                                                     </span>
-                                                                    <span className="text-xs font-bold text-slate-500">합계 {upGroup.containers.length}개</span>
+                                                                    <span className="text-xs font-bold text-slate-500">합계 {activeTeamCntrs.length}개</span>
                                                                 </div>
                                                                 <div className="space-y-3">
                                                                     {upGroup.containers.map((cntr: any) => {
                                                                         const totalQty = cntr.products.reduce((sum: number, p: any) => sum + p.qty, 0);
+                                                                        const isCancelled = cntr.isCancelled || cntr.adminComment?.includes('[취소]');
                                                                         return (
                                                                             <div key={cntr.cntrNo} className="bg-slate-50 border border-slate-200 rounded-lg md:rounded-xl p-2.5 sm:p-3 hover:border-slate-300 transition-all space-y-1.5">
                                                                                 <div className="flex items-center justify-between gap-1.5 mb-1.5">
-                                                                                    <span className={`text-sm font-black truncate uppercase ${getCarrierColor(cntr.transporter)}`}>{cntr.cntrNo}</span>
-                                                                                    {cntr.startTimeStr && cntr.endTimeStr && (
-                                                                                        <span className="text-sky-900 font-bold text-xs bg-sky-100 px-1.5 py-0.5 rounded border border-sky-200 shrink-0">
-                                                                                            {cntr.durationMinutes || 45}분 ({cntr.startTimeStr}~{cntr.endTimeStr})
-                                                                                        </span>
-                                                                                    )}
+                                                                                    <div className="flex items-center gap-1.5 min-w-0">
+                                                                                        <span className={`text-sm font-black truncate uppercase ${getCarrierColor(cntr.transporter)}`}>{cntr.cntrNo}</span>
+                                                                                        {isCancelled && (
+                                                                                            <span className="px-1.5 py-0.5 rounded-md bg-rose-500/10 border border-rose-500/20 text-rose-600 font-extrabold text-[11px] shrink-0">
+                                                                                                [취소]
+                                                                                            </span>
+                                                                                        )}
+                                                                                    </div>
+                                                                                    <div className="flex items-center gap-1.5 shrink-0">
+                                                                                        {isAdmin && (
+                                                                                            <button
+                                                                                                onClick={() => handleToggleCancelCntr(cntr.cntrNo)}
+                                                                                                className={`px-2 py-0.5 rounded text-[11px] font-black transition-all cursor-pointer shadow-sm ${
+                                                                                                    isCancelled
+                                                                                                        ? 'bg-emerald-600 text-white hover:bg-emerald-500 border border-emerald-600'
+                                                                                                        : 'bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-600 hover:text-white'
+                                                                                                }`}
+                                                                                                title={isCancelled ? "취소 해제 (정상 작업으로 복원)" : "취소 작업으로 지정"}
+                                                                                            >
+                                                                                                {isCancelled ? '🔄 취소 해제' : '🚫 취소'}
+                                                                                            </button>
+                                                                                        )}
+                                                                                        {cntr.startTimeStr && cntr.endTimeStr && (
+                                                                                            <span className="text-sky-900 font-bold text-xs bg-sky-100 px-1.5 py-0.5 rounded border border-sky-200 shrink-0">
+                                                                                                {cntr.durationMinutes || 45}분 ({cntr.startTimeStr}~{cntr.endTimeStr})
+                                                                                            </span>
+                                                                                        )}
+                                                                                    </div>
                                                                                 </div>
                                                                                 <div className="text-xs text-slate-700 font-bold mb-2 flex items-center flex-wrap gap-1">
                                                                                     <span>{cntr.products.length}모델, {totalQty.toLocaleString()}개</span>
@@ -2564,7 +2642,8 @@ export default function Home({ user }: { user: SessionUser }) {
                                                                     })}
                                                                 </div>
                                                             </div>
-                                                        ))}
+                                                        );
+                                                        })}
                                                     </div>
                                                 </div>
                                             );
@@ -2767,6 +2846,18 @@ export default function Home({ user }: { user: SessionUser }) {
                                                     onChange={e => setManualRemark(e.target.value)}
                                                     className="w-full px-3 py-1.5 border border-slate-300 rounded-xl font-bold focus:outline-none focus:border-sky-500 bg-slate-50 focus:bg-white"
                                                 />
+                                            </div>
+
+                                            <div className="pt-1">
+                                                <label className="flex items-center gap-2 cursor-pointer text-xs font-black text-rose-600 bg-rose-50 border border-rose-200 px-3 py-2 rounded-xl">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={isManualCancelled}
+                                                        onChange={e => setIsManualCancelled(e.target.checked)}
+                                                        className="w-4 h-4 rounded text-rose-600 focus:ring-rose-500 cursor-pointer"
+                                                    />
+                                                    <span>🚫 [취소] 작업 항목으로 등록 (합계 수량에서 제외)</span>
+                                                </label>
                                             </div>
 
                                             <div className="pt-2 border-t border-slate-200">
