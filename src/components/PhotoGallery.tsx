@@ -626,22 +626,18 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                         const isPartialGDrive = gdriveCnt > 0 && !isAllGDrive;
                         if (isAllGDrive) {
                             return (
-                                <span className="text-[9px] font-extrabold text-sky-400 bg-sky-500/10 border border-sky-500/20 px-1.5 py-0.5 rounded-md flex items-center gap-1" title="모든 사진이 구글드라이브에 안전 보관 중입니다 (로컬 용량 정리됨).">
-                                    ☁️ GDrive
+                                <span className="text-xs font-extrabold text-sky-400 bg-sky-500/10 border border-sky-500/20 px-1.5 py-0.5 rounded-md flex items-center justify-center" title="모든 사진이 구글드라이브에 안전 보관 중입니다 (로컬 용량 정리됨).">
+                                    ☁️
                                 </span>
                             );
                         } else if (isPartialGDrive) {
                             return (
-                                <span className="text-[9px] font-extrabold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded-md flex items-center gap-1" title={`사진 ${gdriveCnt}/${folder.photos.length}장 구글드라이브 보관 중`}>
-                                    ☁️ GDrive ({gdriveCnt}/{folder.photos.length})
+                                <span className="text-[10px] font-extrabold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded-md flex items-center gap-1" title={`사진 ${gdriveCnt}/${folder.photos.length}장 구글드라이브 보관 중`}>
+                                    ☁️ {gdriveCnt}/{folder.photos.length}
                                 </span>
                             );
                         } else {
-                            return (
-                                <span className="text-[9px] font-extrabold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-1.5 py-0.5 rounded-md flex items-center gap-1" title="로컬 PC 디스크에 저장되어 있는 백업 대기 상태입니다.">
-                                    💾 로컬PC
-                                </span>
-                            );
+                            return null;
                         }
                     })()}
                     <span className={`text-[10px] font-extrabold px-1.5 py-0.5 rounded-lg shrink-0 ${
@@ -2146,14 +2142,10 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                                                 </div>
                                             </div>
 
-                                            {/* Storage Location Badge */}
-                                            {photo.gdrive_file_id ? (
-                                                <div className="absolute top-2.5 right-2.5 z-10 px-2 py-1 rounded-lg bg-sky-600/90 border border-sky-400/40 text-white font-black text-[9px] shadow-md backdrop-blur-md flex items-center gap-1" title="구글드라이브 안전 보관 사진 (PC 용량 정리 완료)">
-                                                    ☁️ GDrive
-                                                </div>
-                                            ) : (
-                                                <div className="absolute top-2.5 right-2.5 z-10 px-2 py-1 rounded-lg bg-emerald-600/90 border border-emerald-400/40 text-white font-black text-[9px] shadow-md backdrop-blur-md flex items-center gap-1" title="로컬 PC 디스크 저장 사진 (백업 대기)">
-                                                    💾 로컬PC
+                                            {/* Storage Location Badge - GDrive only */}
+                                            {photo.gdrive_file_id && (
+                                                <div className="absolute top-2.5 right-2.5 z-10 px-1.5 py-0.5 rounded-md bg-sky-600/90 border border-sky-400/40 text-white font-black text-xs shadow-md backdrop-blur-md flex items-center justify-center" title="구글드라이브 안전 보관 사진 (PC 용량 정리 완료)">
+                                                    ☁️
                                                 </div>
                                             )}
 
