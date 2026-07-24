@@ -220,14 +220,22 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                 body: JSON.stringify(bodyData)
             });
 
-            const data = await res.json();
+            const textResponse = await res.text();
+            let data: any = {};
+            try {
+                data = JSON.parse(textResponse);
+            } catch (pErr) {
+                console.error("Non-JSON API Response:", textResponse);
+                throw new Error(`서버 응답 오류 (HTTP ${res.status}): ${textResponse.slice(0, 150)}`);
+            }
+
             if (data.success) {
                 alert(`🎉 [완료] ${data.message}`);
                 setSelectedPhotoIds([]);
                 setSelectedFolders([]);
                 loadPhotos();
             } else {
-                alert(`구글드라이브 업로드 & 용량 정리 실패:\n${data.error || '서버 응답 오류'}`);
+                alert(`구글드라이브 업로드 & 용량 정리 실패:\n${data.error || '알 수 없는 서버 오류'}`);
             }
         } catch (error: any) {
             console.error("GDrive upload & local cleanup error:", error);
