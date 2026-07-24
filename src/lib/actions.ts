@@ -576,6 +576,10 @@ export async function fetchTeamWorkProgress(targetWorkDate?: string): Promise<Re
     try {
         const client = await pool.connect();
         try {
+            // KST = UTC+9. Work day: if KST hour < 13, treat as previous calendar day
+            // We calculate the work_date in SQL using AT TIME ZONE so it's consistent
+            const workDate = targetWorkDate || getWorkDateString(new Date());
+
             const query = `
                 SELECT 
                     COALESCE(t.name, '미지정 조') as team_name,
@@ -586,18 +590,23 @@ export async function fetchTeamWorkProgress(targetWorkDate?: string): Promise<Re
                 LEFT JOIN teams t ON p.team_id = t.id
                 LEFT JOIN container_jobs j ON p.job_id = j.id
                 WHERE (p.is_deleted IS NOT TRUE) AND (p.is_completed = true)
+                  AND (
+                    CASE
+                      WHEN EXTRACT(HOUR FROM p.uploaded_at AT TIME ZONE 'Asia/Seoul') < 13
+                      THEN (p.uploaded_at AT TIME ZONE 'Asia/Seoul')::date - INTERVAL '1 day'
+                      ELSE (p.uploaded_at AT TIME ZONE 'Asia/Seoul')::date
+                    END
+                  ) = $1::date
                 GROUP BY COALESCE(t.name, '미지정 조'), COALESCE(p.cntr_no, j.job_name, '미지정')
                 ORDER BY first_uploaded_at ASC
             `;
 
-            const res = await client.query(query);
-            const workDate = targetWorkDate || getWorkDateString(new Date());
+            const res = await client.query(query, [workDate]);
 
             const teamContainersMap = new Map<string, Map<string, { durationMinutes: number; firstUploadedAt: Date }>>();
 
             for (const row of res.rows) {
                 const uploadedAt = row.first_uploaded_at ? new Date(row.first_uploaded_at) : new Date();
-                if (getWorkDateString(uploadedAt) !== workDate) continue;
 
                 const teamName = row.team_name;
                 const cntrNo = row.cntr_no;
