@@ -181,17 +181,27 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
         }
     };
 
-    const handleUploadToGDriveAndCleanLocal = async (targetCntrs?: string[]) => {
-        const targetIds = selectedPhotoIds;
-        const targetCntrNos = targetCntrs || selectedFolders.map(f => f.split('|')[0]);
+    const handleUploadToGDriveAndCleanLocal = async (targetCntrs?: any) => {
+        let targetIds = selectedPhotoIds;
+        let targetCntrNos = (Array.isArray(targetCntrs) ? targetCntrs : null) || selectedFolders.map(f => f.split('|')[0]);
 
         if (targetIds.length === 0 && targetCntrNos.length === 0) {
-            alert("구글드라이브로 업로드하고 로컬 용량을 정리할 사진이나 컨테이너 폴더를 선택해 주세요.");
+            // If no folder or photo selected, fallback to all currently displayed folders
+            targetCntrNos = folders.map(f => f.cntrNo);
+        }
+
+        if (targetIds.length === 0 && targetCntrNos.length === 0) {
+            alert("구글드라이브로 백업할 사진이나 컨테이너 폴더가 없습니다.");
             return;
         }
 
-        const countText = targetIds.length > 0 ? `선택한 사진 ${targetIds.length}장` : `선택한 컨테이너 ${targetCntrNos.length}개`;
-        if (!confirm(`[☁️ 구글드라이브 백업 & 로컬 용량 정리]\n\n${countText}을(를) 구글드라이브로 안전 백업하고, 업로드 확인 후 로컬 PC의 파일 디스크 공간을 정리하시겠습니까?\n(※ 구글드라이브에 안전 보관되므로 갤러리 뷰어에서는 삭제 후에도 정상 조회됩니다.)`)) {
+        const countText = targetIds.length > 0 
+            ? `선택한 사진 ${targetIds.length}장` 
+            : selectedFolders.length > 0 
+                ? `선택한 컨테이너 ${targetCntrNos.length}개` 
+                : `현재 완료 탭의 전체 컨테이너 ${targetCntrNos.length}개`;
+
+        if (!confirm(`[☁️ 구글드라이브 백업 & 로컬 용량 정리]\n\n${countText}을(를) 구글드라이브로 안전 백업하고, 업로드 확인 후 로컬 PC의 파일 디스크 공간을 정리하시겠습니까?\n(※ 구글드라이브에 안전 보관되므로 갤러리 뷰어에서는 정리 후에도 정상 조회됩니다.)`)) {
             return;
         }
 
@@ -217,11 +227,11 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                 setSelectedFolders([]);
                 loadPhotos();
             } else {
-                alert(`구글드라이브 업로드 & 용량 정리 실패: ${data.error}`);
+                alert(`구글드라이브 업로드 & 용량 정리 실패:\n${data.error || '서버 응답 오류'}`);
             }
-        } catch (error) {
+        } catch (error: any) {
             console.error("GDrive upload & local cleanup error:", error);
-            alert("구글드라이브 업로드 중 오류가 발생했습니다.");
+            alert(`구글드라이브 업로드 중 오류가 발생했습니다.\n세부 원인: ${error?.message || String(error)}`);
         } finally {
             setIsLoading(false);
         }
@@ -1402,10 +1412,17 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                                 </div>
                             </div>
                         </div>
-                        <button onClick={loadPhotos}
-                            className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-500 border border-emerald-600 hover:bg-emerald-400 text-white font-black text-xs transition-all shadow-lg shadow-emerald-500/10 cursor-pointer shrink-0">
-                            <RefreshCw className="w-3.5 h-3.5" /> 새로고침
-                        </button>
+                        <div className="flex items-center gap-2 shrink-0">
+                            <button onClick={() => handleUploadToGDriveAndCleanLocal()}
+                                className="flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-sky-600 border border-sky-500 hover:bg-sky-500 text-white font-black text-xs transition-all shadow-lg shadow-sky-600/20 cursor-pointer shrink-0"
+                                title="선택한 폴더 또는 완료된 사진들을 구글드라이브에 백업하고 로컬 PC 용량을 정리합니다.">
+                                <Upload className="w-3.5 h-3.5" /> GDrive 백업 & 용량정리
+                            </button>
+                            <button onClick={loadPhotos}
+                                className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-500 border border-emerald-600 hover:bg-emerald-400 text-white font-black text-xs transition-all shadow-lg shadow-emerald-500/10 cursor-pointer shrink-0">
+                                <RefreshCw className="w-3.5 h-3.5" /> 새로고침
+                            </button>
+                        </div>
                     </div>
 
                     {/* Mobile: Stacked layout */}
@@ -1504,6 +1521,20 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                                     </button>
                                     {/* View Mode Toggle */}
                                     <div className="flex bg-black/40 border border-white/10 p-1 rounded-xl gap-1">
+                                                     <button onClick={handleUploadToGDriveAndCleanLocal}
+                                                         className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 border border-sky-400 text-white font-black text-xs transition-all cursor-pointer shadow-md shadow-sky-500/20"
+                                                         title="선택한 폴더의 사진을 구글 드라이브로 백업하고 로컬 용량을 정리합니다.">
+                                                         <Upload className="w-3.5 h-3.5" /> ☁️ GDrive 백업 ({selectedFolders.length})
+                                                     </button>
+                                                     <button onClick={handleUploadToGDriveAndCleanLocal}
+                                                         className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 border border-sky-400 text-white font-black text-xs transition-all cursor-pointer shadow-md shadow-sky-500/20"
+                                                         title="선택한 폴더의 사진을 구글 드라이브로 백업하고 로컬 용량을 정리합니다.">
+                                                         <Upload className="w-3.5 h-3.5" /> ☁️ GDrive 백업 ({selectedFolders.length})
+                                                     </button>
+                                                     <button onClick={() => setIsLocalCopyOpen(true)}
+                                                         className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 border border-emerald-600 text-white font-black text-xs transition-all cursor-pointer">
+                                                         <Folder className="w-3.5 h-3.5" /> 로컬 복사
+                                                     </button>
                                         <button
                                             onClick={() => setFolderViewMode('DATE_GROUP')}
                                             className={`px-2.5 py-1.5 rounded-lg text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer ${folderViewMode === 'DATE_GROUP' ? 'bg-sky-500 text-white shadow-sm' : 'text-slate-400 hover:text-white'}`}
@@ -1535,6 +1566,15 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                                                         <button onClick={handleRestoreSelectedFolders}
                                                             className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-black text-xs transition-all cursor-pointer">
                                                             <RotateCw className="w-3.5 h-3.5" /> 선택 복구 ({selectedFolders.length})
+                                                        </button>
+                                                        <button onClick={handleUploadToGDriveAndCleanLocal}
+                                                            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 border border-sky-400 text-white font-black text-xs transition-all cursor-pointer shadow-md shadow-sky-500/20"
+                                                            title="선택한 폴더의 사진을 구글 드라이브로 백업하고 로컬 용량을 정리합니다.">
+                                                            <Upload className="w-3.5 h-3.5" /> ☁️ GDrive 백업 ({selectedFolders.length})
+                                                        </button>
+                                                        <button onClick={() => setIsLocalCopyOpen(true)}
+                                                            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 border border-emerald-600 text-white font-black text-xs transition-all cursor-pointer">
+                                                            <Folder className="w-3.5 h-3.5" /> 로컬 복사
                                                         </button>
                                                         <button onClick={handleDeleteSelectedFolders}
                                                             className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-rose-500/10 border border-rose-500/20 hover:bg-rose-600 text-rose-400 hover:text-white font-black text-xs transition-all cursor-pointer">
@@ -1632,7 +1672,37 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                                                                 className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-black text-xs transition-all cursor-pointer">
                                                                 <Download className="w-4 h-4" /> 다운로드
                                                             </button>
-                                                            <button onClick={() => setIsLocalCopyOpen(true)}
+                                                            <button onClick={handleUploadToGDriveAndCleanLocal}
+                                                         className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 border border-sky-400 text-white font-black text-xs transition-all cursor-pointer shadow-md shadow-sky-500/20"
+                                                         title="선택한 폴더의 사진을 구글 드라이브로 백업하고 로컬 용량을 정리합니다.">
+                                                         <Upload className="w-3.5 h-3.5" /> GDrive 백업 ({selectedFolders.length})
+                                                     </button>
+                                                     <button onClick={handleUploadToGDriveAndCleanLocal}
+                                                         className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 border border-sky-400 text-white font-black text-xs transition-all cursor-pointer shadow-md shadow-sky-500/20"
+                                                         title="선택한 폴더의 사진을 구글 드라이브로 백업하고 로컬 용량을 정리합니다.">
+                                                         <Upload className="w-3.5 h-3.5" /> GDrive 백업 ({selectedFolders.length})
+                                                     </button>
+                                                     <button onClick={handleUploadToGDriveAndCleanLocal}
+                                                         className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 border border-sky-400 text-white font-black text-xs transition-all cursor-pointer shadow-md shadow-sky-500/20"
+                                                         title="선택한 폴더의 사진을 구글 드라이브로 백업하고 로컬 용량을 정리합니다.">
+                                                         <Upload className="w-3.5 h-3.5" /> GDrive 백업 ({selectedFolders.length})
+                                                     </button>
+                                                     <button onClick={handleUploadToGDriveAndCleanLocal}
+                                                         className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 border border-sky-400 text-white font-black text-xs transition-all cursor-pointer shadow-md shadow-sky-500/20"
+                                                         title="선택한 폴더의 사진을 구글 드라이브로 백업하고 로컬 용량을 정리합니다.">
+                                                         <Upload className="w-3.5 h-3.5" /> GDrive 백업 ({selectedFolders.length})
+                                                     </button>
+                                                     <button onClick={handleUploadToGDriveAndCleanLocal}
+                                                         className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 border border-sky-400 text-white font-black text-xs transition-all cursor-pointer shadow-md shadow-sky-500/20"
+                                                         title="선택한 폴더의 사진을 구글 드라이브로 백업하고 로컬 용량을 정리합니다.">
+                                                         <Upload className="w-3.5 h-3.5" /> ☁️ GDrive 백업 ({selectedFolders.length})
+                                                     </button>
+                                                     <button onClick={handleUploadToGDriveAndCleanLocal}
+                                                         className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 border border-sky-400 text-white font-black text-xs transition-all cursor-pointer shadow-md shadow-sky-500/20"
+                                                         title="선택한 폴더의 사진을 구글 드라이브로 백업하고 로컬 용량을 정리합니다.">
+                                                         <Upload className="w-3.5 h-3.5" /> ☁️ GDrive 백업 ({selectedFolders.length})
+                                                     </button>
+                                                     <button onClick={() => setIsLocalCopyOpen(true)}
                                                                 className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-white/10 border border-white/10 text-slate-300 hover:text-white font-black text-xs transition-all cursor-pointer">
                                                                 <Folder className="w-4 h-4" /> 로컬 복사
                                                             </button>
