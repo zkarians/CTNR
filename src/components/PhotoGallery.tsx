@@ -559,15 +559,41 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                         )}
                     </h4>
                 </div>
-                <span className={`text-[10px] font-extrabold px-1.5 py-0.5 rounded-lg shrink-0 ${
-                    isTrashView 
-                        ? 'bg-purple-500/10 text-purple-400' 
-                        : isCompletedView 
-                            ? 'bg-emerald-500/10 text-emerald-400' 
-                            : 'bg-sky-500/10 text-sky-400'
-                }`}>
-                    {folder.photos.length}장
-                </span>
+                <div className="flex items-center gap-1.5 shrink-0">
+                    {(() => {
+                        const gdriveCnt = folder.photos.filter(p => !!p.gdrive_file_id).length;
+                        const isAllGDrive = folder.photos.length > 0 && gdriveCnt === folder.photos.length;
+                        const isPartialGDrive = gdriveCnt > 0 && !isAllGDrive;
+                        if (isAllGDrive) {
+                            return (
+                                <span className="text-[9px] font-extrabold text-sky-400 bg-sky-500/10 border border-sky-500/20 px-1.5 py-0.5 rounded-md flex items-center gap-1" title="모든 사진이 구글드라이브에 안전 보관 중입니다 (로컬 용량 정리됨).">
+                                    ☁️ GDrive
+                                </span>
+                            );
+                        } else if (isPartialGDrive) {
+                            return (
+                                <span className="text-[9px] font-extrabold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded-md flex items-center gap-1" title={`사진 ${gdriveCnt}/${folder.photos.length}장 구글드라이브 보관 중`}>
+                                    ☁️ GDrive ({gdriveCnt}/{folder.photos.length})
+                                </span>
+                            );
+                        } else {
+                            return (
+                                <span className="text-[9px] font-extrabold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-1.5 py-0.5 rounded-md flex items-center gap-1" title="로컬 PC 디스크에 저장되어 있는 백업 대기 상태입니다.">
+                                    💾 로컬PC
+                                </span>
+                            );
+                        }
+                    })()}
+                    <span className={`text-[10px] font-extrabold px-1.5 py-0.5 rounded-lg shrink-0 ${
+                        isTrashView 
+                            ? 'bg-purple-500/10 text-purple-400' 
+                            : isCompletedView 
+                                ? 'bg-emerald-500/10 text-emerald-400' 
+                                : 'bg-sky-500/10 text-sky-400'
+                    }`}>
+                        {folder.photos.length}장
+                    </span>
+                </div>
             </div>
 
             <div className="flex items-center justify-between mt-2 pt-2 border-t border-white/5 text-[9px] text-slate-500 font-bold">
@@ -2050,6 +2076,17 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                                                     <Check className="w-3.5 h-3.5 stroke-[3]" />
                                                 </div>
                                             </div>
+
+                                            {/* Storage Location Badge */}
+                                            {photo.gdrive_file_id ? (
+                                                <div className="absolute top-2.5 right-2.5 z-10 px-2 py-1 rounded-lg bg-sky-600/90 border border-sky-400/40 text-white font-black text-[9px] shadow-md backdrop-blur-md flex items-center gap-1" title="구글드라이브 안전 보관 사진 (PC 용량 정리 완료)">
+                                                    ☁️ GDrive
+                                                </div>
+                                            ) : (
+                                                <div className="absolute top-2.5 right-2.5 z-10 px-2 py-1 rounded-lg bg-emerald-600/90 border border-emerald-400/40 text-white font-black text-[9px] shadow-md backdrop-blur-md flex items-center gap-1" title="로컬 PC 디스크 저장 사진 (백업 대기)">
+                                                    💾 로컬PC
+                                                </div>
+                                            )}
 
                                             {/* Duplicate badge shifted */}
                                             {duplicatePhotoIds.includes(photo.id) && (
