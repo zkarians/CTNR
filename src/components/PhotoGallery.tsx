@@ -5,7 +5,7 @@ import {
     X, Calendar, User, Download, Search, Image as ImageIcon, 
     ChevronLeft, ChevronRight, ChevronDown, Loader2, ArrowLeft, Trash2, Folder,
     ExternalLink, RotateCw, RotateCcw, Grid, LayoutGrid, Check, Undo,
-    RefreshCw, SkipForward
+    RefreshCw, SkipForward, Upload
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { fetchTeams } from '@/lib/actions';
@@ -1452,6 +1452,10 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                             </div>
                         </div>
                         {/* Row 4: Action buttons */}
+                        <button onClick={() => handleUploadToGDriveAndCleanLocal()}
+                            className="flex items-center justify-center gap-1.5 py-2.5 w-full rounded-xl bg-sky-600 border border-sky-500 hover:bg-sky-500 text-white font-black text-xs transition-all shadow-lg shadow-sky-600/20 cursor-pointer">
+                            <Upload className="w-3.5 h-3.5" /> ☁️ GDrive 백업 & 용량정리
+                        </button>
                         <div className="grid grid-cols-2 gap-2">
                             <button onClick={handleResetFilters}
                                 className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-white/5 border border-white/5 text-slate-400 hover:text-white hover:bg-white/10 transition-all font-black text-xs cursor-pointer">
