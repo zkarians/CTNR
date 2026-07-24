@@ -2707,9 +2707,9 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                                         <div className="space-y-1.5">
                                             <div className="text-[11px] font-bold text-slate-400">기존 컨테이너에서 선택:</div>
                                             <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto p-2 bg-black/30 rounded-xl border border-white/5">
-                                                {folders.slice(0, 15).map(f => (
+                                                {folders.slice(0, 15).map((f, idx) => (
                                                     <button
-                                                        key={f.cntrNo}
+                                                        key={`${f.cntrNo}_${f.workDateStr}_${idx}`}
                                                         type="button"
                                                         onClick={() => setTargetMoveCntrNo(f.cntrNo)}
                                                         className={`px-2.5 py-1 rounded-lg text-xs font-mono font-black transition-all cursor-pointer border ${
@@ -2762,6 +2762,7 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                     {isLocalCopyOpen && (
                         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
                             <motion.div 
+                                key="local-copy-backdrop"
                                 initial={{ opacity: 0 }} 
                                 animate={{ opacity: 1 }} 
                                 exit={{ opacity: 0 }} 
@@ -2769,6 +2770,7 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                                 className="absolute inset-0 bg-black/60 backdrop-blur-sm" 
                             />
                             <motion.div 
+                                key="local-copy-content"
                                 initial={{ scale: 0.9, opacity: 0, y: 20 }} 
                                 animate={{ scale: 1, opacity: 1, y: 0 }} 
                                 exit={{ scale: 0.9, opacity: 0, y: 20 }}
