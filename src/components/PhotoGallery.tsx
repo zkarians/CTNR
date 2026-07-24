@@ -209,7 +209,8 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                 .filter(f => selectedFolders.includes(f.cntrNo + '|' + f.workDateStr))
                 .flatMap(f => f.photos.map(p => p.id));
         } else {
-            targetIds = folders.flatMap(f => f.photos.map(p => p.id));
+            alert("백업할 컨테이너 폴더를 하나 이상 선택해 주세요.\n(폴더 카드의 체크박스를 선택하거나 우측 상단의 '이 날짜 전체 선택'을 체크해 주세요)");
+            return;
         }
 
         if (targetIds.length === 0) {
@@ -2542,7 +2543,7 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                                     </div>
 
                                     {/* Action Buttons */}
-                                    <div className="pt-4 border-t border-white/10 flex justify-end gap-2">
+                                    <div className="pt-4 border-t border-white/10 flex flex-col sm:flex-row justify-end gap-2">
                                         {isGDriveUploading ? (
                                             <button 
                                                 onClick={handleStopGDriveUpload}
@@ -2551,12 +2552,22 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                                                 <X className="w-4 h-4" /> 백업 중단 (Cancel)
                                             </button>
                                         ) : (
-                                            <button 
-                                                onClick={() => setIsGDriveProgressOpen(false)}
-                                                className="w-full py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-white font-black text-xs transition-all cursor-pointer shadow-lg shadow-emerald-500/20"
-                                            >
-                                                닫기 (Close)
-                                            </button>
+                                            <>
+                                                {gdriveProgress.percent < 100 && (
+                                                    <button 
+                                                        onClick={() => handleUploadToGDriveAndCleanLocal()}
+                                                        className="w-full py-3 rounded-xl bg-sky-600 hover:bg-sky-500 border border-sky-400 text-white font-black text-xs transition-all flex items-center justify-center gap-2 cursor-pointer shadow-lg shadow-sky-500/30 animate-pulse"
+                                                    >
+                                                        <RotateCw className="w-4 h-4" /> 🔄 남은 사진 이어서 백업 재시작
+                                                    </button>
+                                                )}
+                                                <button 
+                                                    onClick={() => setIsGDriveProgressOpen(false)}
+                                                    className={`py-3 rounded-xl text-white font-black text-xs transition-all cursor-pointer shadow-lg ${gdriveProgress.percent < 100 ? "px-5 bg-white/10 hover:bg-white/20 border border-white/10 shrink-0" : "w-full bg-emerald-500 hover:bg-emerald-400 shadow-emerald-500/20"}`}
+                                                >
+                                                    닫기 (Close)
+                                                </button>
+                                            </>
                                         )}
                                     </div>
                                 </div>
