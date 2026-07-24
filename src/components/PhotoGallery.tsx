@@ -332,6 +332,7 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
         } finally {
             setIsGDriveUploading(false);
             gdriveAbortControllerRef.current = null;
+            loadPhotos();
         }
     };
 
