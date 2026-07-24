@@ -26,6 +26,8 @@ interface Photo {
     uploader_username: string;
     job_name: string;
     transporter?: string;
+    gdrive_file_id?: string;
+    gdrive_url?: string;
 }
 
 interface PhotoGalleryProps {
