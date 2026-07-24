@@ -200,23 +200,28 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
     };
 
     const handleUploadToGDriveAndCleanLocal = async (targetCntrs?: any) => {
-        let targetIds = selectedPhotoIds;
-        let targetCntrNos = (Array.isArray(targetCntrs) ? targetCntrs : null) || selectedFolders.map(f => f.split('|')[0]);
-
-        if (targetIds.length === 0 && targetCntrNos.length === 0) {
-            targetCntrNos = folders.map(f => f.cntrNo);
+        // Extract exact photo IDs to ensure 100% accurate total count
+        let targetIds: string[] = [];
+        if (selectedPhotoIds.length > 0) {
+            targetIds = [...selectedPhotoIds];
+        } else if (selectedFolders.length > 0) {
+            targetIds = folders
+                .filter(f => selectedFolders.includes(f.cntrNo + '|' + f.workDateStr))
+                .flatMap(f => f.photos.map(p => p.id));
+        } else {
+            targetIds = folders.flatMap(f => f.photos.map(p => p.id));
         }
 
-        if (targetIds.length === 0 && targetCntrNos.length === 0) {
-            alert("구글드라이브로 백업할 사진이나 컨테이너 폴더가 없습니다.");
+        if (targetIds.length === 0) {
+            alert("구글드라이브로 백업할 사진이 없습니다.");
             return;
         }
 
-        const countText = targetIds.length > 0 
+        const countText = selectedPhotoIds.length > 0 
             ? `선택한 사진 ${targetIds.length}장` 
             : selectedFolders.length > 0 
-                ? `선택한 컨테이너 ${targetCntrNos.length}개` 
-                : `현재 완료 탭의 전체 컨테이너 ${targetCntrNos.length}개`;
+                ? `선택한 컨테이너 폴더의 사진 ${targetIds.length}장` 
+                : `현재 탭의 전체 사진 ${targetIds.length}장`;
 
         if (!confirm(`[☁️ 구글드라이브 백업 & 로컬 용량 정리]\n\n${countText}을(를) 구글드라이브로 안전 백업하고, 업로드 확인 후 로컬 PC의 디스크 공간을 정리하시겠습니까?\n(※ 이전에 이미 완료된 파일은 자동 스킵되며, 남은 파일만 이어서 진행됩니다.)`)) {
             return;
@@ -226,7 +231,7 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
         setIsGDriveUploading(true);
         setGdriveProgress({
             current: 0,
-            total: 0,
+            total: targetIds.length,
             percent: 0,
             currentFile: '작업 준비 중...',
             status: 'STARTING',
@@ -241,12 +246,10 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
         gdriveAbortControllerRef.current = abortController;
 
         try {
-            let bodyData: any = { action: 'upload_gdrive' };
-            if (targetIds.length > 0) {
-                bodyData.ids = targetIds;
-            } else if (targetCntrNos.length > 0) {
-                bodyData.cntrNos = targetCntrNos;
-            }
+            const bodyData = { 
+                action: 'upload_gdrive',
+                ids: targetIds
+            };
 
             const res = await fetch('/api/photos', {
                 method: 'PATCH',
