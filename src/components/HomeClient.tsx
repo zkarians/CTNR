@@ -1078,14 +1078,6 @@ export default function Home({ user }: { user: SessionUser }) {
                                     <div className="flex items-center gap-1.5 shrink-0">
                                         <Clock className="w-3.5 h-3.5 text-sky-400 animate-pulse shrink-0" />
                                         <span className="font-black text-slate-200 text-[11px]">전체 조 작업시간</span>
-                                        <button
-                                            onClick={handleResetTeamProgress}
-                                            className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 text-[10px] font-bold transition-all cursor-pointer shrink-0 ml-1"
-                                            title="보고서와 사진 데이터는 보존되며, 각 조 근무시간 계산 및 완료 상태만 초기화됩니다"
-                                        >
-                                            <RotateCw className="w-2.5 h-2.5" />
-                                            <span>근무시간 초기화</span>
-                                        </button>
                                     </div>
                                     <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar max-w-full">
                                         {allTeamNames.length > 0 ? (
@@ -1516,14 +1508,6 @@ export default function Home({ user }: { user: SessionUser }) {
                                     <div className="flex items-center gap-1 shrink-0">
                                         <Clock className="w-3.5 h-3.5 text-sky-400 animate-pulse shrink-0" />
                                         <span className="font-bold text-slate-200 text-[10px]">전체조:</span>
-                                        <button
-                                            onClick={handleResetTeamProgress}
-                                            className="flex items-center gap-0.5 px-1 py-0.2 rounded bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 text-[9px] font-bold transition-all cursor-pointer shrink-0 ml-0.5"
-                                            title="보고서와 사진 데이터는 보존되며, 각 조 근무시간 계산 및 완료 상태만 초기화됩니다"
-                                        >
-                                            <RotateCw className="w-2 h-2" />
-                                            <span>초기화</span>
-                                        </button>
                                     </div>
                                     <div className="flex items-center gap-1 overflow-x-auto no-scrollbar max-w-full">
                                         {allTeamNames.length > 0 ? (
@@ -1966,6 +1950,27 @@ export default function Home({ user }: { user: SessionUser }) {
                                                     ))}
                                                 </div>
                                             )}
+                                        </div>
+
+                                        {/* 당일 근무시간 초기화 */}
+                                        <div className="pt-4 border-t border-white/10 space-y-2">
+                                            <label className="text-[11px] font-black text-rose-400 ml-1 uppercase tracking-widest flex items-center gap-1">
+                                                <RotateCw className="w-3.5 h-3.5" />
+                                                당일 조별 근무시간 초기화 (수동 리셋)
+                                            </label>
+                                            <div className="bg-rose-500/10 border border-rose-500/20 rounded-2xl p-4 space-y-3 text-slate-300 text-xs">
+                                                <p className="font-medium leading-relaxed">
+                                                    오늘 완료 처리된 모든 컨테이너를 진행 중 상태로 원복하고, 조별 근무시간을 19:00 시작 초기 상태로 초기화합니다.<br/>
+                                                    <span className="text-emerald-400 font-bold">* 보고서 데이터 및 사진 파일은 삭제되지 않고 안전하게 보존됩니다.</span>
+                                                </p>
+                                                <button
+                                                    onClick={handleResetTeamProgress}
+                                                    className="w-full py-2.5 px-4 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"
+                                                >
+                                                    <RotateCw className="w-4 h-4" />
+                                                    <span>오늘 조별 근무시간/완료기록 초기화 실행</span>
+                                                </button>
+                                            </div>
                                         </div>
                                     </div>
                                 )}
