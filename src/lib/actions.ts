@@ -576,8 +576,10 @@ export async function fetchTeamWorkProgress(targetWorkDate?: string): Promise<Re
     try {
         const client = await pool.connect();
         try {
-            // KST = UTC+9. Work day: if KST hour < 13, treat as previous calendar day
-            // We calculate the work_date in SQL using AT TIME ZONE so it's consistent
+            // KST = UTC+9. getWorkDateString() uses Node local time (KST=+9 on this server).
+            // PG timezone is also Asia/Seoul, so uploaded_at is stored as UTC but EXTRACT(HOUR)
+            // returns KST hours. ::date cast however gives UTC date. We must add 9 hours manually
+            // to convert UTC timestamp to KST before casting to date.
             const workDate = targetWorkDate || getWorkDateString(new Date());
 
             const query = `
@@ -589,12 +591,12 @@ export async function fetchTeamWorkProgress(targetWorkDate?: string): Promise<Re
                 FROM container_photos p
                 LEFT JOIN teams t ON p.team_id = t.id
                 LEFT JOIN container_jobs j ON p.job_id = j.id
-                WHERE (p.is_deleted IS NOT TRUE) AND (p.is_completed = true)
+                WHERE (p.is_deleted IS NOT TRUE)
                   AND (
                     CASE
-                      WHEN EXTRACT(HOUR FROM p.uploaded_at AT TIME ZONE 'Asia/Seoul') < 13
-                      THEN (p.uploaded_at AT TIME ZONE 'Asia/Seoul')::date - INTERVAL '1 day'
-                      ELSE (p.uploaded_at AT TIME ZONE 'Asia/Seoul')::date
+                      WHEN EXTRACT(HOUR FROM (p.uploaded_at + INTERVAL '9 hours')) < 13
+                      THEN (p.uploaded_at + INTERVAL '9 hours')::date - INTERVAL '1 day'
+                      ELSE (p.uploaded_at + INTERVAL '9 hours')::date
                     END
                   ) = $1::date
                 GROUP BY COALESCE(t.name, '미지정 조'), COALESCE(p.cntr_no, j.job_name, '미지정')
