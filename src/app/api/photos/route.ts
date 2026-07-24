@@ -645,65 +645,127 @@ export async function PATCH(req: NextRequest) {
                 }
 
                 if (targetPhotos.length === 0) {
+                    client.release();
                     return NextResponse.json({ error: '업로드 및 정리할 대상 사진이 없습니다.' }, { status: 400 });
                 }
 
-                const uploadsDir = process.env.UPLOAD_DIR || path.join(process.cwd(), 'uploads');
-                let uploadedCount = 0;
-                let cleanedCount = 0;
-                let freedBytes = 0;
-                let lastError = '';
+                const encoder = new TextEncoder();
+                const stream = new ReadableStream({
+                    async start(controller) {
+                        const sendEvent = (data: any) => {
+                            try {
+                                controller.enqueue(encoder.encode(JSON.stringify(data) + '\n'));
+                            } catch {
+                                // Ignore controller enqueue errors if client disconnected
+                            }
+                        };
 
-                for (const photo of targetPhotos) {
-                    const localPath = path.resolve(uploadsDir, photo.photo_path);
-                    const filename = path.basename(photo.photo_path);
+                        const uploadsDir = process.env.UPLOAD_DIR || path.join(process.cwd(), 'uploads');
+                        let uploadedCount = 0;
+                        let skippedCount = 0;
+                        let cleanedCount = 0;
+                        let freedBytes = 0;
+                        const total = targetPhotos.length;
 
-                    let fileId = photo.gdrive_file_id;
-                    let gdriveUrl = photo.gdrive_url;
+                        const alreadyDoneCount = targetPhotos.filter(p => !!p.gdrive_file_id).length;
+                        sendEvent({ type: 'start', total, alreadyDoneCount });
 
-                    if (!fileId && fs.existsSync(localPath)) {
                         try {
-                            const gRes = await uploadToGoogleDrive(localPath, filename);
-                            fileId = gRes.fileId;
-                            gdriveUrl = gRes.gdriveUrl;
+                            for (let i = 0; i < total; i++) {
+                                const photo = targetPhotos[i];
+                                const localPath = path.resolve(uploadsDir, photo.photo_path);
+                                const filename = path.basename(photo.photo_path);
 
-                            await client.query(
-                                `UPDATE container_photos SET gdrive_file_id = $1, gdrive_url = $2 WHERE id = $3`,
-                                [fileId, gdriveUrl, photo.id]
-                            );
-                            uploadedCount++;
+                                let fileId = photo.gdrive_file_id;
+                                let gdriveUrl = photo.gdrive_url;
+
+                                if (!fileId && fs.existsSync(localPath)) {
+                                    try {
+                                        sendEvent({ 
+                                            type: 'progress', 
+                                            current: i + 1, 
+                                            total, 
+                                            percent: Math.round(((i + 1) / total) * 100), 
+                                            currentFile: filename, 
+                                            status: 'UPLOADING',
+                                            uploadedCount,
+                                            skippedCount,
+                                            cleanedCount,
+                                            freedMB: (freedBytes / (1024 * 1024)).toFixed(1)
+                                        });
+
+                                        const gRes = await uploadToGoogleDrive(localPath, filename);
+                                        fileId = gRes.fileId;
+                                        gdriveUrl = gRes.gdriveUrl;
+
+                                        await client.query(
+                                            `UPDATE container_photos SET gdrive_file_id = $1, gdrive_url = $2 WHERE id = $3`,
+                                            [fileId, gdriveUrl, photo.id]
+                                        );
+                                        uploadedCount++;
+                                    } catch (err: any) {
+                                        console.error(`[GDrive Sync Error] ${filename}:`, err);
+                                        sendEvent({ type: 'error', filename, error: err?.message || String(err) });
+                                    }
+                                } else if (fileId) {
+                                    skippedCount++;
+                                }
+
+                                if (fileId && fs.existsSync(localPath)) {
+                                    try {
+                                        const stat = fs.statSync(localPath);
+                                        freedBytes += stat.size;
+                                        fs.unlinkSync(localPath);
+                                        cleanedCount++;
+                                    } catch (unlinkErr) {
+                                        console.error(`[Local Cleanup Error] ${filename}:`, unlinkErr);
+                                    }
+                                }
+
+                                const freedMB = (freedBytes / (1024 * 1024)).toFixed(1);
+                                sendEvent({ 
+                                    type: 'progress', 
+                                    current: i + 1, 
+                                    total, 
+                                    percent: Math.round(((i + 1) / total) * 100), 
+                                    currentFile: filename, 
+                                    status: 'DONE',
+                                    uploadedCount,
+                                    skippedCount,
+                                    cleanedCount,
+                                    freedMB 
+                                });
+                            }
+
+                            const finalFreedMB = (freedBytes / (1024 * 1024)).toFixed(1);
+                            sendEvent({
+                                type: 'done',
+                                total,
+                                uploadedCount,
+                                skippedCount,
+                                cleanedCount,
+                                freedMB: finalFreedMB,
+                                message: `🎉 총 ${total}장 백업 및 정리 작업 완료!\n(신규 백업 ${uploadedCount}장 / 기존 보관 스킵 ${skippedCount}장 / 로컬 디스크 ${finalFreedMB}MB 공간 확보)`
+                            });
                         } catch (err: any) {
-                            console.error(`[GDrive Manual Sync Error] Failed for ${filename}:`, err);
-                            lastError = err?.message || String(err);
+                            sendEvent({ type: 'fatal_error', error: err?.message || String(err) });
+                        } finally {
+                            client.release();
+                            try {
+                                controller.close();
+                            } catch {
+                                // ignore
+                            }
                         }
                     }
+                });
 
-                    if (fileId && fs.existsSync(localPath)) {
-                        try {
-                            const stat = fs.statSync(localPath);
-                            freedBytes += stat.size;
-                            fs.unlinkSync(localPath);
-                            cleanedCount++;
-                        } catch (unlinkErr) {
-                            console.error(`[Local Cleanup Error] Failed for ${filename}:`, unlinkErr);
-                        }
+                return new Response(stream, {
+                    headers: {
+                        'Content-Type': 'application/x-ndjson; charset=utf-8',
+                        'Cache-Control': 'no-cache, no-transform',
+                        'X-Content-Type-Options': 'nosniff'
                     }
-                }
-
-                const freedMB = (freedBytes / (1024 * 1024)).toFixed(1);
-                if (uploadedCount === 0 && cleanedCount === 0 && lastError) {
-                    return NextResponse.json({ 
-                        success: false, 
-                        error: `구글 드라이브 업로드 실패 (${lastError})` 
-                    }, { status: 500 });
-                }
-
-                return NextResponse.json({
-                    success: true,
-                    uploadedCount,
-                    cleanedCount,
-                    freedMB,
-                    message: `총 ${targetPhotos.length}장 중 ${uploadedCount}장 구글드라이브 업로드 완료 & ${cleanedCount}장의 로컬 파일 정리 (${freedMB}MB 디스크 용량 확보)`
                 });
             }
 

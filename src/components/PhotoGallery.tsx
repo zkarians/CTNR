@@ -88,6 +88,22 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
     const [duplicatePhotoIds, setDuplicatePhotoIds] = useState<string[]>([]);
     const [selectedPhotoIds, setSelectedPhotoIds] = useState<string[]>([]);
 
+    const [isGDriveProgressOpen, setIsGDriveProgressOpen] = useState(false);
+    const [isGDriveUploading, setIsGDriveUploading] = useState(false);
+    const [gdriveProgress, setGdriveProgress] = useState({
+        current: 0,
+        total: 0,
+        percent: 0,
+        currentFile: '',
+        status: 'IDLE',
+        uploadedCount: 0,
+        skippedCount: 0,
+        cleanedCount: 0,
+        freedMB: '0.0',
+        alreadyDoneCount: 0
+    });
+    const gdriveAbortControllerRef = React.useRef<AbortController | null>(null);
+
     const toggleSelectPhoto = (photoId: string, e?: React.MouseEvent) => {
         if (e) e.stopPropagation();
         setSelectedPhotoIds(prev => 
@@ -186,7 +202,6 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
         let targetCntrNos = (Array.isArray(targetCntrs) ? targetCntrs : null) || selectedFolders.map(f => f.split('|')[0]);
 
         if (targetIds.length === 0 && targetCntrNos.length === 0) {
-            // If no folder or photo selected, fallback to all currently displayed folders
             targetCntrNos = folders.map(f => f.cntrNo);
         }
 
@@ -201,11 +216,28 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                 ? `선택한 컨테이너 ${targetCntrNos.length}개` 
                 : `현재 완료 탭의 전체 컨테이너 ${targetCntrNos.length}개`;
 
-        if (!confirm(`[☁️ 구글드라이브 백업 & 로컬 용량 정리]\n\n${countText}을(를) 구글드라이브로 안전 백업하고, 업로드 확인 후 로컬 PC의 파일 디스크 공간을 정리하시겠습니까?\n(※ 구글드라이브에 안전 보관되므로 갤러리 뷰어에서는 정리 후에도 정상 조회됩니다.)`)) {
+        if (!confirm(`[☁️ 구글드라이브 백업 & 로컬 용량 정리]\n\n${countText}을(를) 구글드라이브로 안전 백업하고, 업로드 확인 후 로컬 PC의 디스크 공간을 정리하시겠습니까?\n(※ 이전에 이미 완료된 파일은 자동 스킵되며, 남은 파일만 이어서 진행됩니다.)`)) {
             return;
         }
 
-        setIsLoading(true);
+        setIsGDriveProgressOpen(true);
+        setIsGDriveUploading(true);
+        setGdriveProgress({
+            current: 0,
+            total: 0,
+            percent: 0,
+            currentFile: '작업 준비 중...',
+            status: 'STARTING',
+            uploadedCount: 0,
+            skippedCount: 0,
+            cleanedCount: 0,
+            freedMB: '0.0',
+            alreadyDoneCount: 0
+        });
+
+        const abortController = new AbortController();
+        gdriveAbortControllerRef.current = abortController;
+
         try {
             let bodyData: any = { action: 'upload_gdrive' };
             if (targetIds.length > 0) {
@@ -217,31 +249,93 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
             const res = await fetch('/api/photos', {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(bodyData)
+                body: JSON.stringify(bodyData),
+                signal: abortController.signal
             });
 
-            const textResponse = await res.text();
-            let data: any = {};
-            try {
-                data = JSON.parse(textResponse);
-            } catch (pErr) {
-                console.error("Non-JSON API Response:", textResponse);
-                throw new Error(`서버 응답 오류 (HTTP ${res.status}): ${textResponse.slice(0, 150)}`);
+            if (!res.ok) {
+                const errText = await res.text();
+                throw new Error(`HTTP ${res.status}: ${errText.slice(0, 150)}`);
             }
 
-            if (data.success) {
-                alert(`🎉 [완료] ${data.message}`);
-                setSelectedPhotoIds([]);
-                setSelectedFolders([]);
-                loadPhotos();
-            } else {
-                alert(`구글드라이브 업로드 & 용량 정리 실패:\n${data.error || '알 수 없는 서버 오류'}`);
+            if (!res.body) throw new Error("ReadableStream not supported.");
+
+            const reader = res.body.getReader();
+            const decoder = new TextDecoder('utf-8');
+            let buffer = '';
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n');
+                buffer = lines.pop() || '';
+
+                for (const line of lines) {
+                    if (!line.trim()) continue;
+                    try {
+                        const event = JSON.parse(line.trim());
+                        if (event.type === 'start') {
+                            setGdriveProgress(prev => ({
+                                ...prev,
+                                total: event.total,
+                                alreadyDoneCount: event.alreadyDoneCount || 0
+                            }));
+                        } else if (event.type === 'progress') {
+                            setGdriveProgress(prev => ({
+                                ...prev,
+                                current: event.current,
+                                total: event.total,
+                                percent: event.percent,
+                                currentFile: event.currentFile,
+                                status: event.status,
+                                uploadedCount: event.uploadedCount !== undefined ? event.uploadedCount : prev.uploadedCount,
+                                skippedCount: event.skippedCount !== undefined ? event.skippedCount : prev.skippedCount,
+                                cleanedCount: event.cleanedCount !== undefined ? event.cleanedCount : prev.cleanedCount,
+                                freedMB: event.freedMB || prev.freedMB
+                            }));
+                        } else if (event.type === 'done') {
+                            setGdriveProgress(prev => ({
+                                ...prev,
+                                percent: 100,
+                                freedMB: event.freedMB,
+                                uploadedCount: event.uploadedCount,
+                                skippedCount: event.skippedCount,
+                                cleanedCount: event.cleanedCount
+                            }));
+                            setTimeout(() => {
+                                alert(event.message);
+                                setSelectedPhotoIds([]);
+                                setSelectedFolders([]);
+                                loadPhotos();
+                            }, 300);
+                        } else if (event.type === 'error') {
+                            console.warn("[GDrive Warning]", event.filename, event.error);
+                        } else if (event.type === 'fatal_error') {
+                            alert(`백업 중 오류가 발생했습니다: ${event.error}`);
+                        }
+                    } catch (e) {
+                        console.error("NDJSON parse error:", e);
+                    }
+                }
             }
         } catch (error: any) {
-            console.error("GDrive upload & local cleanup error:", error);
-            alert(`구글드라이브 업로드 중 오류가 발생했습니다.\n세부 원인: ${error?.message || String(error)}`);
+            if (error.name === 'AbortError') {
+                alert('구글 드라이브 백업 작업이 사용자에 의해 중지되었습니다.');
+            } else {
+                console.error("GDrive upload error:", error);
+                alert(`구글드라이브 업로드 중 오류가 발생했습니다:\n${error.message}`);
+            }
         } finally {
-            setIsLoading(false);
+            setIsGDriveUploading(false);
+            gdriveAbortControllerRef.current = null;
+        }
+    };
+
+    const handleStopGDriveUpload = () => {
+        if (gdriveAbortControllerRef.current) {
+            gdriveAbortControllerRef.current.abort();
         }
     };
 
@@ -1529,20 +1623,6 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                                     </button>
                                     {/* View Mode Toggle */}
                                     <div className="flex bg-black/40 border border-white/10 p-1 rounded-xl gap-1">
-                                                     <button onClick={handleUploadToGDriveAndCleanLocal}
-                                                         className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 border border-sky-400 text-white font-black text-xs transition-all cursor-pointer shadow-md shadow-sky-500/20"
-                                                         title="선택한 폴더의 사진을 구글 드라이브로 백업하고 로컬 용량을 정리합니다.">
-                                                         <Upload className="w-3.5 h-3.5" /> ☁️ GDrive 백업 ({selectedFolders.length})
-                                                     </button>
-                                                     <button onClick={handleUploadToGDriveAndCleanLocal}
-                                                         className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 border border-sky-400 text-white font-black text-xs transition-all cursor-pointer shadow-md shadow-sky-500/20"
-                                                         title="선택한 폴더의 사진을 구글 드라이브로 백업하고 로컬 용량을 정리합니다.">
-                                                         <Upload className="w-3.5 h-3.5" /> ☁️ GDrive 백업 ({selectedFolders.length})
-                                                     </button>
-                                                     <button onClick={() => setIsLocalCopyOpen(true)}
-                                                         className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 border border-emerald-600 text-white font-black text-xs transition-all cursor-pointer">
-                                                         <Folder className="w-3.5 h-3.5" /> 로컬 복사
-                                                     </button>
                                         <button
                                             onClick={() => setFolderViewMode('DATE_GROUP')}
                                             className={`px-2.5 py-1.5 rounded-lg text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer ${folderViewMode === 'DATE_GROUP' ? 'bg-sky-500 text-white shadow-sm' : 'text-slate-400 hover:text-white'}`}
@@ -1615,6 +1695,11 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                                                             <Trash2 className="w-3.5 h-3.5" /> 삭제 ({selectedFolders.length})
                                                         </button>
                                                     )}
+                                                    <button onClick={handleUploadToGDriveAndCleanLocal}
+                                                        className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 border border-sky-400 text-white font-black text-xs transition-all cursor-pointer shadow-md shadow-sky-500/20"
+                                                        title="선택한 폴더의 사진을 구글 드라이브로 백업하고 로컬 용량을 정리합니다.">
+                                                        <Upload className="w-3.5 h-3.5" /> ☁️ GDrive 백업 ({selectedFolders.length})
+                                                    </button>
                                                     <button onClick={() => setIsLocalCopyOpen(true)}
                                                         className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 border border-emerald-600 text-white font-black text-xs transition-all cursor-pointer">
                                                         <Folder className="w-3.5 h-3.5" /> 로컬 복사
@@ -1681,13 +1766,6 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                                                                 <Download className="w-4 h-4" /> 다운로드
                                                             </button>
                                                             <button onClick={handleUploadToGDriveAndCleanLocal}
-                                                         className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 border border-sky-400 text-white font-black text-xs transition-all cursor-pointer shadow-md shadow-sky-500/20"
-                                                         title="선택한 폴더의 사진을 구글 드라이브로 백업하고 로컬 용량을 정리합니다.">
-                                                         <Upload className="w-3.5 h-3.5" /> GDrive 백업 ({selectedFolders.length})
-                                                     </button>
-                                                     <button onClick={handleUploadToGDriveAndCleanLocal}
-                                                         className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 border border-sky-400 text-white font-black text-xs transition-all cursor-pointer shadow-md shadow-sky-500/20"
-                                                         title="선택한 폴더의 사진을 구글 드라이브로 백업하고 로컬 용량을 정리합니다.">
                                                          <Upload className="w-3.5 h-3.5" /> GDrive 백업 ({selectedFolders.length})
                                                      </button>
                                                      <button onClick={handleUploadToGDriveAndCleanLocal}
@@ -2328,6 +2406,138 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                         </motion.div>
                     )}
                 </AnimatePresence>
+                {/* Google Drive Progress Tracking Modal */}
+                <AnimatePresence>
+                    {isGDriveProgressOpen && (
+                        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
+                            <motion.div 
+                                initial={{ opacity: 0 }} 
+                                animate={{ opacity: 1 }} 
+                                exit={{ opacity: 0 }} 
+                                className="absolute inset-0 bg-black/70 backdrop-blur-md" 
+                            />
+                            <motion.div 
+                                initial={{ scale: 0.9, opacity: 0, y: 20 }} 
+                                animate={{ scale: 1, opacity: 1, y: 0 }} 
+                                exit={{ scale: 0.9, opacity: 0, y: 20 }}
+                                className="relative w-full max-w-lg bg-[#0e111c] border border-sky-500/30 rounded-[2.5rem] shadow-2xl overflow-hidden p-8 z-10 text-slate-100"
+                            >
+                                <div className="flex items-center justify-between gap-3 mb-6 border-b border-white/10 pb-4">
+                                    <div className="flex items-center gap-3">
+                                        <div className="p-3 bg-sky-500/10 rounded-2xl text-sky-400 border border-sky-500/20">
+                                            <Upload className={`w-6 h-6 ${isGDriveUploading ? "animate-bounce" : ""}`} />
+                                        </div>
+                                        <div>
+                                            <h2 className="text-lg font-black text-white flex items-center gap-2">
+                                                ☁️ 구글 드라이브 실시간 백업
+                                            </h2>
+                                            <p className="text-xs text-sky-400 font-bold">
+                                                {isGDriveUploading ? "안전하게 업로드 및 디스크 정리 중..." : "작업 완료됨"}
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <button 
+                                        onClick={() => setIsGDriveProgressOpen(false)}
+                                        disabled={isGDriveUploading}
+                                        className={`p-2 rounded-xl border transition-all ${
+                                            isGDriveUploading 
+                                                ? "bg-white/5 border-white/5 text-slate-600 cursor-not-allowed" 
+                                                : "bg-white/10 border-white/10 text-slate-300 hover:text-white hover:bg-white/20 cursor-pointer"
+                                        }`}
+                                    >
+                                        <X className="w-4 h-4" />
+                                    </button>
+                                </div>
+
+                                {/* Main Progress Display */}
+                                <div className="space-y-5">
+                                    {/* Percentage & Status Badge */}
+                                    <div className="flex items-end justify-between">
+                                        <div>
+                                            <div className="text-3xl font-black text-white tracking-tight font-mono">
+                                                {gdriveProgress.percent}%
+                                            </div>
+                                            <div className="text-xs font-bold text-slate-400 mt-1 flex items-center gap-1.5">
+                                                <span>처리 진행:</span>
+                                                <strong className="text-sky-400 font-mono text-sm">{gdriveProgress.current}</strong>
+                                                <span>/</span>
+                                                <span className="font-mono text-slate-300">{gdriveProgress.total} 장</span>
+                                                {gdriveProgress.alreadyDoneCount > 0 && (
+                                                    <span className="text-[10px] text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-md ml-1">
+                                                        기존 {gdriveProgress.alreadyDoneCount}장 보관됨 (스킵)
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        <div className="text-right">
+                                            <div className="text-xs font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-3 py-1.5 rounded-xl inline-block font-mono">
+                                                💾 {gdriveProgress.freedMB} MB 확보
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Progress Bar Track */}
+                                    <div className="w-full h-3.5 bg-black/60 border border-white/10 rounded-full overflow-hidden p-0.5">
+                                        <motion.div 
+                                            className="h-full bg-gradient-to-r from-sky-500 via-blue-500 to-emerald-400 rounded-full shadow-lg shadow-sky-500/50"
+                                            initial={{ width: "0%" }}
+                                            animate={{ width: `${gdriveProgress.percent}%` }}
+                                            transition={{ duration: 0.2 }}
+                                        />
+                                    </div>
+
+                                    {/* Current File Banner */}
+                                    <div className="p-4 bg-black/40 border border-white/5 rounded-2xl space-y-1">
+                                        <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                                            <Loader2 className={`w-3.5 h-3.5 text-sky-400 ${isGDriveUploading ? "animate-spin" : ""}`} />
+                                            현재 작업 대상:
+                                        </div>
+                                        <div className="text-xs font-mono text-slate-200 truncate font-semibold">
+                                            {gdriveProgress.currentFile || "대기 중..."}
+                                        </div>
+                                    </div>
+
+                                    {/* Summary Stats Grid */}
+                                    <div className="grid grid-cols-3 gap-2 pt-1 text-center">
+                                        <div className="p-2.5 bg-sky-500/5 border border-sky-500/10 rounded-xl">
+                                            <div className="text-[10px] font-bold text-slate-500">신규 백업</div>
+                                            <div className="text-sm font-black text-sky-400 font-mono mt-0.5">{gdriveProgress.uploadedCount}장</div>
+                                        </div>
+                                        <div className="p-2.5 bg-amber-500/5 border border-amber-500/10 rounded-xl">
+                                            <div className="text-[10px] font-bold text-slate-500">이전 스킵</div>
+                                            <div className="text-sm font-black text-amber-400 font-mono mt-0.5">{gdriveProgress.skippedCount}장</div>
+                                        </div>
+                                        <div className="p-2.5 bg-emerald-500/5 border border-emerald-500/10 rounded-xl">
+                                            <div className="text-[10px] font-bold text-slate-500">로컬 삭제 정리</div>
+                                            <div className="text-sm font-black text-emerald-400 font-mono mt-0.5">{gdriveProgress.cleanedCount}장</div>
+                                        </div>
+                                    </div>
+
+                                    {/* Action Buttons */}
+                                    <div className="pt-4 border-t border-white/10 flex justify-end gap-2">
+                                        {isGDriveUploading ? (
+                                            <button 
+                                                onClick={handleStopGDriveUpload}
+                                                className="w-full py-3 rounded-xl bg-rose-500/20 border border-rose-500/40 hover:bg-rose-500 text-rose-300 hover:text-white font-bold text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-lg shadow-rose-500/10"
+                                            >
+                                                <X className="w-4 h-4" /> 백업 중단 (Cancel)
+                                            </button>
+                                        ) : (
+                                            <button 
+                                                onClick={() => setIsGDriveProgressOpen(false)}
+                                                className="w-full py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-white font-black text-xs transition-all cursor-pointer shadow-lg shadow-emerald-500/20"
+                                            >
+                                                닫기 (Close)
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+                            </motion.div>
+                        </div>
+                    )}
+                </AnimatePresence>
+
                 {/* Local Copy Modal */}
                 <AnimatePresence>
                     {isLocalCopyOpen && (
