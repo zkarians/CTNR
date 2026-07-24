@@ -2393,12 +2393,14 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                     {isGDriveProgressOpen && (
                         <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
                             <motion.div 
+                                key="gdrive-modal-backdrop"
                                 initial={{ opacity: 0 }} 
                                 animate={{ opacity: 1 }} 
                                 exit={{ opacity: 0 }} 
                                 className="absolute inset-0 bg-black/70 backdrop-blur-md" 
                             />
                             <motion.div 
+                                key="gdrive-modal-content"
                                 initial={{ scale: 0.9, opacity: 0, y: 20 }} 
                                 animate={{ scale: 1, opacity: 1, y: 0 }} 
                                 exit={{ scale: 0.9, opacity: 0, y: 20 }}
