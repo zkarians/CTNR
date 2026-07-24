@@ -2542,9 +2542,11 @@ export default function Home({ user }: { user: SessionUser }) {
                                                                                     ) : null}
                                                                                 </div>
                                                                                 {cntr.remark && cntr.remark.trim() && (
-                                                                                    <div className="text-xs text-amber-900 font-bold bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-lg mb-2 flex items-center gap-1.5">
-                                                                                        <span className="shrink-0 text-amber-600">💬</span>
-                                                                                        <span className="truncate">지연사유: {cntr.remark.trim()}</span>
+                                                                                    <div className="text-xs text-amber-900 font-bold bg-amber-50/90 border border-amber-200/80 px-3 py-2 rounded-xl mb-2 flex items-start gap-1.5 leading-relaxed shadow-sm">
+                                                                                        <span className="shrink-0 text-amber-600 mt-0.5">💬</span>
+                                                                                        <div className="flex-1 break-words leading-relaxed">
+                                                                                            <span className="text-amber-900 font-black">지연사유:</span> {cntr.remark.trim()}
+                                                                                        </div>
                                                                                     </div>
                                                                                 )}
                                                                                 {reportViewMode === 'full' && (
@@ -2614,9 +2616,11 @@ export default function Home({ user }: { user: SessionUser }) {
                                                                     </div>
 
                                                                     {cntr.remark && cntr.remark.trim() && (
-                                                                        <div className="text-xs text-amber-900 font-bold bg-amber-50 border border-amber-200 px-2.5 py-1.5 rounded-lg mt-2 flex items-center gap-1.5">
-                                                                            <span className="shrink-0 text-amber-600">💬</span>
-                                                                            <span className="truncate">지연사유: {cntr.remark.trim()}</span>
+                                                                        <div className="text-xs text-amber-900 font-bold bg-amber-50/90 border border-amber-200/80 px-3 py-2 rounded-xl mt-2 flex items-start gap-1.5 leading-relaxed shadow-sm">
+                                                                            <span className="shrink-0 text-amber-600 mt-0.5">💬</span>
+                                                                            <div className="flex-1 break-words leading-relaxed">
+                                                                                <span className="text-amber-900 font-black">지연사유:</span> {cntr.remark.trim()}
+                                                                            </div>
                                                                         </div>
                                                                     )}
                                                                 </div>
