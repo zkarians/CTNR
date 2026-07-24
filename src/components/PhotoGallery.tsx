@@ -181,6 +181,52 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
         }
     };
 
+    const handleUploadToGDriveAndCleanLocal = async (targetCntrs?: string[]) => {
+        const targetIds = selectedPhotoIds;
+        const targetCntrNos = targetCntrs || selectedFolders.map(f => f.split('|')[0]);
+
+        if (targetIds.length === 0 && targetCntrNos.length === 0) {
+            alert("구글드라이브로 업로드하고 로컬 용량을 정리할 사진이나 컨테이너 폴더를 선택해 주세요.");
+            return;
+        }
+
+        const countText = targetIds.length > 0 ? `선택한 사진 ${targetIds.length}장` : `선택한 컨테이너 ${targetCntrNos.length}개`;
+        if (!confirm(`[☁️ 구글드라이브 백업 & 로컬 용량 정리]\n\n${countText}을(를) 구글드라이브로 안전 백업하고, 업로드 확인 후 로컬 PC의 파일 디스크 공간을 정리하시겠습니까?\n(※ 구글드라이브에 안전 보관되므로 갤러리 뷰어에서는 삭제 후에도 정상 조회됩니다.)`)) {
+            return;
+        }
+
+        setIsLoading(true);
+        try {
+            let bodyData: any = { action: 'upload_gdrive' };
+            if (targetIds.length > 0) {
+                bodyData.ids = targetIds;
+            } else if (targetCntrNos.length > 0) {
+                bodyData.cntrNos = targetCntrNos;
+            }
+
+            const res = await fetch('/api/photos', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(bodyData)
+            });
+
+            const data = await res.json();
+            if (data.success) {
+                alert(`🎉 [완료] ${data.message}`);
+                setSelectedPhotoIds([]);
+                setSelectedFolders([]);
+                loadPhotos();
+            } else {
+                alert(`구글드라이브 업로드 & 용량 정리 실패: ${data.error}`);
+            }
+        } catch (error) {
+            console.error("GDrive upload & local cleanup error:", error);
+            alert("구글드라이브 업로드 중 오류가 발생했습니다.");
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
     // Callback ref to attach wheel listener to image with passive: false to prevent default page scrolling
     const imageRefCallback = React.useCallback((node: HTMLImageElement | null) => {
         if (!node) return;

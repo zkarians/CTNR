@@ -618,15 +618,86 @@ export async function PATCH(req: NextRequest) {
         const sessionRole = session.role?.toUpperCase();
         const isAdmin = sessionRole === 'ADMIN' || sessionRole === 'MANAGER';
 
+        const isUploadGDriveAction = action === 'upload_gdrive';
+
         // Only admins can restore deleted files from trash.
-        // But anyone logged in can toggle the "completed" status of a container folder.
-        if (!isCompleteAction && !isAdmin) {
+        if (!isCompleteAction && !isUploadGDriveAction && !isAdmin) {
             return NextResponse.json({ error: '복구 권한이 없습니다. 관리자만 복구할 수 있습니다.' }, { status: 403 });
         }
 
         const client = await pool.connect();
         try {
-            if (isCompleteAction) {
+            if (isUploadGDriveAction) {
+            let targetPhotos: any[] = [];
+            if (ids && ids.length > 0) {
+                const pRes = await client.query(`SELECT id, photo_path, cntr_no, gdrive_file_id, gdrive_url FROM container_photos WHERE id = ANY($1::uuid[]) AND (is_deleted IS NOT TRUE)`, [ids]);
+                targetPhotos = pRes.rows;
+            } else if (cntrNosParam && cntrNosParam.length > 0) {
+                const pRes = await client.query(`SELECT id, photo_path, cntr_no, gdrive_file_id, gdrive_url FROM container_photos WHERE cntr_no = ANY($1::text[]) AND (is_deleted IS NOT TRUE)`, [cntrNosParam]);
+                targetPhotos = pRes.rows;
+            } else if (cntrNo) {
+                const pRes = await client.query(`SELECT id, photo_path, cntr_no, gdrive_file_id, gdrive_url FROM container_photos WHERE cntr_no = $1 AND (is_deleted IS NOT TRUE)`, [cntrNo]);
+                targetPhotos = pRes.rows;
+            } else if (id) {
+                const pRes = await client.query(`SELECT id, photo_path, cntr_no, gdrive_file_id, gdrive_url FROM container_photos WHERE id = $1 AND (is_deleted IS NOT TRUE)`, [id]);
+                targetPhotos = pRes.rows;
+            }
+
+            if (targetPhotos.length === 0) {
+                return NextResponse.json({ error: '업로드 및 정리할 대상 사진이 없습니다.' }, { status: 400 });
+            }
+
+            const uploadsDir = process.env.UPLOAD_DIR || path.join(process.cwd(), 'uploads');
+            let uploadedCount = 0;
+            let cleanedCount = 0;
+            let freedBytes = 0;
+
+            for (const photo of targetPhotos) {
+                const localPath = path.resolve(uploadsDir, photo.photo_path);
+                const filename = path.basename(photo.photo_path);
+
+                let fileId = photo.gdrive_file_id;
+                let gdriveUrl = photo.gdrive_url;
+
+                if (!fileId && fs.existsSync(localPath)) {
+                    try {
+                        const gRes = await uploadToGoogleDrive(localPath, filename);
+                        fileId = gRes.fileId;
+                        gdriveUrl = gRes.gdriveUrl;
+
+                        await client.query(
+                            `UPDATE container_photos SET gdrive_file_id = $1, gdrive_url = $2 WHERE id = $3`,
+                            [fileId, gdriveUrl, photo.id]
+                        );
+                        uploadedCount++;
+                    } catch (err) {
+                        console.error(`[GDrive Manual Sync Error] Failed for ${filename}:`, err);
+                    }
+                }
+
+                if (fileId && fs.existsSync(localPath)) {
+                    try {
+                        const stat = fs.statSync(localPath);
+                        freedBytes += stat.size;
+                        fs.unlinkSync(localPath);
+                        cleanedCount++;
+                    } catch (unlinkErr) {
+                        console.error(`[Local Cleanup Error] Failed for ${filename}:`, unlinkErr);
+                    }
+                }
+            }
+
+            const freedMB = (freedBytes / (1024 * 1024)).toFixed(1);
+            return NextResponse.json({
+                success: true,
+                uploadedCount,
+                cleanedCount,
+                freedMB,
+                message: `총 ${targetPhotos.length}장 중 ${uploadedCount}장 구글드라이브 업로드 완료 & ${cleanedCount}장의 로컬 파일 정리 (${freedMB}MB 디스크 용량 확보)`
+            });
+        }
+
+        if (isCompleteAction) {
                 const completedAt = completeVal ? new Date() : null;
                 
                 // Fetch target photos
