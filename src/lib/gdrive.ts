@@ -61,3 +61,34 @@ export async function uploadToGoogleDrive(
         gdriveUrl,
     };
 }
+
+/**
+ * Search Google Drive for an existing file by name
+ */
+export async function findGoogleDriveFileByName(
+    fileName: string,
+    parentFolderId: string = GDRIVE_FOLDER_ID
+): Promise<{ fileId: string; gdriveUrl: string } | null> {
+    try {
+        const auth = getOAuth2Client();
+        const drive = google.drive({ version: 'v3', auth });
+
+        const q = `'${parentFolderId}' in parents and name = '${fileName}' and trashed = false`;
+        const res = await drive.files.list({
+            q,
+            fields: 'files(id, name)',
+            pageSize: 1
+        });
+
+        if (res.data.files && res.data.files.length > 0) {
+            const fileId = res.data.files[0].id!;
+            return {
+                fileId,
+                gdriveUrl: `https://lh3.googleusercontent.com/d/${fileId}`
+            };
+        }
+    } catch (e) {
+        console.warn(`[GDrive Search Warn] ${fileName}:`, e);
+    }
+    return null;
+}

@@ -10,7 +10,7 @@ import heicConvert from 'heic-convert';
 import ExifParser from 'exif-parser';
 import sharp from 'sharp';
 
-import { uploadToGoogleDrive } from '@/lib/gdrive';
+import { uploadToGoogleDrive, findGoogleDriveFileByName } from '@/lib/gdrive';
 
 export async function POST(req: NextRequest) {
     try {
@@ -690,6 +690,20 @@ export async function PATCH(req: NextRequest) {
 
                                 let fileId = photo.gdrive_file_id;
                                 let gdriveUrl = photo.gdrive_url;
+
+                                // If DB has no fileId and local file is missing, check if it already exists on Google Drive!
+                                if (!fileId && !fs.existsSync(localPath)) {
+                                    const foundGDrive = await findGoogleDriveFileByName(filename);
+                                    if (foundGDrive) {
+                                        fileId = foundGDrive.fileId;
+                                        gdriveUrl = foundGDrive.gdriveUrl;
+                                        await client.query(
+                                            `UPDATE container_photos SET gdrive_file_id = $1, gdrive_url = $2 WHERE id = $3`,
+                                            [fileId, gdriveUrl, photo.id]
+                                        );
+                                        console.log(`[GDrive Auto-Recovered] Restored gdrive_file_id for ${filename}: ${fileId}`);
+                                    }
+                                }
 
                                 if (!fileId && fs.existsSync(localPath)) {
                                     try {
