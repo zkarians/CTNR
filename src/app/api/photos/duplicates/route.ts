@@ -8,7 +8,7 @@ function getLocalDateString(d: Date): string {
 
 function getWorkDateString(d: Date = new Date()): string {
     const workDate = new Date(d);
-    if (workDate.getHours() < 19) {
+    if (workDate.getHours() < 13) {
         workDate.setDate(workDate.getDate() - 1);
     }
     return getLocalDateString(workDate);

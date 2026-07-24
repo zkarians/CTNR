@@ -27,7 +27,7 @@ import {
     Product, PackingResult, ContainerType, CONTAINER_DATA, Job, JobFilters, DbConfig, UserAccount, Team
 } from '@/lib/types';
 import { packContainer } from '@/lib/packer';
-import { fetchJobs, fetchProductsByJob, searchProducts, getDbConfig, updateDbConfig, updatePassword, fetchAllUsers, createUserAccount, updateUserAccount, deleteUserAccount, deleteMultipleUserAccounts, generateWorkReport, fetchTeams, createTeam, updateTeam, deleteTeam, fetchTeamWorkProgress, TeamWorkProgress, updateContainerWorkDuration, updateContainerAdminComment } from '@/lib/actions';
+import { fetchJobs, fetchProductsByJob, searchProducts, getDbConfig, updateDbConfig, updatePassword, fetchAllUsers, createUserAccount, updateUserAccount, deleteUserAccount, deleteMultipleUserAccounts, generateWorkReport, fetchTeams, createTeam, updateTeam, deleteTeam, fetchTeamWorkProgress, TeamWorkProgress, updateContainerWorkDuration, updateContainerAdminComment, resetTeamWorkProgress } from '@/lib/actions';
 import { SessionUser } from '@/lib/auth';
 import { calculateTeamTimeline } from '@/lib/timeline';
 
@@ -41,7 +41,7 @@ function getLocalDateString(d: Date): string {
 
 function getWorkDateString(d: Date = new Date()): string {
     const workDate = new Date(d);
-    if (workDate.getHours() < 19) {
+    if (workDate.getHours() < 13) {
         workDate.setDate(workDate.getDate() - 1);
     }
     const year = workDate.getFullYear();
@@ -793,6 +793,42 @@ export default function Home({ user }: { user: SessionUser }) {
         }
     };
 
+    const handleResetTeamProgress = async () => {
+        if (!confirm("오늘 조별 근무시간/작업 완료 기록을 초기화하시겠습니까?\n\n[확인]을 누르면 오늘 완료 처리된 모든 컨테이너가 '진행 중' 상태로 원복되고 조별 근무시간이 19:00시작 초기 상태로 초기화됩니다.")) {
+            return;
+        }
+
+        setIsLoading(true);
+        try {
+            const res = await resetTeamWorkProgress('COMPLETE_RESET');
+            if (res.success) {
+                alert(res.message || "조별 근무시간이 성공적으로 초기화되었습니다.");
+                await loadTeamProgress();
+                await refreshJobs();
+            } else {
+                alert(res.error || "초기화 실패");
+            }
+        } catch (e: any) {
+            console.error("Error resetting team progress:", e);
+            alert("조별 근무시간 초기화 중 오류가 발생했습니다.");
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const handleOpenAddManual = () => {
+        if (!isAdmin && !user.teamName) {
+            alert("소속 조(팀)가 지정되지 않았습니다. 소속 조를 먼저 선택해 주세요.");
+            return;
+        }
+        if (!isAdmin && user.teamName) {
+            const availableTeams = ['1조(BNI)', '2조(천마)', '3조(천마)'];
+            const matched = availableTeams.find(t => isSameTeam(t, user.teamName)) || user.teamName;
+            setManualTeamName(matched);
+        }
+        setIsAddManualOpen(true);
+    };
+
     useEffect(() => {
         loadTeamProgress();
         loadTeamList();
@@ -1042,6 +1078,14 @@ export default function Home({ user }: { user: SessionUser }) {
                                     <div className="flex items-center gap-1.5 shrink-0">
                                         <Clock className="w-3.5 h-3.5 text-sky-400 animate-pulse shrink-0" />
                                         <span className="font-black text-slate-200 text-[11px]">전체 조 작업시간</span>
+                                        <button
+                                            onClick={handleResetTeamProgress}
+                                            className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 text-[10px] font-bold transition-all cursor-pointer shrink-0 ml-1"
+                                            title="보고서와 사진 데이터는 보존되며, 각 조 근무시간 계산 및 완료 상태만 초기화됩니다"
+                                        >
+                                            <RotateCw className="w-2.5 h-2.5" />
+                                            <span>근무시간 초기화</span>
+                                        </button>
                                     </div>
                                     <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar max-w-full">
                                         {allTeamNames.length > 0 ? (
@@ -1116,6 +1160,7 @@ export default function Home({ user }: { user: SessionUser }) {
                             <FileText className="w-3.5 h-3.5" />
                             {isAdmin ? "보고서 생성" : "작업내역"}
                         </button>
+
                         <button onClick={refreshJobs} className={`p-1.5 hover:bg-white/5 rounded-lg text-slate-400 transition-all ${isLoading ? "animate-spin text-sky-500" : ""}`} title="새로고침">
                             <RotateCw className="w-4 h-4 md:w-3.5 md:h-3.5" />
                         </button>
@@ -1471,6 +1516,14 @@ export default function Home({ user }: { user: SessionUser }) {
                                     <div className="flex items-center gap-1 shrink-0">
                                         <Clock className="w-3.5 h-3.5 text-sky-400 animate-pulse shrink-0" />
                                         <span className="font-bold text-slate-200 text-[10px]">전체조:</span>
+                                        <button
+                                            onClick={handleResetTeamProgress}
+                                            className="flex items-center gap-0.5 px-1 py-0.2 rounded bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 text-[9px] font-bold transition-all cursor-pointer shrink-0 ml-0.5"
+                                            title="보고서와 사진 데이터는 보존되며, 각 조 근무시간 계산 및 완료 상태만 초기화됩니다"
+                                        >
+                                            <RotateCw className="w-2 h-2" />
+                                            <span>초기화</span>
+                                        </button>
                                     </div>
                                     <div className="flex items-center gap-1 overflow-x-auto no-scrollbar max-w-full">
                                         {allTeamNames.length > 0 ? (
@@ -2257,79 +2310,90 @@ export default function Home({ user }: { user: SessionUser }) {
                                 </button>
                             </div>
 
-                            {/* Date Selector inside Modal */}
-                            {isAdmin && (<div className="flex flex-wrap items-center gap-2 p-2.5 mb-2 bg-slate-100 border border-slate-200 rounded-xl shrink-0 text-slate-900">
-                                <span className="text-xs font-bold text-slate-600">조회 일자:</span>
-                                <div className="flex items-center gap-1 bg-white border border-slate-300 rounded-xl p-1 shadow-sm">
-                                    <button
-                                        onClick={() => handleNavigateDate(-1)}
-                                        className="px-2.5 py-1 text-xs font-bold text-slate-700 hover:text-emerald-700 hover:bg-slate-100 rounded-lg transition-all flex items-center gap-1 cursor-pointer"
-                                        title="이전날 (어제)로 이동"
-                                    >
-                                        <ChevronLeft className="w-4 h-4" />
-                                        <span>이전날</span>
-                                    </button>
+                            {/* Date Selector & Controls inside Modal */}
+                            <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 mb-2 bg-slate-100 border border-slate-200 rounded-xl shrink-0 text-slate-900">
+                                {isAdmin ? (
+                                    <>
+                                        <span className="text-xs font-bold text-slate-600">조회 일자:</span>
+                                        <div className="flex items-center gap-1 bg-white border border-slate-300 rounded-xl p-1 shadow-sm">
+                                            <button
+                                                onClick={() => handleNavigateDate(-1)}
+                                                className="px-2.5 py-1 text-xs font-bold text-slate-700 hover:text-emerald-700 hover:bg-slate-100 rounded-lg transition-all flex items-center gap-1 cursor-pointer"
+                                                title="이전날 (어제)로 이동"
+                                            >
+                                                <ChevronLeft className="w-4 h-4" />
+                                                <span>이전날</span>
+                                            </button>
 
-                                    <input 
-                                        type="date"
-                                        value={reportStartDate}
-                                        onChange={(e) => {
-                                            const val = e.target.value;
-                                            setReportStartDate(val);
-                                            setReportEndDate(val);
-                                        }}
-                                        className="bg-transparent border-x border-slate-200 px-3 py-0.5 text-xs text-slate-900 focus:outline-none font-black cursor-pointer text-center"
-                                    />
+                                            <input 
+                                                type="date"
+                                                value={reportStartDate}
+                                                onChange={(e) => {
+                                                    const val = e.target.value;
+                                                    setReportStartDate(val);
+                                                    setReportEndDate(val);
+                                                }}
+                                                className="bg-transparent border-x border-slate-200 px-3 py-0.5 text-xs text-slate-900 focus:outline-none font-black cursor-pointer text-center"
+                                            />
 
-                                    <button
-                                        onClick={() => handleNavigateDate(1)}
-                                        className="px-2.5 py-1 text-xs font-bold text-slate-700 hover:text-emerald-700 hover:bg-slate-100 rounded-lg transition-all flex items-center gap-1 cursor-pointer"
-                                        title="다음날 (내일)로 이동"
-                                    >
-                                        <span>다음날</span>
-                                        <ChevronRight className="w-4 h-4" />
-                                    </button>
-                                </div>
+                                            <button
+                                                onClick={() => handleNavigateDate(1)}
+                                                className="px-2.5 py-1 text-xs font-bold text-slate-700 hover:text-emerald-700 hover:bg-slate-100 rounded-lg transition-all flex items-center gap-1 cursor-pointer"
+                                                title="다음날 (내일)로 이동"
+                                            >
+                                                <span>다음날</span>
+                                                <ChevronRight className="w-4 h-4" />
+                                            </button>
+                                        </div>
+
+                                        <button
+                                            onClick={handleRegenerateReport}
+                                            className="px-4 py-1.5 bg-emerald-600 text-white hover:bg-emerald-500 text-xs font-black rounded-xl transition-all shadow-md cursor-pointer flex items-center gap-1.5"
+                                        >
+                                            <RotateCw className="w-3.5 h-3.5" />
+                                            조회
+                                        </button>
+                                        <div className="ml-auto flex items-center gap-1 bg-slate-200/80 p-1 rounded-xl shrink-0">
+                                            <button
+                                                onClick={() => setReportViewMode('full')}
+                                                className={`px-3 py-1 text-xs font-black rounded-lg transition-all cursor-pointer ${
+                                                    reportViewMode === 'full' 
+                                                        ? 'bg-white text-slate-900 shadow-sm' 
+                                                        : 'text-slate-600 hover:text-slate-900'
+                                                }`}
+                                            >
+                                                📋 전체 상세
+                                            </button>
+                                            <button
+                                                onClick={() => setReportViewMode('compact')}
+                                                className={`px-3 py-1 text-xs font-black rounded-lg transition-all cursor-pointer ${
+                                                    reportViewMode === 'compact' 
+                                                        ? 'bg-white text-slate-900 shadow-sm' 
+                                                        : 'text-slate-600 hover:text-slate-900'
+                                                }`}
+                                            >
+                                                ⚡ 요약 보기
+                                            </button>
+                                        </div>
+                                    </>
+                                ) : (
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-xs font-bold text-slate-600">내 담당 조:</span>
+                                        <span className="px-2.5 py-1 bg-sky-100 border border-sky-300 text-sky-800 rounded-lg text-xs font-black">
+                                            {user.teamName || '미지정 조'}
+                                        </span>
+                                    </div>
+                                )}
 
                                 <button
-                                    onClick={handleRegenerateReport}
-                                    className="px-4 py-1.5 bg-emerald-600 text-white hover:bg-emerald-500 text-xs font-black rounded-xl transition-all shadow-md cursor-pointer flex items-center gap-1.5"
-                                >
-                                    <RotateCw className="w-3.5 h-3.5" />
-                                    조회
-                                </button>
-                                <div className="ml-auto flex items-center gap-1 bg-slate-200/80 p-1 rounded-xl shrink-0">
-                                    <button
-                                        onClick={() => setReportViewMode('full')}
-                                        className={`px-3 py-1 text-xs font-black rounded-lg transition-all cursor-pointer ${
-                                            reportViewMode === 'full' 
-                                                ? 'bg-white text-slate-900 shadow-sm' 
-                                                : 'text-slate-600 hover:text-slate-900'
-                                        }`}
-                                    >
-                                        📋 전체 상세
-                                    </button>
-                                    <button
-                                        onClick={() => setReportViewMode('compact')}
-                                        className={`px-3 py-1 text-xs font-black rounded-lg transition-all cursor-pointer ${
-                                            reportViewMode === 'compact' 
-                                                ? 'bg-white text-slate-900 shadow-sm' 
-                                                : 'text-slate-600 hover:text-slate-900'
-                                        }`}
-                                    >
-                                        ⚡ 요약 보기
-                                    </button>
-                                </div>
-
-                                <button
-                                    onClick={() => setIsAddManualOpen(true)}
-                                    className="px-3.5 py-1.5 bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white text-xs font-black rounded-xl transition-all shadow-md cursor-pointer flex items-center gap-1.5 shrink-0"
+                                    onClick={handleOpenAddManual}
+                                    className="ml-auto px-3.5 py-1.5 bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white text-xs font-black rounded-xl transition-all shadow-md cursor-pointer flex items-center gap-1.5 shrink-0"
                                     title="보고서 전용 수동 항목 추가"
                                 >
                                     <Plus className="w-4 h-4" />
                                     <span>수동 항목 추가</span>
                                 </button>
-                            </div>)}
+                            </div>
 
                             <div ref={reportCaptureRef} className="overflow-y-auto flex-1 min-h-0 bg-white border border-slate-200 rounded-xl md:rounded-2xl p-2 sm:p-4 md:p-5 custom-scrollbar text-slate-900">
                                 {isReportGenerating ? (
@@ -2623,8 +2687,8 @@ export default function Home({ user }: { user: SessionUser }) {
                                                         <button
                                                             key={t}
                                                             type="button"
-                                                            onClick={() => setManualTeamName(t)}
-                                                            className={`flex-1 py-1.5 rounded-xl font-black border transition-all cursor-pointer ${manualTeamName === t ? 'bg-sky-600 text-white border-sky-600 shadow-sm' : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'}`}
+                                                            onClick={() => { if (isAdmin || isSameTeam(t, user.teamName || '')) setManualTeamName(t); }}
+                                                            className={`flex-1 py-1.5 rounded-xl font-black border transition-all cursor-pointer ${manualTeamName === t ? 'bg-sky-600 text-white border-sky-600 shadow-sm' : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed'}`}
                                                         >
                                                             {t}
                                                         </button>
@@ -2748,7 +2812,7 @@ export default function Home({ user }: { user: SessionUser }) {
                                                             {manualProducts.length > 1 && (
                                                                 <button
                                                                     type="button"
-                                                                    onClick={() => setManualProducts(manualProducts.filter((_, i) => i !== idx))}
+                                                             onClick={() => setManualProducts(manualProducts.filter((_, i) => i !== idx))}
                                                                     className="text-rose-500 hover:bg-rose-50 p-1 rounded-md cursor-pointer"
                                                                 >
                                                                     <X className="w-3.5 h-3.5" />

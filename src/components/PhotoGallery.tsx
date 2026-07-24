@@ -37,7 +37,7 @@ interface PhotoGalleryProps {
 
 function getWorkDateString(d: Date = new Date()): string {
     const workDate = new Date(d);
-    if (workDate.getHours() < 19) {
+    if (workDate.getHours() < 13) {
         workDate.setDate(workDate.getDate() - 1);
     }
     return getLocalDateString(workDate);
@@ -309,12 +309,12 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
     }, [folders]);
 
     const handleToggleSelectDateGroup = (dateFolders: typeof folders) => {
-        const cntrNos = dateFolders.map(f => f.cntrNo);
-        const allSelected = cntrNos.every(no => selectedFolders.includes(no));
+        const folderKeys = dateFolders.map(f => f.cntrNo + '|' + f.workDateStr);
+        const allSelected = folderKeys.length > 0 && folderKeys.every(key => selectedFolders.includes(key));
         if (allSelected) {
-            setSelectedFolders(prev => prev.filter(no => !cntrNos.includes(no)));
+            setSelectedFolders(prev => prev.filter(key => !folderKeys.includes(key)));
         } else {
-            setSelectedFolders(prev => Array.from(new Set([...prev, ...cntrNos])));
+            setSelectedFolders(prev => Array.from(new Set([...prev, ...folderKeys])));
         }
     };
 
@@ -815,17 +815,31 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
         setIsLoading(true);
         try {
             const foldersToProcess = folders.filter(f => selectedFolders.includes(f.cntrNo + '|' + f.workDateStr));
-            const photoIds = foldersToProcess.flatMap(f => f.photos.map(p => p.id)).join(',');
-            const res = await fetch(`/api/photos?ids=${encodeURIComponent(photoIds)}&complete=${!currentCompleted}`, {
-                method: 'PATCH'
+            const photoIds = foldersToProcess.flatMap(f => f.photos.map(p => p.id));
+            const cntrNos = foldersToProcess.map(f => f.cntrNo);
+
+            const res = await fetch('/api/photos', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    ids: photoIds,
+                    cntrNos: cntrNos,
+                    complete: !currentCompleted
+                })
             });
-            if (res.ok) {
+            let data: any = null;
+            try {
+                data = await res.json();
+            } catch {
+                data = null;
+            }
+
+            if (res.ok && data?.success !== false) {
                 alert(`성공적으로 ${foldersToProcess.length}개 작업을 ${actionText}했습니다.`);
                 setSelectedFolders([]);
                 loadPhotos();
             } else {
-                const data = await res.json();
-                alert(data.error || "상태 변경 중 오류가 발생했습니다.");
+                alert(data?.error || data?.message || `상태 변경 중 오류가 발생했습니다. (HTTP ${res.status})`);
             }
         } catch (error) {
             console.error("Error toggling completion for selected folders:", error);
@@ -909,18 +923,28 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
         setIsLoading(true);
         try {
             const foldersToProcess = folders.filter(f => selectedFolders.includes(f.cntrNo + '|' + f.workDateStr));
-            const photoIds = foldersToProcess.flatMap(f => f.photos.map(p => p.id)).join(',');
-            const url = `/api/photos?ids=${encodeURIComponent(photoIds)}${isTrashView ? '&permanent=true' : ''}`;
-            const res = await fetch(url, {
-                method: 'DELETE'
+            const photoIds = foldersToProcess.flatMap(f => f.photos.map(p => p.id));
+            const res = await fetch('/api/photos', {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    ids: photoIds,
+                    permanent: isTrashView
+                })
             });
-            if (res.ok) {
+            let data: any = null;
+            try {
+                data = await res.json();
+            } catch {
+                data = null;
+            }
+
+            if (res.ok && data?.success !== false) {
                 alert(`성공적으로 ${foldersToProcess.length}개 폴더를 ${actionText}했습니다.`);
                 setSelectedFolders([]);
                 loadPhotos();
             } else {
-                const data = await res.json();
-                alert(data.error || "폴더 삭제 중 오류가 발생했습니다.");
+                alert(data?.error || data?.message || "폴더 삭제 중 오류가 발생했습니다.");
             }
         } catch (error) {
             console.error("Error deleting selected folders:", error);
@@ -938,17 +962,27 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
         setIsLoading(true);
         try {
             const foldersToProcess = folders.filter(f => selectedFolders.includes(f.cntrNo + '|' + f.workDateStr));
-            const photoIds = foldersToProcess.flatMap(f => f.photos.map(p => p.id)).join(',');
-            const res = await fetch(`/api/photos?ids=${encodeURIComponent(photoIds)}`, {
-                method: 'PATCH'
+            const photoIds = foldersToProcess.flatMap(f => f.photos.map(p => p.id));
+            const res = await fetch('/api/photos', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    ids: photoIds
+                })
             });
-            if (res.ok) {
+            let data: any = null;
+            try {
+                data = await res.json();
+            } catch {
+                data = null;
+            }
+
+            if (res.ok && data?.success !== false) {
                 alert(`성공적으로 ${foldersToProcess.length}개 폴더를 복구했습니다.`);
                 setSelectedFolders([]);
                 loadPhotos();
             } else {
-                const data = await res.json();
-                alert(data.error || "폴더 복구 중 오류가 발생했습니다.");
+                alert(data?.error || data?.message || "폴더 복구 중 오류가 발생했습니다.");
             }
         } catch (error) {
             console.error("Error restoring selected folders:", error);
@@ -1540,8 +1574,8 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                                 <div className="space-y-6">
                                     {foldersByWorkDate.map(group => {
                                         const isCollapsed = !!collapsedDates[group.dateStr];
-                                        const allGroupSelected = group.folders.every(f => selectedFolders.includes(f.cntrNo));
-                                        const someGroupSelected = group.folders.some(f => selectedFolders.includes(f.cntrNo));
+                                        const allGroupSelected = group.folders.length > 0 && group.folders.every(f => selectedFolders.includes(f.cntrNo + '|' + f.workDateStr));
+                                        const someGroupSelected = group.folders.some(f => selectedFolders.includes(f.cntrNo + '|' + f.workDateStr));
 
                                         return (
                                             <div key={group.dateStr} className="bg-[#0e0f18]/80 border border-white/5 rounded-3xl p-5 shadow-xl">
@@ -1587,7 +1621,7 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                                                                     <div className="w-2 h-0.5 bg-white rounded-full" />
                                                                 ) : null}
                                                             </div>
-                                                            <span>이 날짜 전체 선택 ({group.folders.filter(f => selectedFolders.includes(f.cntrNo)).length}/{group.folders.length})</span>
+                                                            <span>이 날짜 전체 선택 ({group.folders.filter(f => selectedFolders.includes(f.cntrNo + '|' + f.workDateStr)).length}/{group.folders.length})</span>
                                                         </button>
 
                                                         <button

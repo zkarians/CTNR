@@ -262,7 +262,7 @@ function getLocalDateString(d: Date): string {
 
 function getWorkDateString(d: Date = new Date()): string {
     const workDate = new Date(d);
-    if (workDate.getHours() < 19) {
+    if (workDate.getHours() < 13) {
         workDate.setDate(workDate.getDate() - 1);
     }
     return getLocalDateString(workDate);
@@ -585,7 +585,7 @@ export async function fetchTeamWorkProgress(targetWorkDate?: string): Promise<Re
                 FROM container_photos p
                 LEFT JOIN teams t ON p.team_id = t.id
                 LEFT JOIN container_jobs j ON p.job_id = j.id
-                WHERE (p.is_deleted IS NOT TRUE)
+                WHERE (p.is_deleted IS NOT TRUE) AND (p.is_completed = true)
                 GROUP BY COALESCE(t.name, '미지정 조'), COALESCE(p.cntr_no, j.job_name, '미지정')
                 ORDER BY first_uploaded_at ASC
             `;
@@ -703,5 +703,46 @@ export async function updateContainerAdminComment(
     } catch (error: any) {
         console.error("updateContainerAdminComment Error:", error);
         return { success: false, error: `코멘트 저장 오류: ${error?.message || '알 수 없는 오류'}` };
+    }
+}
+
+export async function resetTeamWorkProgress(
+    actionType: 'COMPLETE_RESET' | 'TRASH_RESET' = 'COMPLETE_RESET',
+    targetDateStr?: string
+): Promise<{ success: boolean; message?: string; error?: string }> {
+    try {
+        const client = await pool.connect();
+        try {
+            const dateStr = targetDateStr || getWorkDateString(new Date());
+
+            if (actionType === 'COMPLETE_RESET') {
+                await client.query(`
+                    UPDATE container_photos
+                    SET is_completed = false, completed_at = NULL
+                    WHERE (is_deleted IS NOT TRUE)
+                      AND (uploaded_at - INTERVAL '6 hours')::date = $1::date
+                `, [dateStr]);
+                return {
+                    success: true,
+                    message: `오늘(${dateStr}) 작업의 완료 상태가 모두 '진행 중'으로 초기화되었습니다.`
+                };
+            } else {
+                await client.query(`
+                    UPDATE container_photos
+                    SET is_deleted = true, deleted_at = NOW()
+                    WHERE (is_deleted IS NOT TRUE)
+                      AND (uploaded_at - INTERVAL '6 hours')::date = $1::date
+                `, [dateStr]);
+                return {
+                    success: true,
+                    message: `오늘(${dateStr}) 작업 사진이 휴지통으로 이동되어 조별 근무시간이 초기화되었습니다.`
+                };
+            }
+        } finally {
+            client.release();
+        }
+    } catch (error: any) {
+        console.error("resetTeamWorkProgress Error:", error);
+        return { success: false, error: `초기화 오류: ${error?.message || '알 수 없는 오류'}` };
     }
 }

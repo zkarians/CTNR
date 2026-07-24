@@ -374,16 +374,30 @@ export async function DELETE(req: NextRequest) {
             return NextResponse.json({ error: '인증되지 않은 사용자입니다.' }, { status: 401 });
         }
 
-        const { searchParams } = new URL(req.url);
-        const id = searchParams.get('id');
-        const idsParam = searchParams.get('ids');
-        const cntrNo = searchParams.get('cntrNo');
-        const startDate = searchParams.get('startDate');
-        const endDate = searchParams.get('endDate');
-        const userId = searchParams.get('userId');
-        const permanent = searchParams.get('permanent') === 'true';
+        let body: any = {};
+        try {
+            body = await req.json();
+        } catch {
+            body = {};
+        }
 
-        const ids = idsParam ? idsParam.split(',').map(s => s.trim()).filter(Boolean) : null;
+        const { searchParams } = new URL(req.url);
+        const idParam = body.id !== undefined ? String(body.id) : searchParams.get('id');
+        const id = idParam ? idParam.trim() : null;
+
+        let ids: string[] | null = null;
+        if (Array.isArray(body.ids)) {
+            ids = body.ids.map((s: any) => String(s).trim()).filter(Boolean);
+        } else {
+            const idsParam = searchParams.get('ids');
+            ids = idsParam ? idsParam.split(',').map((s: string) => s.trim()).filter(Boolean) : null;
+        }
+
+        const cntrNo = body.cntrNo || searchParams.get('cntrNo');
+        const startDate = body.startDate || searchParams.get('startDate');
+        const endDate = body.endDate || searchParams.get('endDate');
+        const userId = body.userId || searchParams.get('userId');
+        const permanent = body.permanent === true || searchParams.get('permanent') === 'true';
 
         const sessionRole = session.role?.toUpperCase();
         const isAdmin = sessionRole === 'ADMIN' || sessionRole === 'MANAGER';
@@ -395,10 +409,10 @@ export async function DELETE(req: NextRequest) {
                     if (!isAdmin) {
                         return NextResponse.json({ error: '영구 삭제 권한이 없습니다. 관리자만 영구 삭제할 수 있습니다.' }, { status: 403 });
                     }
-                    const res = await client.query('SELECT photo_path FROM container_photos WHERE id = ANY($1)', [ids]);
+                    const res = await client.query('SELECT photo_path FROM container_photos WHERE id = ANY($1::uuid[])', [ids]);
                     const filePaths = res.rows.map(r => r.photo_path);
 
-                    await client.query('DELETE FROM container_photos WHERE id = ANY($1)', [ids]);
+                    await client.query('DELETE FROM container_photos WHERE id = ANY($1::uuid[])', [ids]);
 
                     const uploadsDir = process.env.UPLOAD_DIR || path.join(process.cwd(), 'uploads');
                     let deletedFilesCount = 0;
@@ -417,13 +431,13 @@ export async function DELETE(req: NextRequest) {
                 } else {
                     let targetIds = ids;
                     if (!isAdmin) {
-                        const ownerRes = await client.query('SELECT id FROM container_photos WHERE id = ANY($1) AND uploaded_by = $2', [ids, session.id]);
+                        const ownerRes = await client.query('SELECT id FROM container_photos WHERE id = ANY($1::uuid[]) AND uploaded_by = $2', [ids, session.id]);
                         targetIds = ownerRes.rows.map(r => r.id);
                         if (targetIds.length === 0) {
                             return NextResponse.json({ error: '삭제 권한이 있는 본인 소유의 사진이 없습니다.' }, { status: 403 });
                         }
                     }
-                    const res = await client.query('UPDATE container_photos SET is_deleted = true, deleted_at = NOW() WHERE id = ANY($1) RETURNING id', [targetIds]);
+                    const res = await client.query('UPDATE container_photos SET is_deleted = true, deleted_at = NOW() WHERE id = ANY($1::uuid[]) RETURNING id', [targetIds]);
                     return NextResponse.json({
                         success: true,
                         message: `선택한 사진 ${res.rows.length}장이 휴지통으로 이동되었습니다.`
@@ -577,14 +591,30 @@ export async function PATCH(req: NextRequest) {
             return NextResponse.json({ error: '인증되지 않은 사용자입니다.' }, { status: 401 });
         }
 
-        const { searchParams } = new URL(req.url);
-        const id = searchParams.get('id');
-        const idsParam = searchParams.get('ids');
-        const cntrNo = searchParams.get('cntrNo');
-        const complete = searchParams.get('complete');
+        let body: any = {};
+        try {
+            body = await req.json();
+        } catch {
+            body = {};
+        }
 
-        const ids = idsParam ? idsParam.split(',').map(s => s.trim()).filter(Boolean) : null;
-        const isCompleteAction = complete !== null;
+        const { searchParams } = new URL(req.url);
+        const idParam = body.id !== undefined ? String(body.id) : searchParams.get('id');
+        const id = idParam ? idParam.trim() : null;
+
+        let ids: string[] | null = null;
+        if (Array.isArray(body.ids)) {
+            ids = body.ids.map((s: any) => String(s).trim()).filter(Boolean);
+        } else {
+            const idsParam = searchParams.get('ids');
+            ids = idsParam ? idsParam.split(',').map((s: string) => s.trim()).filter(Boolean) : null;
+        }
+
+        const cntrNo = body.cntrNo || searchParams.get('cntrNo');
+        const cntrNosParam: string[] | null = Array.isArray(body.cntrNos) ? body.cntrNos.map((s: any) => String(s).trim()).filter(Boolean) : null;
+        const completeParam = body.complete !== undefined ? body.complete : searchParams.get('complete');
+        const isCompleteAction = completeParam !== null && completeParam !== undefined;
+        const completeVal = completeParam === true || completeParam === 'true';
         const sessionRole = session.role?.toUpperCase();
         const isAdmin = sessionRole === 'ADMIN' || sessionRole === 'MANAGER';
 
@@ -597,13 +627,15 @@ export async function PATCH(req: NextRequest) {
         const client = await pool.connect();
         try {
             if (isCompleteAction) {
-                const completeVal = complete === 'true';
                 const completedAt = completeVal ? new Date() : null;
                 
                 // Fetch target photos
                 let targetPhotos: any[] = [];
                 if (ids && ids.length > 0) {
-                    const pRes = await client.query(`SELECT id, photo_path, cntr_no, gdrive_file_id, gdrive_url FROM container_photos WHERE id = ANY($1) AND (is_deleted IS NOT TRUE)`, [ids]);
+                    const pRes = await client.query(`SELECT id, photo_path, cntr_no, gdrive_file_id, gdrive_url FROM container_photos WHERE id = ANY($1::uuid[]) AND (is_deleted IS NOT TRUE)`, [ids]);
+                    targetPhotos = pRes.rows;
+                } else if (cntrNosParam && cntrNosParam.length > 0) {
+                    const pRes = await client.query(`SELECT id, photo_path, cntr_no, gdrive_file_id, gdrive_url FROM container_photos WHERE cntr_no = ANY($1::text[]) AND (is_deleted IS NOT TRUE)`, [cntrNosParam]);
                     targetPhotos = pRes.rows;
                 } else if (cntrNo) {
                     const pRes = await client.query(`SELECT id, photo_path, cntr_no, gdrive_file_id, gdrive_url FROM container_photos WHERE cntr_no = $1 AND (is_deleted IS NOT TRUE)`, [cntrNo]);
@@ -615,7 +647,9 @@ export async function PATCH(req: NextRequest) {
 
                 // Update is_completed status
                 if (ids && ids.length > 0) {
-                    await client.query('UPDATE container_photos SET is_completed = $1, completed_at = $2 WHERE id = ANY($3)', [completeVal, completedAt, ids]);
+                    await client.query('UPDATE container_photos SET is_completed = $1, completed_at = $2 WHERE id = ANY($3::uuid[])', [completeVal, completedAt, ids]);
+                } else if (cntrNosParam && cntrNosParam.length > 0) {
+                    await client.query('UPDATE container_photos SET is_completed = $1, completed_at = $2 WHERE cntr_no = ANY($3::text[])', [completeVal, completedAt, cntrNosParam]);
                 } else if (cntrNo) {
                     await client.query('UPDATE container_photos SET is_completed = $1, completed_at = $2 WHERE cntr_no = $3', [completeVal, completedAt, cntrNo]);
                 } else if (id) {
@@ -670,8 +704,11 @@ export async function PATCH(req: NextRequest) {
             } else {
                 // Restore deleted files from trash
                 if (ids && ids.length > 0) {
-                    await client.query('UPDATE container_photos SET is_deleted = false, deleted_at = NULL WHERE id = ANY($1)', [ids]);
+                    await client.query('UPDATE container_photos SET is_deleted = false, deleted_at = NULL WHERE id = ANY($1::uuid[])', [ids]);
                     return NextResponse.json({ success: true, message: `선택한 사진 ${ids.length}장이 복구되었습니다.` });
+                } else if (cntrNosParam && cntrNosParam.length > 0) {
+                    await client.query('UPDATE container_photos SET is_deleted = false, deleted_at = NULL WHERE cntr_no = ANY($1::text[])', [cntrNosParam]);
+                    return NextResponse.json({ success: true, message: `선택한 컨테이너 ${cntrNosParam.length}개의 사진이 복구되었습니다.` });
                 } else if (id) {
                     await client.query('UPDATE container_photos SET is_deleted = false, deleted_at = NULL WHERE id = $1', [id]);
                     return NextResponse.json({ success: true, message: '사진이 복구되었습니다.' });
@@ -687,6 +724,6 @@ export async function PATCH(req: NextRequest) {
         }
     } catch (error: any) {
         console.error('PATCH Photo Error:', error);
-        return NextResponse.json({ error: '서버 오류로 인해 상태 변경에 실패했습니다.' }, { status: 500 });
+        return NextResponse.json({ error: `서버 오류: ${error.message || '상태 변경에 실패했습니다.'}` }, { status: 500 });
     }
 }
