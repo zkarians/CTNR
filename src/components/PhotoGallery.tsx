@@ -106,6 +106,59 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
     });
     const gdriveAbortControllerRef = React.useRef<AbortController | null>(null);
 
+    // Move Container State
+    const [isMoveModalOpen, setIsMoveModalOpen] = useState(false);
+    const [targetMoveCntrNo, setTargetMoveCntrNo] = useState('');
+    const [isMoving, setIsMoving] = useState(false);
+
+    const handleExecuteMovePhotos = async () => {
+        const targetCntrNo = targetMoveCntrNo.trim().toUpperCase();
+        if (!targetCntrNo) {
+            alert("이동할 컨테이너 번호를 입력해 주세요.");
+            return;
+        }
+
+        const currentPhoto = activePhotoIdx !== null && photos[activePhotoIdx] ? photos[activePhotoIdx] : null;
+        const idsToMove = selectedPhotoIds.length > 0
+            ? selectedPhotoIds
+            : (currentPhoto ? [currentPhoto.id] : []);
+
+        if (idsToMove.length === 0) {
+            alert("이동할 사진을 선택해 주세요.");
+            return;
+        }
+
+        setIsMoving(true);
+        try {
+            const res = await fetch('/api/photos', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    action: 'move_container',
+                    ids: idsToMove,
+                    targetCntrNo
+                })
+            });
+
+            const data = await res.json();
+            if (!res.ok || !data.success) {
+                alert(`사진 이동 실패: ${data.error || '알 수 없는 오류'}`);
+                return;
+            }
+
+            alert(data.message || `사진 ${idsToMove.length}장이 '${targetCntrNo}' 컨테이너로 성공적으로 이동되었습니다.`);
+            setIsMoveModalOpen(false);
+            setTargetMoveCntrNo('');
+            setSelectedPhotoIds(prev => prev.filter(id => !idsToMove.includes(id)));
+            loadPhotos();
+        } catch (err: any) {
+            console.error("Move photos error:", err);
+            alert(`사진 이동 실패: ${err.message || '네트워크 오류'}`);
+        } finally {
+            setIsMoving(false);
+        }
+    };
+
     const toggleSelectPhoto = (photoId: string, e?: React.MouseEvent) => {
         if (e) e.stopPropagation();
         setSelectedPhotoIds(prev => 
@@ -2015,12 +2068,21 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                                                 )}
                                             </>
                                         ) : (
-                                            <button
-                                                onClick={handleDeleteSelectedPhotos}
-                                                className="px-3.5 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-600 border border-rose-500/20 text-rose-400 hover:text-white transition-all flex items-center gap-1.5 text-xs font-black cursor-pointer shadow-md"
-                                            >
-                                                <Trash2 className="w-3.5 h-3.5" /> 선택한 사진 삭제 ({selectedPhotoIds.filter(id => folderPhotos.some(p => p.id === id)).length}장)
-                                            </button>
+                                            <>
+                                                <button
+                                                    onClick={() => setIsMoveModalOpen(true)}
+                                                    className="px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 border border-indigo-400 text-white transition-all flex items-center gap-1.5 text-xs font-black cursor-pointer shadow-md shadow-indigo-500/20"
+                                                    title="선택한 사진을 다른 컨테이너 폴더로 이동시킵니다."
+                                                >
+                                                    <Folder className="w-3.5 h-3.5" /> 📦 컨테이너 이동 ({selectedPhotoIds.filter(id => folderPhotos.some(p => p.id === id)).length}장)
+                                                </button>
+                                                <button
+                                                    onClick={handleDeleteSelectedPhotos}
+                                                    className="px-3.5 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-600 border border-rose-500/20 text-rose-400 hover:text-white transition-all flex items-center gap-1.5 text-xs font-black cursor-pointer shadow-md"
+                                                >
+                                                    <Trash2 className="w-3.5 h-3.5" /> 선택한 사진 삭제 ({selectedPhotoIds.filter(id => folderPhotos.some(p => p.id === id)).length}장)
+                                                </button>
+                                            </>
                                         )}
                                     </div>
                                 )}
@@ -2569,6 +2631,125 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                                                 </button>
                                             </>
                                         )}
+                                    </div>
+                                </div>
+                            </motion.div>
+                        </div>
+                    )}
+                </AnimatePresence>
+
+                {/* Container Move Modal */}
+                <AnimatePresence>
+                    {isMoveModalOpen && (
+                        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
+                            <motion.div 
+                                key="move-modal-backdrop"
+                                initial={{ opacity: 0 }} 
+                                animate={{ opacity: 1 }} 
+                                exit={{ opacity: 0 }} 
+                                onClick={() => !isMoving && setIsMoveModalOpen(false)}
+                                className="absolute inset-0 bg-black/70 backdrop-blur-md" 
+                            />
+                            <motion.div 
+                                key="move-modal-content"
+                                initial={{ scale: 0.9, opacity: 0, y: 20 }} 
+                                animate={{ scale: 1, opacity: 1, y: 0 }} 
+                                exit={{ scale: 0.9, opacity: 0, y: 20 }}
+                                className="relative w-full max-w-md bg-[#0e111c] border border-indigo-500/30 rounded-[2.5rem] shadow-2xl overflow-hidden p-7 z-10 text-slate-100"
+                            >
+                                <div className="flex items-center justify-between gap-3 mb-5 border-b border-white/10 pb-4">
+                                    <div className="flex items-center gap-3">
+                                        <div className="p-3 bg-indigo-500/10 rounded-2xl text-indigo-400 border border-indigo-500/20">
+                                            <Folder className="w-6 h-6" />
+                                        </div>
+                                        <div>
+                                            <h2 className="text-lg font-black text-white flex items-center gap-2">
+                                                📦 컨테이너 사진 이동
+                                            </h2>
+                                            <p className="text-xs text-indigo-400 font-bold">
+                                                선택한 사진을 다른 컨테이너로 위치 변경
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <button 
+                                        onClick={() => setIsMoveModalOpen(false)}
+                                        disabled={isMoving}
+                                        className="p-2 rounded-xl bg-white/10 border border-white/10 text-slate-300 hover:text-white transition-all cursor-pointer"
+                                    >
+                                        <X className="w-4 h-4" />
+                                    </button>
+                                </div>
+
+                                <div className="space-y-4">
+                                    <div className="p-3.5 bg-black/40 border border-white/5 rounded-2xl text-xs space-y-1">
+                                        <div className="text-slate-400 font-bold">이동 대상 사진:</div>
+                                        <div className="text-indigo-400 font-black text-sm font-mono">
+                                            총 {selectedPhotoIds.length > 0 ? selectedPhotoIds.length : (activePhotoIdx !== null ? 1 : 0)}장 선택됨
+                                        </div>
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <label className="text-xs font-black text-slate-300 uppercase tracking-wider block">
+                                            목표 컨테이너 번호 입력
+                                        </label>
+                                        <input
+                                            type="text"
+                                            placeholder="예: TCLU4912355"
+                                            value={targetMoveCntrNo}
+                                            onChange={(e) => setTargetMoveCntrNo(e.target.value.toUpperCase())}
+                                            className="w-full bg-black/60 border border-indigo-500/30 focus:border-indigo-400 rounded-2xl px-4 py-3 text-sm font-mono font-bold text-white uppercase outline-none transition-all placeholder:text-slate-600"
+                                            autoFocus
+                                        />
+                                    </div>
+
+                                    {/* Quick selector of existing folders */}
+                                    {folders.length > 0 && (
+                                        <div className="space-y-1.5">
+                                            <div className="text-[11px] font-bold text-slate-400">기존 컨테이너에서 선택:</div>
+                                            <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto p-2 bg-black/30 rounded-xl border border-white/5">
+                                                {folders.slice(0, 15).map(f => (
+                                                    <button
+                                                        key={f.cntrNo}
+                                                        type="button"
+                                                        onClick={() => setTargetMoveCntrNo(f.cntrNo)}
+                                                        className={`px-2.5 py-1 rounded-lg text-xs font-mono font-black transition-all cursor-pointer border ${
+                                                            targetMoveCntrNo === f.cntrNo
+                                                                ? "bg-indigo-600 text-white border-indigo-400"
+                                                                : "bg-white/5 text-slate-300 hover:text-white border-white/10 hover:bg-white/10"
+                                                        }`}
+                                                    >
+                                                        {f.cntrNo}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    <div className="pt-4 border-t border-white/10 flex items-center justify-end gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => setIsMoveModalOpen(false)}
+                                            disabled={isMoving}
+                                            className="px-5 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 border border-white/10 text-white font-bold text-xs transition-all cursor-pointer"
+                                        >
+                                            취소
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={handleExecuteMovePhotos}
+                                            disabled={isMoving || !targetMoveCntrNo.trim()}
+                                            className="px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-black text-xs transition-all cursor-pointer shadow-lg shadow-indigo-500/20 flex items-center gap-1.5"
+                                        >
+                                            {isMoving ? (
+                                                <>
+                                                    <Loader2 className="w-4 h-4 animate-spin" /> 이동 중...
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <Folder className="w-4 h-4" /> 이동 완료
+                                                </>
+                                            )}
+                                        </button>
                                     </div>
                                 </div>
                             </motion.div>

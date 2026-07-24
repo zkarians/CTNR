@@ -620,9 +620,10 @@ export async function PATCH(req: NextRequest) {
 
         const action = body.action || searchParams.get('action');
         const isUploadGDriveAction = action === 'upload_gdrive';
+        const isMoveContainerAction = action === 'move_container';
 
-        // Only admins can restore deleted files from trash.
-        if (!isCompleteAction && !isUploadGDriveAction && !isAdmin) {
+        // Only admins or normal users with complete/move/gdrive actions
+        if (!isCompleteAction && !isUploadGDriveAction && !isMoveContainerAction && !isAdmin) {
             return NextResponse.json({ error: '복구 권한이 없습니다. 관리자만 복구할 수 있습니다.' }, { status: 403 });
         }
 
@@ -640,6 +641,68 @@ export async function PATCH(req: NextRequest) {
         };
 
         try {
+            if (isMoveContainerAction) {
+                const targetCntrNo = (body.targetCntrNo || body.newCntrNo || '').trim().toUpperCase();
+                if (!targetCntrNo) {
+                    releaseClient();
+                    return NextResponse.json({ error: '이동할 목표 컨테이너 번호를 입력해 주세요.' }, { status: 400 });
+                }
+                if (!ids || ids.length === 0) {
+                    releaseClient();
+                    return NextResponse.json({ error: '이동할 사진이 선택되지 않았습니다.' }, { status: 400 });
+                }
+
+                // Fetch photos to move
+                const pRes = await client.query(
+                    `SELECT id, photo_path, cntr_no FROM container_photos WHERE id = ANY($1::uuid[]) AND (is_deleted IS NOT TRUE)`,
+                    [ids]
+                );
+                const targetPhotos = pRes.rows;
+
+                if (targetPhotos.length === 0) {
+                    releaseClient();
+                    return NextResponse.json({ error: '이동할 대상 사진을 찾을 수 없습니다.' }, { status: 404 });
+                }
+
+                const uploadsDir = process.env.UPLOAD_DIR || path.join(process.cwd(), 'uploads');
+                const targetDir = path.resolve(uploadsDir, targetCntrNo);
+                if (!fs.existsSync(targetDir)) {
+                    fs.mkdirSync(targetDir, { recursive: true });
+                }
+
+                let movedCount = 0;
+                for (const photo of targetPhotos) {
+                    const oldLocalPath = path.resolve(uploadsDir, photo.photo_path);
+                    const filename = path.basename(photo.photo_path);
+                    const newRelativePath = `${targetCntrNo}/${filename}`;
+                    const newLocalPath = path.resolve(uploadsDir, newRelativePath);
+
+                    // Move physical file on disk if exists
+                    if (fs.existsSync(oldLocalPath)) {
+                        try {
+                            fs.renameSync(oldLocalPath, newLocalPath);
+                        } catch (err) {
+                            console.warn(`[Move File Failover] fs.renameSync failed, falling back to copy+unlink for ${filename}:`, err);
+                            fs.copyFileSync(oldLocalPath, newLocalPath);
+                            fs.unlinkSync(oldLocalPath);
+                        }
+                    }
+
+                    // Update DB record
+                    await client.query(
+                        `UPDATE container_photos SET cntr_no = $1, photo_path = $2 WHERE id = $3`,
+                        [targetCntrNo, newRelativePath, photo.id]
+                    );
+                    movedCount++;
+                }
+
+                releaseClient();
+                return NextResponse.json({
+                    success: true,
+                    message: `사진 ${movedCount}장이 컨테이너 '${targetCntrNo}'(으)로 이동되었습니다.`
+                });
+            }
+
             if (isUploadGDriveAction) {
                 let targetPhotos: any[] = [];
                 if (ids && ids.length > 0) {
