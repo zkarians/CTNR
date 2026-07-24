@@ -2531,7 +2531,7 @@ export default function Home({ user }: { user: SessionUser }) {
                                                                                         )}
                                                                                     </div>
                                                                                     <div className="flex items-center gap-1.5 shrink-0">
-                                                                                        {isAdmin && (
+                                                                                        {isAdmin && !isExportingImage && (
                                                                                             <button
                                                                                                 onClick={() => handleToggleCancelCntr(cntr.cntrNo)}
                                                                                                 className={`px-2 py-0.5 rounded text-[11px] font-black transition-all cursor-pointer shadow-sm ${
