@@ -2445,8 +2445,8 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                                                 <span>/</span>
                                                 <span className="font-mono text-slate-300">{gdriveProgress.total} 장</span>
                                                 {gdriveProgress.alreadyDoneCount > 0 && (
-                                                    <span className="text-[10px] text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-md ml-1">
-                                                        기존 {gdriveProgress.alreadyDoneCount}장 보관됨 (스킵)
+                                                    <span className="text-[10px] text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-md ml-1" title="전체 대상 중 백업을 시작하기 전 이미 구글드라이브에 완비되어 있던 사진 수량입니다.">
+                                                        기존 보관 완료 (총 {gdriveProgress.alreadyDoneCount}장 스킵 대상)
                                                     </span>
                                                 )}
                                             </div>
@@ -2487,7 +2487,7 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                                             <div className="text-sm font-black text-sky-400 font-mono mt-0.5">{gdriveProgress.uploadedCount}장</div>
                                         </div>
                                         <div className="p-2.5 bg-amber-500/5 border border-amber-500/10 rounded-xl">
-                                            <div className="text-[10px] font-bold text-slate-500">이전 스킵</div>
+                                            <div className="text-[10px] font-bold text-slate-500">기존 보관 스킵</div>
                                             <div className="text-sm font-black text-amber-400 font-mono mt-0.5">{gdriveProgress.skippedCount}장</div>
                                         </div>
                                         <div className="p-2.5 bg-emerald-500/5 border border-emerald-500/10 rounded-xl">
