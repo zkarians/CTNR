@@ -843,50 +843,11 @@ export async function PATCH(req: NextRequest) {
                     await client.query('UPDATE container_photos SET is_completed = $1, completed_at = $2 WHERE id = $3', [completeVal, completedAt, id]);
                 }
 
-                // If completing, upload to Google Drive, verify, and clean up local disk space
-                if (completeVal && targetPhotos.length > 0) {
-                    const uploadsDir = process.env.UPLOAD_DIR || path.join(process.cwd(), 'uploads');
-                    
-                    // Asynchronously transfer to Google Drive & delete local files
-                    (async () => {
-                        for (const photo of targetPhotos) {
-                            const localPath = path.resolve(uploadsDir, photo.photo_path);
-                            const filename = path.basename(photo.photo_path);
-
-                            try {
-                                let fileId = photo.gdrive_file_id;
-                                let gdriveUrl = photo.gdrive_url;
-
-                                // 1. Upload to Google Drive if not uploaded yet and local file exists
-                                if (!fileId && fs.existsSync(localPath)) {
-                                    const gRes = await uploadToGoogleDrive(localPath, filename);
-                                    fileId = gRes.fileId;
-                                    gdriveUrl = gRes.gdriveUrl;
-
-                                    await pool.query(
-                                        `UPDATE container_photos SET gdrive_file_id = $1, gdrive_url = $2 WHERE id = $3`,
-                                        [fileId, gdriveUrl, photo.id]
-                                    );
-                                    console.log(`[GDrive Completion Transfer] Photo ${filename} uploaded to Google Drive. File ID: ${fileId}`);
-                                }
-
-                                // 2. Verification & Local Cleanup: Delete local file once Google Drive backup is confirmed!
-                                if (fileId && fs.existsSync(localPath)) {
-                                    fs.unlinkSync(localPath);
-                                    console.log(`[Local Disk Cleanup] Verified GDrive backup for ${filename}. Local file deleted, freed disk space!`);
-                                }
-                            } catch (err) {
-                                console.error(`[GDrive Completion Transfer Error] Failed for ${filename}:`, err);
-                            }
-                        }
-                    })();
-                }
-
                 return NextResponse.json({
                     success: true,
                     message: completeVal 
-                        ? `선택한 컨테이너/사진이 완료로 변경되었습니다. 구글 드라이브로 백업되고 로컬 디스크 용량이 정리됩니다.`
-                        : `선택한 컨테이너/사진이 진행 중으로 변경되었습니다.`
+                        ? `선택한 컨테이너/사진이 완료 상태로 변경되었습니다.`
+                        : `선택한 컨테이너/사진이 진행 중 상태로 변경되었습니다.`
                 });
             } else {
                 // Restore deleted files from trash
