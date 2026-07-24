@@ -627,6 +627,18 @@ export async function PATCH(req: NextRequest) {
         }
 
         const client = await pool.connect();
+        let clientReleased = false;
+        const releaseClient = () => {
+            if (!clientReleased) {
+                clientReleased = true;
+                try {
+                    client.release();
+                } catch {
+                    // ignore double release
+                }
+            }
+        };
+
         try {
             if (isUploadGDriveAction) {
                 let targetPhotos: any[] = [];
@@ -645,7 +657,7 @@ export async function PATCH(req: NextRequest) {
                 }
 
                 if (targetPhotos.length === 0) {
-                    client.release();
+                    releaseClient();
                     return NextResponse.json({ error: '업로드 및 정리할 대상 사진이 없습니다.' }, { status: 400 });
                 }
 
@@ -765,7 +777,7 @@ export async function PATCH(req: NextRequest) {
                         } catch (err: any) {
                             sendEvent({ type: 'fatal_error', error: err?.message || String(err) });
                         } finally {
-                            client.release();
+                            releaseClient();
                             try {
                                 controller.close();
                             } catch {
@@ -878,7 +890,7 @@ export async function PATCH(req: NextRequest) {
                 }
             }
         } finally {
-            client.release();
+            releaseClient();
         }
     } catch (error: any) {
         console.error('PATCH Photo Error:', error);
