@@ -643,13 +643,13 @@ export async function PATCH(req: NextRequest) {
             if (isUploadGDriveAction) {
                 let targetPhotos: any[] = [];
                 if (ids && ids.length > 0) {
-                    const pRes = await client.query(`SELECT id, photo_path, cntr_no, gdrive_file_id, gdrive_url FROM container_photos WHERE id = ANY($1::uuid[]) AND (is_deleted IS NOT TRUE)`, [ids]);
+                    const pRes = await client.query(`SELECT id, photo_path, cntr_no, gdrive_file_id, gdrive_url FROM container_photos WHERE id = ANY($1::uuid[]) AND (is_deleted IS NOT TRUE) ORDER BY cntr_no ASC, photo_path ASC`, [ids]);
                     targetPhotos = pRes.rows;
                 } else if (cntrNosParam && cntrNosParam.length > 0) {
-                    const pRes = await client.query(`SELECT id, photo_path, cntr_no, gdrive_file_id, gdrive_url FROM container_photos WHERE cntr_no = ANY($1::text[]) AND (is_deleted IS NOT TRUE)`, [cntrNosParam]);
+                    const pRes = await client.query(`SELECT id, photo_path, cntr_no, gdrive_file_id, gdrive_url FROM container_photos WHERE cntr_no = ANY($1::text[]) AND (is_deleted IS NOT TRUE) ORDER BY cntr_no ASC, photo_path ASC`, [cntrNosParam]);
                     targetPhotos = pRes.rows;
                 } else if (cntrNo) {
-                    const pRes = await client.query(`SELECT id, photo_path, cntr_no, gdrive_file_id, gdrive_url FROM container_photos WHERE cntr_no = $1 AND (is_deleted IS NOT TRUE)`, [cntrNo]);
+                    const pRes = await client.query(`SELECT id, photo_path, cntr_no, gdrive_file_id, gdrive_url FROM container_photos WHERE cntr_no = $1 AND (is_deleted IS NOT TRUE) ORDER BY photo_path ASC`, [cntrNo]);
                     targetPhotos = pRes.rows;
                 } else if (id) {
                     const pRes = await client.query(`SELECT id, photo_path, cntr_no, gdrive_file_id, gdrive_url FROM container_photos WHERE id = $1 AND (is_deleted IS NOT TRUE)`, [id]);
