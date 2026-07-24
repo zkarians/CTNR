@@ -694,7 +694,22 @@ export async function PATCH(req: NextRequest) {
                                             freedMB: (freedBytes / (1024 * 1024)).toFixed(1)
                                         });
 
-                                        const gRes = await uploadToGoogleDrive(localPath, filename);
+                                        // Auto-retry up to 3 times for transient network glitches
+                                        let gRes: any = null;
+                                        let lastErr: any = null;
+                                        for (let attempt = 1; attempt <= 3; attempt++) {
+                                            try {
+                                                gRes = await uploadToGoogleDrive(localPath, filename);
+                                                break;
+                                            } catch (retryErr: any) {
+                                                lastErr = retryErr;
+                                                console.warn(`[GDrive Retry ${attempt}/3] ${filename}:`, retryErr?.message || retryErr);
+                                                if (attempt < 3) await new Promise(r => setTimeout(r, 1000));
+                                            }
+                                        }
+
+                                        if (!gRes) throw lastErr || new Error("Google Drive upload failed after 3 retries");
+
                                         fileId = gRes.fileId;
                                         gdriveUrl = gRes.gdriveUrl;
 
