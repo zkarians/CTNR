@@ -661,6 +661,9 @@ export async function PATCH(req: NextRequest) {
                     return NextResponse.json({ error: '업로드 및 정리할 대상 사진이 없습니다.' }, { status: 400 });
                 }
 
+                // Release client back to pool early so long streaming loops use pool.query safely
+                releaseClient();
+
                 const encoder = new TextEncoder();
                 const stream = new ReadableStream({
                     async start(controller) {
@@ -697,7 +700,7 @@ export async function PATCH(req: NextRequest) {
                                     if (foundGDrive) {
                                         fileId = foundGDrive.fileId;
                                         gdriveUrl = foundGDrive.gdriveUrl;
-                                        await client.query(
+                                        await pool.query(
                                             `UPDATE container_photos SET gdrive_file_id = $1, gdrive_url = $2 WHERE id = $3`,
                                             [fileId, gdriveUrl, photo.id]
                                         );
@@ -739,7 +742,7 @@ export async function PATCH(req: NextRequest) {
                                         fileId = gRes.fileId;
                                         gdriveUrl = gRes.gdriveUrl;
 
-                                        await client.query(
+                                        await pool.query(
                                             `UPDATE container_photos SET gdrive_file_id = $1, gdrive_url = $2 WHERE id = $3`,
                                             [fileId, gdriveUrl, photo.id]
                                         );
