@@ -332,17 +332,17 @@ export default function Home({ user }: { user: SessionUser }) {
             lines.push(`📅 ${dateGroup.dateStr || dateGroup.date} 작업 분량`);
             let totalCntr = 0;
             dateGroup.uploaders.forEach((u: any) => {
-                const activeCntrs = u.containers.filter((c: any) => !c.isCancelled && !c.adminComment?.includes('[취소]'));
+                const activeCntrs = u.containers.filter((c: any) => !c.isCancelled && !c.adminComment?.includes('[취소]') && !c.adminComment?.includes('[작업취소]'));
                 totalCntr += activeCntrs.length;
             });
             lines.push(`총합계: ${totalCntr}개 작업완료\n`);
 
             dateGroup.uploaders.forEach((team: any) => {
-                const activeTeamCntrs = team.containers.filter((c: any) => !c.isCancelled && !c.adminComment?.includes('[취소]'));
+                const activeTeamCntrs = team.containers.filter((c: any) => !c.isCancelled && !c.adminComment?.includes('[취소]') && !c.adminComment?.includes('[작업취소]'));
                 lines.push(`■ ${team.teamName} (합계 ${activeTeamCntrs.length}개)`);
                 team.containers.forEach((cntr: any) => {
-                    const isCancelled = cntr.isCancelled || cntr.adminComment?.includes('[취소]');
-                    const cancelTag = isCancelled ? ' [취소]' : '';
+                    const isCancelled = cntr.isCancelled || cntr.adminComment?.includes('[취소]') || cntr.adminComment?.includes('[작업취소]');
+                    const cancelTag = isCancelled ? ' [작업취소]' : '';
                     const adminCommentNote = cntr.adminComment ? ` (${cntr.adminComment})` : '';
                     lines.push(`${cntr.cntrNo}${cancelTag} (${cntr.modelCount || cntr.products.length}모델, ${cntr.totalQty ? cntr.totalQty.toLocaleString() : cntr.products.reduce((s: number, p: any) => s + p.qty, 0).toLocaleString()}개${adminCommentNote}) [${cntr.workTimeStr}]`);
                     if (cntr.lastRemark && cntr.lastRemark.trim()) {
@@ -368,15 +368,15 @@ export default function Home({ user }: { user: SessionUser }) {
                 dateGroup.uploaders.forEach((team: any) => {
                     team.containers.forEach((cntr: any) => {
                         if (cntr.cntrNo === cntrNo) {
-                            const currentlyCancelled = cntr.isCancelled || cntr.adminComment?.includes('[취소]');
+                            const currentlyCancelled = cntr.isCancelled || cntr.adminComment?.includes('[취소]') || cntr.adminComment?.includes('[작업취소]');
                             if (currentlyCancelled) {
                                 cntr.isCancelled = false;
                                 if (cntr.adminComment) {
-                                    cntr.adminComment = cntr.adminComment.replace(/\[취소\]/g, '').trim();
+                                    cntr.adminComment = cntr.adminComment.replace(/\[작업취소\]/g, '').replace(/\[취소\]/g, '').trim();
                                 }
                             } else {
                                 cntr.isCancelled = true;
-                                cntr.adminComment = cntr.adminComment ? `${cntr.adminComment} [취소]`.trim() : '[취소]';
+                                cntr.adminComment = cntr.adminComment ? `${cntr.adminComment} [작업취소]`.trim() : '[작업취소]';
                             }
                         }
                     });
@@ -403,7 +403,7 @@ export default function Home({ user }: { user: SessionUser }) {
         const totalQty = validProducts.reduce((sum, p) => sum + p.qty, 0);
 
         const adminCommentStr = isManualCancelled 
-            ? (manualCategory.trim() ? `${manualCategory.trim()} [취소]` : '[취소]')
+            ? (manualCategory.trim() ? `${manualCategory.trim()} [작업취소]` : '[작업취소]')
             : manualCategory.trim();
 
         const newRawContainer = {
@@ -2452,13 +2452,13 @@ export default function Home({ user }: { user: SessionUser }) {
                                     isAdmin ? (
                                     <div className="space-y-8">
                                         {reportData.map((dateGroup: any) => {
-                                            const activeContainers = dateGroup.uploaders.flatMap((u: any) => u.containers).filter((c: any) => !c.isCancelled && !c.adminComment?.includes('[취소]'));
+                                            const activeContainers = dateGroup.uploaders.flatMap((u: any) => u.containers).filter((c: any) => !c.isCancelled && !c.adminComment?.includes('[취소]') && !c.adminComment?.includes('[작업취소]'));
                                             const totalCntr = activeContainers.length;
                                             
                                             const activeCarrierCounts: Record<string, number> = {};
                                             dateGroup.uploaders.forEach((u: any) => {
                                                 u.containers.forEach((c: any) => {
-                                                    if (c.isCancelled || c.adminComment?.includes('[취소]')) return;
+                                                    if (c.isCancelled || c.adminComment?.includes('[취소]') || c.adminComment?.includes('[작업취소]')) return;
                                                     const cName = c.transporter ? (c.transporter.includes("천마") ? "천마" : (c.transporter.includes("BNI") || c.transporter.includes("비엔아이") ? "BNI" : c.transporter.split('(')[0])) : "기타";
                                                     activeCarrierCounts[cName] = (activeCarrierCounts[cName] || 0) + 1;
                                                 });
@@ -2505,7 +2505,7 @@ export default function Home({ user }: { user: SessionUser }) {
                                                     </div>
                                                     <div className={`grid grid-cols-1 ${gridColsStyle} gap-4 items-start w-full`}>
                                                         {dateGroup.uploaders.map((upGroup: any) => {
-                                                            const activeTeamCntrs = upGroup.containers.filter((c: any) => !c.isCancelled && !c.adminComment?.includes('[취소]'));
+                                                            const activeTeamCntrs = upGroup.containers.filter((c: any) => !c.isCancelled && !c.adminComment?.includes('[취소]') && !c.adminComment?.includes('[작업취소]'));
                                                             return (
                                                             <div key={upGroup.teamName ?? upGroup.uploaderName} className="bg-white border border-slate-200 rounded-xl md:rounded-2xl p-2.5 sm:p-4 flex flex-col gap-3 md:gap-4 h-auto shadow-sm">
                                                                 <div className="flex items-center justify-between pb-2 border-b border-slate-200">
@@ -2518,7 +2518,7 @@ export default function Home({ user }: { user: SessionUser }) {
                                                                 <div className="space-y-3">
                                                                     {upGroup.containers.map((cntr: any) => {
                                                                         const totalQty = cntr.products.reduce((sum: number, p: any) => sum + p.qty, 0);
-                                                                        const isCancelled = cntr.isCancelled || cntr.adminComment?.includes('[취소]');
+                                                                        const isCancelled = cntr.isCancelled || cntr.adminComment?.includes('[취소]') || cntr.adminComment?.includes('[작업취소]');
                                                                         return (
                                                                             <div key={cntr.cntrNo} className="bg-slate-50 border border-slate-200 rounded-lg md:rounded-xl p-2.5 sm:p-3 hover:border-slate-300 transition-all space-y-1.5">
                                                                                 <div className="flex items-center justify-between gap-1.5 mb-1.5">
@@ -2526,7 +2526,7 @@ export default function Home({ user }: { user: SessionUser }) {
                                                                                         <span className={`text-sm font-black truncate uppercase ${getCarrierColor(cntr.transporter)}`}>{cntr.cntrNo}</span>
                                                                                         {isCancelled && (
                                                                                             <span className="px-1.5 py-0.5 rounded-md bg-rose-500/10 border border-rose-500/20 text-rose-600 font-extrabold text-[11px] shrink-0">
-                                                                                                [취소]
+                                                                                                [작업취소]
                                                                                             </span>
                                                                                         )}
                                                                                     </div>
@@ -2856,7 +2856,7 @@ export default function Home({ user }: { user: SessionUser }) {
                                                         onChange={e => setIsManualCancelled(e.target.checked)}
                                                         className="w-4 h-4 rounded text-rose-600 focus:ring-rose-500 cursor-pointer"
                                                     />
-                                                    <span>🚫 [취소] 작업 항목으로 등록 (합계 수량에서 제외)</span>
+                                                    <span>🚫 [작업취소] 항목으로 등록 (합계 수량에서 제외)</span>
                                                 </label>
                                             </div>
 
