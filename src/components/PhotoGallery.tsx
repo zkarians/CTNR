@@ -1289,144 +1289,145 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                     </button>
                 </header>
 
-                {/* Filter Panel */}
-                <section className="px-6 py-4 md:px-8 border-b border-white/5 bg-black/10 shrink-0">
-                    <div className="flex flex-col md:flex-row gap-3 md:items-end">
-                        <div className="grid grid-cols-2 md:flex gap-3 flex-1">
-                            {/* Start Date */}
+                {/* Filter Panel - Mobile-first redesign */}
+                <section className="px-4 py-3 md:px-8 md:py-4 border-b border-white/5 bg-black/10 shrink-0">
+                    {/* PC: Horizontal layout */}
+                    <div className="hidden md:flex flex-row gap-3 items-end">
+                        <div className="flex gap-3 flex-1 flex-wrap items-end">
                             <div className="space-y-1">
                                 <label className="text-[10px] text-slate-500 font-bold tracking-wider uppercase flex items-center gap-1">
                                     <Calendar className="w-3 h-3 text-sky-400" /> 시작일
                                 </label>
-                                <input 
-                                    type="date"
-                                    value={startDate}
-                                    onChange={(e) => setStartDate(e.target.value)}
-                                    className="w-full bg-[#12121a]/80 border border-white/5 rounded-xl px-3.5 py-2.5 text-xs text-slate-200 outline-none focus:border-sky-500/50 transition-colors"
-                                />
+                                <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)}
+                                    className="bg-[#12121a]/80 border border-white/5 rounded-xl px-3.5 py-2.5 text-xs text-slate-200 outline-none focus:border-sky-500/50 transition-colors" />
                             </div>
-
-                            {/* End Date */}
                             <div className="space-y-1">
                                 <label className="text-[10px] text-slate-500 font-bold tracking-wider uppercase flex items-center gap-1">
                                     <Calendar className="w-3 h-3 text-sky-400" /> 종료일
                                 </label>
-                                <input 
-                                    type="date"
-                                    value={endDate}
-                                    onChange={(e) => setEndDate(e.target.value)}
-                                    className="w-full bg-[#12121a]/80 border border-white/5 rounded-xl px-3.5 py-2.5 text-xs text-slate-200 outline-none focus:border-sky-500/50 transition-colors"
-                                />
+                                <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)}
+                                    className="bg-[#12121a]/80 border border-white/5 rounded-xl px-3.5 py-2.5 text-xs text-slate-200 outline-none focus:border-sky-500/50 transition-colors" />
                             </div>
-
-                            {/* Team Select */}
-                            <div className="space-y-1 col-span-2 md:w-48">
+                            <div className="space-y-1 w-44">
                                 <label className="text-[10px] text-slate-500 font-bold tracking-wider uppercase flex items-center gap-1">
                                     <User className="w-3 h-3 text-emerald-400" /> 작업 조
                                 </label>
-                                <select 
-                                    value={selectedTeamId}
-                                    onChange={(e) => setSelectedTeamId(e.target.value)}
-                                    className="w-full bg-[#12121a]/80 border border-white/5 rounded-xl px-3.5 py-2.5 text-xs text-slate-200 outline-none focus:border-emerald-500/50 transition-colors appearance-none cursor-pointer"
-                                >
+                                <select value={selectedTeamId} onChange={(e) => setSelectedTeamId(e.target.value)}
+                                    className="w-full bg-[#12121a]/80 border border-white/5 rounded-xl px-3.5 py-2.5 text-xs text-slate-200 outline-none focus:border-emerald-500/50 transition-colors appearance-none cursor-pointer">
                                     <option value="">전체 조</option>
-                                    {teams.map(t => (
-                                        <option key={t.id} value={t.id}>{t.name}</option>
-                                    ))}
+                                    {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
                                 </select>
                             </div>
-
-                            {/* Container Number Search + Reset + Trash buttons inline */}
-                            <div className="space-y-1 col-span-2">
+                            <div className="space-y-1">
                                 <label className="text-[10px] text-slate-500 font-bold tracking-wider uppercase flex items-center gap-1">
                                     <Folder className="w-3 h-3 text-sky-400" /> 컨테이너 번호
                                 </label>
                                 <div className="flex items-center gap-2">
-                                    <input 
-                                        type="text"
-                                        placeholder="컨테이너 번호 입력"
-                                        value={searchCntrNo}
+                                    <input type="text" placeholder="컨테이너 번호 입력" value={searchCntrNo}
                                         onChange={(e) => setSearchCntrNo(e.target.value)}
-                                        onKeyDown={(e) => {
-                                            if (e.key === 'Enter') {
-                                                loadPhotos();
-                                            }
-                                        }}
-                                        className="w-48 bg-[#12121a]/80 border border-white/5 rounded-xl px-3.5 py-2.5 text-xs text-slate-200 outline-none focus:border-sky-500/50 transition-colors"
-                                    />
-                                    <button 
-                                        onClick={handleResetFilters}
-                                        className="px-4 py-2.5 rounded-xl bg-white/5 border border-white/5 text-slate-400 hover:text-white hover:bg-white/10 hover:border-white/10 transition-all font-black text-xs cursor-pointer flex items-center gap-1.5 whitespace-nowrap h-[38px]"
-                                        title="필터 초기화"
-                                    >
+                                        onKeyDown={(e) => { if (e.key === 'Enter') loadPhotos(); }}
+                                        className="w-44 bg-[#12121a]/80 border border-white/5 rounded-xl px-3.5 py-2.5 text-xs text-slate-200 outline-none focus:border-sky-500/50 transition-colors" />
+                                    <button onClick={handleResetFilters}
+                                        className="px-4 py-2.5 rounded-xl bg-white/5 border border-white/5 text-slate-400 hover:text-white hover:bg-white/10 transition-all font-black text-xs cursor-pointer flex items-center gap-1.5 h-[38px]">
                                         <RotateCcw className="w-3.5 h-3.5" /> 초기화
                                     </button>
-                                    {/* Segmented Control for Active / Completed / Trash */}
                                     <div className="flex bg-[#11111a] border border-white/5 p-0.5 rounded-xl gap-0.5 h-[38px]">
-                                        <button
-                                            onClick={() => { setTabState('ACTIVE'); setSelectedFolders([]); setSelectedContainerFolder(null); }}
-                                            className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 text-xs font-black cursor-pointer whitespace-nowrap ${
-                                                tabState === 'ACTIVE'
-                                                    ? "bg-sky-500 text-white shadow-sm"
-                                                    : "text-slate-400 hover:text-white"
-                                            }`}
-                                        >
+                                        <button onClick={() => { setTabState('ACTIVE'); setSelectedFolders([]); setSelectedContainerFolder(null); }}
+                                            className={`px-3 py-1.5 rounded-lg transition-all text-xs font-black cursor-pointer whitespace-nowrap ${tabState === 'ACTIVE' ? "bg-sky-500 text-white shadow-sm" : "text-slate-400 hover:text-white"}`}>
                                             진행 중인 작업
                                         </button>
-                                        <button
-                                            onClick={() => { setTabState('COMPLETED'); setSelectedFolders([]); setSelectedContainerFolder(null); }}
-                                            className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 text-xs font-black cursor-pointer whitespace-nowrap ${
-                                                tabState === 'COMPLETED'
-                                                    ? "bg-emerald-500 text-white shadow-sm"
-                                                    : "text-slate-400 hover:text-white"
-                                            }`}
-                                        >
+                                        <button onClick={() => { setTabState('COMPLETED'); setSelectedFolders([]); setSelectedContainerFolder(null); }}
+                                            className={`px-3 py-1.5 rounded-lg transition-all text-xs font-black cursor-pointer whitespace-nowrap ${tabState === 'COMPLETED' ? "bg-emerald-500 text-white shadow-sm" : "text-slate-400 hover:text-white"}`}>
                                             완료된 작업
                                         </button>
                                         {isAdmin && (
-                                            <button
-                                                onClick={() => { setTabState('TRASH'); setSelectedFolders([]); setSelectedContainerFolder(null); }}
-                                                className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 text-xs font-black cursor-pointer whitespace-nowrap ${
-                                                    tabState === 'TRASH'
-                                                        ? "bg-purple-500 text-white shadow-sm"
-                                                        : "text-slate-400 hover:text-white"
-                                                }`}
-                                            >
+                                            <button onClick={() => { setTabState('TRASH'); setSelectedFolders([]); setSelectedContainerFolder(null); }}
+                                                className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1 text-xs font-black cursor-pointer whitespace-nowrap ${tabState === 'TRASH' ? "bg-purple-500 text-white shadow-sm" : "text-slate-400 hover:text-white"}`}>
                                                 <Trash2 className="w-3.5 h-3.5" /> 휴지통
                                             </button>
                                         )}
                                     </div>
+                                    {selectedContainerFolder !== null && (
+                                        <button onClick={() => setSelectedContainerFolder(null)}
+                                            className="flex items-center justify-center px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-slate-300 hover:text-white transition-all cursor-pointer h-[38px]">
+                                            <ArrowLeft className="w-4 h-4" />
+                                        </button>
+                                    )}
                                 </div>
                             </div>
-
-                            {/* Back Button (only when a folder is selected) */}
-                            {selectedContainerFolder !== null && (
-                                <div className="space-y-1 flex items-end">
-                                    <button 
-                                        onClick={() => setSelectedContainerFolder(null)}
-                                        className="flex items-center justify-center px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-slate-300 hover:text-white transition-all cursor-pointer h-[38px] mb-[1px]"
-                                        title="뒤로가기"
-                                    >
-                                        <ArrowLeft className="w-4 h-4" />
-                                    </button>
-                                </div>
-                            )}
                         </div>
+                        <button onClick={loadPhotos}
+                            className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-500 border border-emerald-600 hover:bg-emerald-400 text-white font-black text-xs transition-all shadow-lg shadow-emerald-500/10 cursor-pointer shrink-0">
+                            <RefreshCw className="w-3.5 h-3.5" /> 새로고침
+                        </button>
+                    </div>
 
-                        {/* Refresh Button */}
-                        <div className="flex gap-2 items-center shrink-0">
-                            <button 
-                                onClick={loadPhotos}
-                                className="flex-1 md:flex-none flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-500 border border-emerald-600 hover:bg-emerald-400 text-white font-black text-xs transition-all shadow-lg shadow-emerald-500/10 cursor-pointer"
-                            >
+                    {/* Mobile: Stacked layout */}
+                    <div className="flex flex-col gap-2.5 md:hidden">
+                        {/* Row 1: Dates */}
+                        <div className="grid grid-cols-2 gap-2">
+                            <div className="space-y-1">
+                                <label className="text-[10px] text-slate-500 font-bold tracking-wider uppercase flex items-center gap-1">
+                                    <Calendar className="w-3 h-3 text-sky-400" /> 시작일
+                                </label>
+                                <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)}
+                                    className="w-full bg-[#12121a]/80 border border-white/5 rounded-xl px-3 py-2.5 text-xs text-slate-200 outline-none focus:border-sky-500/50 transition-colors" />
+                            </div>
+                            <div className="space-y-1">
+                                <label className="text-[10px] text-slate-500 font-bold tracking-wider uppercase flex items-center gap-1">
+                                    <Calendar className="w-3 h-3 text-sky-400" /> 종료일
+                                </label>
+                                <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)}
+                                    className="w-full bg-[#12121a]/80 border border-white/5 rounded-xl px-3 py-2.5 text-xs text-slate-200 outline-none focus:border-sky-500/50 transition-colors" />
+                            </div>
+                        </div>
+                        {/* Row 2: Team select */}
+                        <div className="space-y-1">
+                            <label className="text-[10px] text-slate-500 font-bold tracking-wider uppercase flex items-center gap-1">
+                                <User className="w-3 h-3 text-emerald-400" /> 작업 조
+                            </label>
+                            <select value={selectedTeamId} onChange={(e) => setSelectedTeamId(e.target.value)}
+                                className="w-full bg-[#12121a]/80 border border-white/5 rounded-xl px-3 py-2.5 text-xs text-slate-200 outline-none focus:border-emerald-500/50 transition-colors appearance-none cursor-pointer">
+                                <option value="">전체 조</option>
+                                {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                            </select>
+                        </div>
+                        {/* Row 3: Container number search */}
+                        <div className="space-y-1">
+                            <label className="text-[10px] text-slate-500 font-bold tracking-wider uppercase flex items-center gap-1">
+                                <Folder className="w-3 h-3 text-sky-400" /> 컨테이너 번호
+                            </label>
+                            <div className="relative">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500 pointer-events-none" />
+                                <input type="text" placeholder="번호 검색..." value={searchCntrNo}
+                                    onChange={(e) => setSearchCntrNo(e.target.value)}
+                                    onKeyDown={(e) => { if (e.key === 'Enter') loadPhotos(); }}
+                                    className="w-full bg-[#12121a]/80 border border-white/5 rounded-xl pl-9 pr-3 py-2.5 text-xs text-slate-200 outline-none focus:border-sky-500/50 transition-colors" />
+                            </div>
+                        </div>
+                        {/* Row 4: Action buttons */}
+                        <div className="grid grid-cols-2 gap-2">
+                            <button onClick={handleResetFilters}
+                                className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-white/5 border border-white/5 text-slate-400 hover:text-white hover:bg-white/10 transition-all font-black text-xs cursor-pointer">
+                                <RotateCcw className="w-3.5 h-3.5" /> 필터 초기화
+                            </button>
+                            <button onClick={loadPhotos}
+                                className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-emerald-500 border border-emerald-600 hover:bg-emerald-400 text-white font-black text-xs transition-all shadow-lg shadow-emerald-500/10 cursor-pointer">
                                 <RefreshCw className="w-3.5 h-3.5" /> 새로고침
                             </button>
                         </div>
+                        {/* Back button (only when inside a folder) */}
+                        {selectedContainerFolder !== null && (
+                            <button onClick={() => setSelectedContainerFolder(null)}
+                                className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-slate-300 hover:text-white transition-all cursor-pointer text-xs font-black">
+                                <ArrowLeft className="w-4 h-4" /> 폴더 목록으로 돌아가기
+                            </button>
+                        )}
                     </div>
                 </section>
 
                 {/* Photo Grid Area */}
-                <main className="flex-1 overflow-y-auto px-6 py-6 md:px-8 custom-scrollbar">
+                <main className="flex-1 overflow-y-auto px-4 py-4 md:px-8 md:py-6 pb-20 md:pb-6 custom-scrollbar">
                     {isLoading ? (
                         <div className="flex flex-col items-center justify-center h-64 text-slate-400">
                             <Loader2 className="w-8 h-8 animate-spin text-sky-500 mb-3" />
@@ -1441,135 +1442,164 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                     ) : selectedContainerFolder === null ? (
                         /* FOLDER GRID VIEW */
                         <div className="space-y-4">
-                            {/* Selection Actions Bar */}
-                            <div className={`flex flex-wrap gap-3 items-center justify-between border rounded-2xl p-4 shrink-0 transition-colors duration-300 ${isTrashView ? "bg-purple-950/5 border-purple-500/10" : "bg-white/[0.02] border-white/5"}`}>
-                                <div className="flex items-center gap-3">
+                            {/* Selection Toolbar */}
+                            <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                                {/* Left: Select All + View Mode Toggle */}
+                                <div className="flex items-center gap-2">
                                     <button
                                         onClick={handleSelectAllFolders}
-                                        className="px-3.5 py-2 rounded-xl bg-white/5 border border-white/5 hover:bg-white/10 text-slate-300 hover:text-white transition-all text-xs font-black cursor-pointer"
+                                        className="px-3 py-2 rounded-xl bg-white/5 border border-white/5 hover:bg-white/10 text-slate-300 hover:text-white transition-all text-xs font-black cursor-pointer"
                                     >
-                                        {selectedFolders.length === folders.length ? "선택 전체 해제" : "전체 선택"}
+                                        {selectedFolders.length === folders.length && folders.length > 0 ? "전체 해제" : "전체 선택"}
                                     </button>
-
-                                    {/* View Mode Toggle: Date Grouping vs Flat List */}
+                                    {/* View Mode Toggle */}
                                     <div className="flex bg-black/40 border border-white/10 p-1 rounded-xl gap-1">
                                         <button
                                             onClick={() => setFolderViewMode('DATE_GROUP')}
-                                            className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer ${
-                                                folderViewMode === 'DATE_GROUP'
-                                                    ? 'bg-sky-500 text-white shadow-sm'
-                                                    : 'text-slate-400 hover:text-white'
-                                            }`}
+                                            className={`px-2.5 py-1.5 rounded-lg text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer ${folderViewMode === 'DATE_GROUP' ? 'bg-sky-500 text-white shadow-sm' : 'text-slate-400 hover:text-white'}`}
                                             title="작업일자별 그룹 보기"
                                         >
                                             <Calendar className="w-3.5 h-3.5" />
-                                            <span>작업일자별</span>
+                                            <span className="hidden sm:inline">작업일자별</span>
                                         </button>
                                         <button
                                             onClick={() => setFolderViewMode('FLAT')}
-                                            className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer ${
-                                                folderViewMode === 'FLAT'
-                                                    ? 'bg-sky-500 text-white shadow-sm'
-                                                    : 'text-slate-400 hover:text-white'
-                                            }`}
-                                            title="전체 목록 바둑판 보기"
+                                            className={`px-2.5 py-1.5 rounded-lg text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer ${folderViewMode === 'FLAT' ? 'bg-sky-500 text-white shadow-sm' : 'text-slate-400 hover:text-white'}`}
+                                            title="전체 목록 보기"
                                         >
                                             <LayoutGrid className="w-3.5 h-3.5" />
-                                            <span>전체 목록</span>
+                                            <span className="hidden sm:inline">전체 목록</span>
                                         </button>
                                     </div>
-
-                                    {/* Action Buttons right next to Select All when folder(s) selected */}
-                                    {/* Action Buttons right next to Select All when folder(s) selected */}
+                                </div>
+                                {/* Right: Selection count + download (PC only) */}
+                                <div className="hidden md:flex items-center gap-2">
+                                    <span className="text-xs font-bold text-slate-400">
+                                        총 {folders.length}개 폴더 / <strong className={isTrashView ? "text-purple-400" : isCompletedView ? "text-emerald-400" : "text-sky-400"}>{selectedFolders.length}개</strong> 선택
+                                    </span>
                                     {selectedFolders.length > 0 && (
-                                        <div className="flex items-center gap-2 animate-fade-in">
+                                        <div className="flex items-center gap-2">
                                             {isTrashView ? (
                                                 isAdmin && (
                                                     <>
-                                                        <button
-                                                            onClick={handleRestoreSelectedFolders}
-                                                            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-black text-xs transition-all cursor-pointer shadow-lg shadow-purple-500/20"
-                                                        >
-                                                            <RotateCw className="w-3.5 h-3.5" /> 선택 복구 ({selectedFolders.length}개)
+                                                        <button onClick={handleRestoreSelectedFolders}
+                                                            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-black text-xs transition-all cursor-pointer">
+                                                            <RotateCw className="w-3.5 h-3.5" /> 선택 복구 ({selectedFolders.length})
                                                         </button>
-                                                        <button
-                                                            onClick={handleDeleteSelectedFolders}
-                                                            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-rose-500/10 border border-rose-500/20 hover:bg-rose-600 text-rose-400 hover:text-white font-black text-xs transition-all cursor-pointer"
-                                                        >
-                                                            <Trash2 className="w-3.5 h-3.5" /> 선택 영구 삭제 ({selectedFolders.length}개)
+                                                        <button onClick={handleDeleteSelectedFolders}
+                                                            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-rose-500/10 border border-rose-500/20 hover:bg-rose-600 text-rose-400 hover:text-white font-black text-xs transition-all cursor-pointer">
+                                                            <Trash2 className="w-3.5 h-3.5" /> 영구 삭제 ({selectedFolders.length})
                                                         </button>
                                                     </>
                                                 )
                                             ) : (
                                                 <>
-                                                    {/* Bulk Complete / Undo Complete (Everyone) */}
                                                     {isCompletedView ? (
-                                                        <button
-                                                            onClick={() => handleToggleSelectedFoldersCompletion(true)}
-                                                            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-500/10 border border-amber-500/20 hover:bg-amber-600 text-amber-400 hover:text-white font-black text-xs transition-all cursor-pointer"
-                                                        >
-                                                            <Undo className="w-3.5 h-3.5" /> 선택 완료 취소 ({selectedFolders.length}개)
+                                                        <button onClick={() => handleToggleSelectedFoldersCompletion(true)}
+                                                            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-500/10 border border-amber-500/20 hover:bg-amber-600 text-amber-400 hover:text-white font-black text-xs transition-all cursor-pointer">
+                                                            <Undo className="w-3.5 h-3.5" /> 완료 취소 ({selectedFolders.length})
                                                         </button>
                                                     ) : (
                                                         <>
-                                                            <button
-                                                                onClick={() => handleToggleSelectedFoldersCompletion(false)}
-                                                                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20 hover:bg-emerald-600 text-emerald-400 hover:text-white font-black text-xs transition-all cursor-pointer"
-                                                            >
-                                                                <Check className="w-3.5 h-3.5" /> 선택 완료 처리 ({selectedFolders.length}개)
+                                                            <button onClick={() => handleToggleSelectedFoldersCompletion(false)}
+                                                                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20 hover:bg-emerald-600 text-emerald-400 hover:text-white font-black text-xs transition-all cursor-pointer">
+                                                                <Check className="w-3.5 h-3.5" /> 완료 처리 ({selectedFolders.length})
                                                             </button>
-                                                            <button
-                                                                onClick={handleCleanupSelectedFoldersDuplicates}
-                                                                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-500/10 border border-amber-500/20 hover:bg-amber-600 text-amber-400 hover:text-white font-black text-xs transition-all cursor-pointer shadow-lg shadow-amber-500/5"
-                                                            >
-                                                                <ImageIcon className="w-3.5 h-3.5" /> 선택 중복 정리 ({selectedFolders.length}개)
+                                                            <button onClick={handleCleanupSelectedFoldersDuplicates}
+                                                                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-500/10 border border-amber-500/20 hover:bg-amber-600 text-amber-400 hover:text-white font-black text-xs transition-all cursor-pointer">
+                                                                <ImageIcon className="w-3.5 h-3.5" /> 중복 정리 ({selectedFolders.length})
                                                             </button>
                                                         </>
                                                     )}
-                                                    
-                                                    {/* Delete (Admin Only) */}
                                                     {isAdmin && (
-                                                        <button
-                                                            onClick={handleDeleteSelectedFolders}
-                                                            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-rose-500/10 border border-rose-500/20 hover:bg-rose-600 text-rose-400 hover:text-white font-black text-xs transition-all cursor-pointer"
-                                                        >
-                                                            <Trash2 className="w-3.5 h-3.5" /> 선택 삭제 ({selectedFolders.length}개)
+                                                        <button onClick={handleDeleteSelectedFolders}
+                                                            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-rose-500/10 border border-rose-500/20 hover:bg-rose-600 text-rose-400 hover:text-white font-black text-xs transition-all cursor-pointer">
+                                                            <Trash2 className="w-3.5 h-3.5" /> 삭제 ({selectedFolders.length})
                                                         </button>
                                                     )}
+                                                    <button onClick={() => setIsLocalCopyOpen(true)}
+                                                        className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 border border-emerald-600 text-white font-black text-xs transition-all cursor-pointer">
+                                                        <Folder className="w-3.5 h-3.5" /> 로컬 복사
+                                                    </button>
+                                                    <button onClick={handleDownloadSelectedFoldersZip}
+                                                        className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-sky-500 hover:bg-sky-400 border border-sky-600 text-white font-black text-xs transition-all cursor-pointer">
+                                                        <Download className="w-3.5 h-3.5" /> ZIP 다운로드
+                                                    </button>
                                                 </>
                                             )}
                                         </div>
                                     )}
-
-                                    <span className="text-xs font-bold text-slate-400">
-                                        총 {folders.length}개 폴더 중 <strong className={
-                                            isTrashView 
-                                                ? "text-purple-400" 
-                                                : isCompletedView 
-                                                    ? "text-emerald-400" 
-                                                    : "text-sky-400"
-                                        }>{selectedFolders.length}개</strong> 선택됨
-                                    </span>
                                 </div>
-                                
-                                {!isTrashView && selectedFolders.length > 0 && (
-                                    <div className="flex gap-2 animate-fade-in">
-                                        <button
-                                            onClick={() => setIsLocalCopyOpen(true)}
-                                            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 border border-emerald-600 text-white font-black text-xs transition-all shadow-lg shadow-emerald-500/10 cursor-pointer"
-                                        >
-                                            <Folder className="w-3.5 h-3.5" /> 로컬 폴더로 복사
-                                        </button>
-                                        <button
-                                            onClick={handleDownloadSelectedFoldersZip}
-                                            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-sky-500 hover:bg-sky-400 border border-sky-600 text-white font-black text-xs transition-all shadow-lg shadow-sky-500/10 cursor-pointer"
-                                        >
-                                            <Download className="w-3.5 h-3.5" /> 선택 폴더 압축 다운로드 (.ZIP)
-                                        </button>
-                                    </div>
+                                {/* Mobile: selection count badge */}
+                                {selectedFolders.length > 0 && (
+                                    <span className="md:hidden text-xs font-bold text-slate-400">
+                                        <strong className={isTrashView ? "text-purple-400" : isCompletedView ? "text-emerald-400" : "text-sky-400"}>{selectedFolders.length}개</strong> 선택됨
+                                    </span>
                                 )}
                             </div>
 
+                            {/* Mobile Floating Action Bar (appears when folders selected) */}
+                            {selectedFolders.length > 0 && (
+                                <div className="fixed bottom-16 left-4 right-4 z-40 md:hidden animate-fade-in">
+                                    <div className={`rounded-2xl border shadow-2xl p-3 backdrop-blur-xl ${isTrashView ? "bg-purple-950/90 border-purple-500/30" : isCompletedView ? "bg-emerald-950/90 border-emerald-500/30" : "bg-sky-950/90 border-sky-500/30"}`}>
+                                        <div className="flex items-center justify-between gap-2 mb-2">
+                                            <span className="text-xs font-black text-white">
+                                                📁 {selectedFolders.length}개 폴더 선택됨
+                                            </span>
+                                            <button onClick={() => setSelectedFolders([])}
+                                                className="p-1.5 rounded-lg bg-white/10 text-slate-300 hover:text-white transition-all cursor-pointer">
+                                                <X className="w-3.5 h-3.5" />
+                                            </button>
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-2">
+                                            {isTrashView ? (
+                                                isAdmin && (
+                                                    <>
+                                                        <button onClick={handleRestoreSelectedFolders}
+                                                            className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-black text-xs transition-all cursor-pointer col-span-1">
+                                                            <RotateCw className="w-4 h-4" /> 복구
+                                                        </button>
+                                                        <button onClick={handleDeleteSelectedFolders}
+                                                            className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-black text-xs transition-all cursor-pointer col-span-1">
+                                                            <Trash2 className="w-4 h-4" /> 영구 삭제
+                                                        </button>
+                                                    </>
+                                                )
+                                            ) : (
+                                                <>
+                                                    {isCompletedView ? (
+                                                        <button onClick={() => handleToggleSelectedFoldersCompletion(true)}
+                                                            className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-white font-black text-xs transition-all cursor-pointer col-span-2">
+                                                            <Undo className="w-4 h-4" /> 완료 취소
+                                                        </button>
+                                                    ) : (
+                                                        <>
+                                                            <button onClick={() => handleToggleSelectedFoldersCompletion(false)}
+                                                                className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs transition-all cursor-pointer">
+                                                                <Check className="w-4 h-4" /> 완료 처리
+                                                            </button>
+                                                            <button onClick={handleDownloadSelectedFoldersZip}
+                                                                className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-black text-xs transition-all cursor-pointer">
+                                                                <Download className="w-4 h-4" /> 다운로드
+                                                            </button>
+                                                            <button onClick={() => setIsLocalCopyOpen(true)}
+                                                                className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-white/10 border border-white/10 text-slate-300 hover:text-white font-black text-xs transition-all cursor-pointer">
+                                                                <Folder className="w-4 h-4" /> 로컬 복사
+                                                            </button>
+                                                            {isAdmin && (
+                                                                <button onClick={handleDeleteSelectedFolders}
+                                                                    className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-black text-xs transition-all cursor-pointer">
+                                                                    <Trash2 className="w-4 h-4" /> 삭제
+                                                                </button>
+                                                            )}
+                                                        </>
+                                                    )}
+                                                </>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
                             {folderViewMode === 'DATE_GROUP' ? (
                                 <div className="space-y-6">
                                     {foldersByWorkDate.map(group => {
@@ -2367,6 +2397,36 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                         </div>
                     )}
                 </AnimatePresence>
+
+                {/* Mobile Bottom Tab Bar */}
+                <div className="flex md:hidden fixed bottom-0 left-0 right-0 z-50 bg-[#0a0a14]/95 backdrop-blur-xl border-t border-white/8 shadow-2xl">
+                    <button
+                        onClick={() => { setTabState('ACTIVE'); setSelectedFolders([]); setSelectedContainerFolder(null); }}
+                        className={`flex-1 flex flex-col items-center justify-center py-3 gap-1 transition-all ${tabState === 'ACTIVE' ? 'text-sky-400' : 'text-slate-500 hover:text-slate-300'}`}
+                    >
+                        <div className={`w-6 h-0.5 rounded-full transition-all mb-0.5 ${tabState === 'ACTIVE' ? 'bg-sky-400' : 'bg-transparent'}`} />
+                        <Folder className="w-5 h-5" />
+                        <span className="text-[10px] font-black tracking-tight">진행중</span>
+                    </button>
+                    <button
+                        onClick={() => { setTabState('COMPLETED'); setSelectedFolders([]); setSelectedContainerFolder(null); }}
+                        className={`flex-1 flex flex-col items-center justify-center py-3 gap-1 transition-all ${tabState === 'COMPLETED' ? 'text-emerald-400' : 'text-slate-500 hover:text-slate-300'}`}
+                    >
+                        <div className={`w-6 h-0.5 rounded-full transition-all mb-0.5 ${tabState === 'COMPLETED' ? 'bg-emerald-400' : 'bg-transparent'}`} />
+                        <Check className="w-5 h-5" />
+                        <span className="text-[10px] font-black tracking-tight">완료</span>
+                    </button>
+                    {isAdmin && (
+                        <button
+                            onClick={() => { setTabState('TRASH'); setSelectedFolders([]); setSelectedContainerFolder(null); }}
+                            className={`flex-1 flex flex-col items-center justify-center py-3 gap-1 transition-all ${tabState === 'TRASH' ? 'text-purple-400' : 'text-slate-500 hover:text-slate-300'}`}
+                        >
+                            <div className={`w-6 h-0.5 rounded-full transition-all mb-0.5 ${tabState === 'TRASH' ? 'bg-purple-400' : 'bg-transparent'}`} />
+                            <Trash2 className="w-5 h-5" />
+                            <span className="text-[10px] font-black tracking-tight">휴지통</span>
+                        </button>
+                    )}
+                </div>
             </motion.div>
         </AnimatePresence>
     );
