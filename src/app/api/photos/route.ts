@@ -808,3 +808,5 @@ export async function PATCH(req: NextRequest) {
         return NextResponse.json({ error: `서버 오류: ${error.message || '상태 변경에 실패했습니다.'}` }, { status: 500 });
     }
 }
+
+export const PUT = PATCH;

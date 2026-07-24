@@ -215,7 +215,7 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
             }
 
             const res = await fetch('/api/photos', {
-                method: 'PUT',
+                method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(bodyData)
             });
