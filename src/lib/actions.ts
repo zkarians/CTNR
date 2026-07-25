@@ -1042,3 +1042,56 @@ export async function restoreDatabaseDump(dumpData: any): Promise<{ success: boo
         return { success: false, error: `DB 복구 실패: ${err?.message || '알 수 없는 오류'}` };
     }
 }
+
+export async function getAutoSyncConfig(): Promise<{ success: boolean; enabled: boolean; error?: string }> {
+    try {
+        const client = await pool.connect();
+        try {
+            await client.query(`
+                CREATE TABLE IF NOT EXISTS db_config (
+                    id SERIAL PRIMARY KEY,
+                    key VARCHAR(100) UNIQUE NOT NULL,
+                    value TEXT,
+                    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                );
+            `);
+            const res = await client.query("SELECT value FROM db_config WHERE key = 'auto_remote_sync_enabled'");
+            const enabled = res.rows.length > 0 ? res.rows[0].value === 'true' : true;
+            return { success: true, enabled };
+        } finally {
+            client.release();
+        }
+    } catch (err: any) {
+        console.error("getAutoSyncConfig Error:", err);
+        return { success: false, enabled: true, error: err?.message };
+    }
+}
+
+export async function updateAutoSyncConfig(enabled: boolean): Promise<{ success: boolean; message?: string; error?: string }> {
+    try {
+        const client = await pool.connect();
+        try {
+            await client.query(`
+                INSERT INTO db_config (key, value, updated_at)
+                VALUES ('auto_remote_sync_enabled', $1, NOW())
+                ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW();
+            `, [enabled ? 'true' : 'false']);
+            return { success: true, message: `매일 13:00 DB 자동 백업 & 원격 동기화가 ${enabled ? '활성화(ON)' : '비활성화(OFF)'} 되었습니다.` };
+        } finally {
+            client.release();
+        }
+    } catch (err: any) {
+        console.error("updateAutoSyncConfig Error:", err);
+        return { success: false, error: err?.message };
+    }
+}
+
+export async function triggerManualBackupAndSync(): Promise<{ success: boolean; message?: string; report?: any; error?: string }> {
+    try {
+        const { performBackupAndRemoteSync } = await import('./remoteSyncScheduler');
+        return await performBackupAndRemoteSync();
+    } catch (err: any) {
+        console.error("triggerManualBackupAndSync Error:", err);
+        return { success: false, error: err?.message || '실행 중 오류가 발생했습니다.' };
+    }
+}

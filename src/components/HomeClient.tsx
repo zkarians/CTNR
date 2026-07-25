@@ -21,7 +21,7 @@ import {
     Product, PackingResult, ContainerType, CONTAINER_DATA, Job, JobFilters, DbConfig, UserAccount, Team
 } from '@/lib/types';
 import { packContainer } from '@/lib/packer';
-import { fetchJobs, fetchProductsByJob, searchProducts, getDbConfig, updateDbConfig, updatePassword, fetchAllUsers, createUserAccount, updateUserAccount, deleteUserAccount, deleteMultipleUserAccounts, generateWorkReport, saveDailyWorkReport, getSavedDailyWorkReport, exportDatabaseDump, restoreDatabaseDump, fetchTeams, createTeam, updateTeam, deleteTeam, fetchTeamWorkProgress, TeamWorkProgress, updateContainerWorkDuration, updateContainerAdminComment, resetTeamWorkProgress } from '@/lib/actions';
+import { fetchJobs, fetchProductsByJob, searchProducts, getDbConfig, updateDbConfig, updatePassword, fetchAllUsers, createUserAccount, updateUserAccount, deleteUserAccount, deleteMultipleUserAccounts, generateWorkReport, saveDailyWorkReport, getSavedDailyWorkReport, exportDatabaseDump, restoreDatabaseDump, getAutoSyncConfig, updateAutoSyncConfig, triggerManualBackupAndSync, fetchTeams, createTeam, updateTeam, deleteTeam, fetchTeamWorkProgress, TeamWorkProgress, updateContainerWorkDuration, updateContainerAdminComment, resetTeamWorkProgress } from '@/lib/actions';
 import { SessionUser } from '@/lib/auth';
 import { calculateTeamTimeline } from '@/lib/timeline';
 
@@ -791,6 +791,56 @@ export default function Home({ user }: { user: SessionUser }) {
         } finally {
             setIsRestoringDb(false);
             if (restoreFileInputRef.current) restoreFileInputRef.current.value = '';
+        }
+    };
+
+    const [isAutoSyncEnabled, setIsAutoSyncEnabled] = useState<boolean>(true);
+    const [isTriggeringSync, setIsTriggeringSync] = useState<boolean>(false);
+
+    useEffect(() => {
+        if (isAdmin && isSettingsOpen && settingsTab === 'db') {
+            getAutoSyncConfig().then(res => {
+                if (res.success) {
+                    setIsAutoSyncEnabled(res.enabled);
+                }
+            });
+        }
+    }, [isAdmin, isSettingsOpen, settingsTab]);
+
+    const handleToggleAutoSync = async () => {
+        const nextVal = !isAutoSyncEnabled;
+        setIsAutoSyncEnabled(nextVal);
+        try {
+            const res = await updateAutoSyncConfig(nextVal);
+            if (res.success) {
+                alert(res.message);
+            } else {
+                setIsAutoSyncEnabled(!nextVal);
+                alert(res.error || "자동 동기화 설정 변경에 실패했습니다.");
+            }
+        } catch (e) {
+            setIsAutoSyncEnabled(!nextVal);
+            alert("자동 동기화 설정 중 오류가 발생했습니다.");
+        }
+    };
+
+    const handleTriggerManualBackupAndSync = async () => {
+        const confirmSync = window.confirm("⚡ [즉시 실행] 지금 바로 로컬 PC DB 백업 파일 생성 및 원격 DB 동기화를 진행하시겠습니까?");
+        if (!confirmSync) return;
+
+        setIsTriggeringSync(true);
+        try {
+            const res = await triggerManualBackupAndSync();
+            if (res.success) {
+                alert(`🎉 ${res.message}\n\n[1:1 레코드 수량 동기화 확정]\n- container_jobs: ${res.report?.container_jobs?.remote}개\n- container_results: ${res.report?.container_results?.remote}개\n- container_photos: ${res.report?.container_photos?.remote}개`);
+            } else {
+                alert(res.error || "즉시 동기화 실행 실패!");
+            }
+        } catch (err: any) {
+            console.error("handleTriggerManualBackupAndSync error:", err);
+            alert("즉시 동기화 실행 중 오류가 발생했습니다.");
+        } finally {
+            setIsTriggeringSync(false);
         }
     };
 
@@ -1930,6 +1980,46 @@ export default function Home({ user }: { user: SessionUser }) {
                                                         />
                                                     </label>
                                                 </div>
+                                            </div>
+
+                                            {/* Daily 13:00 Auto Sync & Backup Schedule Panel */}
+                                            <div className="pt-4 border-t border-white/10 space-y-3">
+                                                <div className="flex items-center justify-between bg-black/40 p-3.5 rounded-2xl border border-white/10">
+                                                    <div>
+                                                        <div className="text-xs font-black text-white flex items-center gap-1.5">
+                                                            <RotateCw className="w-4 h-4 text-emerald-400" />
+                                                            <span>매일 13:00 DB 자동 백업 & 원격 동기화</span>
+                                                        </div>
+                                                        <p className="text-[10px] text-slate-400 font-bold mt-0.5">
+                                                            (매일 13시 정시에 로컬 DB 백업 후 idlezero 원격 DB로 자동 덮어쓰기)
+                                                        </p>
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        onClick={handleToggleAutoSync}
+                                                        className={`w-12 h-6 rounded-full p-1 transition-colors duration-200 ease-in-out cursor-pointer ${
+                                                            isAutoSyncEnabled ? 'bg-emerald-500' : 'bg-slate-700'
+                                                        }`}
+                                                        title="오후 13:00 정시 백업 & 원격 동기화 ON / OFF 토글"
+                                                    >
+                                                        <div
+                                                            className={`w-4 h-4 rounded-full bg-white shadow-md transform transition-transform duration-200 ease-in-out ${
+                                                                isAutoSyncEnabled ? 'translate-x-6' : 'translate-x-0'
+                                                            }`}
+                                                        />
+                                                    </button>
+                                                </div>
+
+                                                <button
+                                                    type="button"
+                                                    onClick={handleTriggerManualBackupAndSync}
+                                                    disabled={isTriggeringSync}
+                                                    className="w-full py-3 px-4 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-xs transition-all flex items-center justify-center gap-2 cursor-pointer shadow-lg shadow-emerald-500/20 disabled:opacity-50"
+                                                    title="지금 즉시 로컬 DB 백업 파일 생성 및 idlezero 원격 DB 동기화 실행"
+                                                >
+                                                    {isTriggeringSync ? <Loader2 className="w-4 h-4 animate-spin text-white" /> : <RotateCw className="w-4 h-4 text-emerald-200" />}
+                                                    <span>{isTriggeringSync ? '백업 및 원격 동기화 진행 중...' : '⚡ DB 백업 & 원격 동기화 즉시 실행'}</span>
+                                                </button>
                                             </div>
                                         </div>
 
