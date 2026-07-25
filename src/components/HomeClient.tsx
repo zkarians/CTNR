@@ -1457,6 +1457,7 @@ export default function Home({ user }: { user: SessionUser }) {
                                                         setUploadFiles([]);
                                                         setUploadRemark(job.remark || '');
                                                         setUploadDurationMinutes(job.work_duration_minutes ?? '');
+                                                        setUploadPhotoType('normal');
                                                     }}
                                                     className={`p-1.5 hover:bg-white/10 rounded-lg transition-all flex items-center gap-1 ${
                                                         job.photo_count && job.photo_count > 0 
@@ -1465,10 +1466,25 @@ export default function Home({ user }: { user: SessionUser }) {
                                                     }`}
                                                 >
                                                     <Camera className="w-4 h-4 md:w-3.5 md:h-3.5" />
-                                                    {job.photo_count && job.photo_count > 0 ? (
-                                                        <span className="text-[10px] md:text-[9px] font-black">{job.photo_count}</span>
-                                                    ) : null}
                                                 </button>
+                                                {/* 씰사진 전용 빨간 카메라: seal_photo_count가 0일 때만 표시 */}
+                                                {(job.seal_photo_count === undefined || job.seal_photo_count === 0) && (
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            setUploadJob(job);
+                                                            setUploadCntrNo(job.cntr_no || '');
+                                                            setUploadFiles([]);
+                                                            setUploadRemark(job.remark || '');
+                                                            setUploadDurationMinutes(job.work_duration_minutes ?? '');
+                                                            setUploadPhotoType('seal');
+                                                        }}
+                                                        className="p-1.5 hover:bg-rose-500/20 rounded-lg text-rose-500 hover:text-rose-400 transition-all animate-pulse border border-transparent"
+                                                        title="씰(Seal) 사진 등록 — 반드시 등록해 주세요!"
+                                                    >
+                                                        <Camera className="w-4 h-4 md:w-3.5 md:h-3.5" />
+                                                    </button>
+                                                )}
                                             </div>
                                         </div>
                                     ))
