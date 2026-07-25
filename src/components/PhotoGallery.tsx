@@ -104,6 +104,7 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
         freedMB: '0.0',
         alreadyDoneCount: 0
     });
+    const [lastGDriveTargetIds, setLastGDriveTargetIds] = useState<string[]>([]);
     const gdriveAbortControllerRef = React.useRef<AbortController | null>(null);
 
     // Move Container State
@@ -252,17 +253,42 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
         }
     };
 
-    const handleUploadToGDriveAndCleanLocal = async (targetCntrs?: any) => {
+    const handleResumeGDriveExport = () => {
+        if (!lastGDriveTargetIds || lastGDriveTargetIds.length === 0) {
+            alert("이전 백업 시도 기록을 찾을 수 없습니다. 폴더를 선택해 주세요.");
+            return;
+        }
+
+        const allCurrentPhotos = folders.flatMap(f => f.photos);
+        const missingIds = lastGDriveTargetIds.filter(id => {
+            const photo = allCurrentPhotos.find(p => p.id === id);
+            return photo ? !photo.gdrive_file_id : true;
+        });
+
+        if (missingIds.length === 0) {
+            alert("🎉 이미 모든 사진이 구글드라이브에 완비되어 있습니다!");
+            return;
+        }
+
+        handleUploadToGDriveAndCleanLocal(missingIds, true);
+    };
+
+    const handleUploadToGDriveAndCleanLocal = async (customTargetIds?: any, isResumeAction: boolean = false) => {
         // Extract exact photo IDs to ensure 100% accurate total count
         let targetIds: string[] = [];
-        if (selectedPhotoIds.length > 0) {
+
+        if (Array.isArray(customTargetIds) && customTargetIds.length > 0) {
+            targetIds = customTargetIds;
+        } else if (selectedPhotoIds.length > 0) {
             targetIds = [...selectedPhotoIds];
+            setLastGDriveTargetIds(targetIds);
         } else if (selectedFolders.length > 0) {
             targetIds = folders
                 .filter(f => selectedFolders.includes(f.cntrNo + '|' + f.workDateStr))
                 .flatMap(f => f.photos.map(p => p.id));
+            setLastGDriveTargetIds(targetIds);
         } else {
-            alert("백업할 컨테이너 폴더를 하나 이상 선택해 주세요.\n(폴더 카드의 체크박스를 선택하거나 우측 상단의 '이 날짜 전체 선택'을 체크해 주세요)");
+            alert("백업할 컨테이너 폴더를 하나 이상 선택해 주세요.\n(폴더 카드의 체크박스를 선택하거나 날짜 타이틀 옆의 'OO일 전체 선택'을 체크해 주세요)");
             return;
         }
 
@@ -271,14 +297,16 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
             return;
         }
 
-        const countText = selectedPhotoIds.length > 0 
-            ? `선택한 사진 ${targetIds.length}장` 
-            : selectedFolders.length > 0 
-                ? `선택한 컨테이너 폴더의 사진 ${targetIds.length}장` 
-                : `현재 탭의 전체 사진 ${targetIds.length}장`;
+        if (!isResumeAction) {
+            const countText = selectedPhotoIds.length > 0 
+                ? `선택한 사진 ${targetIds.length}장` 
+                : selectedFolders.length > 0 
+                    ? `선택한 컨테이너 폴더의 사진 ${targetIds.length}장` 
+                    : `현재 탭의 전체 사진 ${targetIds.length}장`;
 
-        if (!confirm(`[☁️ 구글드라이브 백업 & 로컬 용량 정리]\n\n${countText}을(를) 구글드라이브로 안전 백업하고, 업로드 확인 후 로컬 PC의 디스크 공간을 정리하시겠습니까?\n(※ 이전에 이미 완료된 파일은 자동 스킵되며, 남은 파일만 이어서 진행됩니다.)`)) {
-            return;
+            if (!confirm(`[☁️ 구글드라이브 백업 & 로컬 용량 정리]\n\n${countText}을(를) 구글드라이브로 안전 백업하고, 업로드 확인 후 로컬 PC의 디스크 공간을 정리하시겠습니까?\n(※ 이전에 이미 완료된 파일은 자동 스킵되며, 남은 파일만 이어서 진행됩니다.)`)) {
+                return;
+            }
         }
 
         setIsGDriveProgressOpen(true);
@@ -489,6 +517,7 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                 workDateStr,
                 photos: list,
                 transporter: list[0]?.transporter,
+                firstUploadedAt: new Date(Math.min(...list.map(p => new Date(p.uploaded_at).getTime()))),
                 lastUploadedAt: new Date(Math.max(...list.map(p => new Date(p.uploaded_at).getTime()))),
                 teamNames: Array.from(new Set(list.map(p => p.team_name || '미지정 조'))).join(', '),
                 uploaderNames: Array.from(new Set(list.map(p => {
@@ -500,6 +529,7 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
     }, [photos]);
 
     const [folderViewMode, setFolderViewMode] = useState<'DATE_GROUP' | 'FLAT'>('DATE_GROUP');
+    const [isTeamGroupEnabled, setIsTeamGroupEnabled] = useState<boolean>(true);
     const [collapsedDates, setCollapsedDates] = useState<{ [dateStr: string]: boolean }>({});
 
     const toggleCollapseDate = (dateStr: string) => {
@@ -518,9 +548,27 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
 
         return Array.from(dateMap.entries()).map(([dateStr, folderList]) => {
             const totalPhotos = folderList.reduce((sum, f) => sum + f.photos.length, 0);
+
+            // Sub group by team inside date
+            const subTeamMap = new Map<string, typeof folders>();
+            folderList.forEach(f => {
+                const teamName = f.teamNames || '미지정 조';
+                if (!subTeamMap.has(teamName)) {
+                    subTeamMap.set(teamName, []);
+                }
+                subTeamMap.get(teamName)!.push(f);
+            });
+
+            const byTeam = Array.from(subTeamMap.entries()).map(([teamName, subFolders]) => ({
+                teamName,
+                folders: subFolders,
+                totalPhotos: subFolders.reduce((sum, sf) => sum + sf.photos.length, 0)
+            })).sort((a, b) => a.teamName.localeCompare(b.teamName, 'ko-KR'));
+
             return {
                 dateStr,
                 folders: folderList,
+                byTeam,
                 totalPhotos
             };
         }).sort((a, b) => b.dateStr.localeCompare(a.dateStr));
@@ -528,6 +576,16 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
 
     const handleToggleSelectDateGroup = (dateFolders: typeof folders) => {
         const folderKeys = dateFolders.map(f => f.cntrNo + '|' + f.workDateStr);
+        const allSelected = folderKeys.length > 0 && folderKeys.every(key => selectedFolders.includes(key));
+        if (allSelected) {
+            setSelectedFolders(prev => prev.filter(key => !folderKeys.includes(key)));
+        } else {
+            setSelectedFolders(prev => Array.from(new Set([...prev, ...folderKeys])));
+        }
+    };
+
+    const handleToggleSelectTeamGroup = (teamFolders: typeof folders) => {
+        const folderKeys = teamFolders.map(f => f.cntrNo + '|' + f.workDateStr);
         const allSelected = folderKeys.length > 0 && folderKeys.every(key => selectedFolders.includes(key));
         if (allSelected) {
             setSelectedFolders(prev => prev.filter(key => !folderKeys.includes(key)));
@@ -577,7 +635,7 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
         <div
             key={folder.cntrNo + '_' + folder.workDateStr}
             onClick={() => setSelectedContainerFolder(folder.cntrNo + '|' + folder.workDateStr)}
-            className="group relative flex flex-col bg-[#121422]/80 border border-white/5 rounded-2xl p-3 cursor-pointer shadow-md hover:shadow-lg hover:border-sky-500/20 hover:bg-[#15182e]/90 transition-all duration-300 hover:-translate-y-0.5 hover:scale-[1.01] select-none"
+            className="group relative flex flex-col bg-white border border-slate-200 rounded-2xl p-3.5 cursor-pointer shadow-2xs hover:shadow-md hover:border-sky-400 transition-all duration-300 hover:-translate-y-0.5 hover:scale-[1.01] select-none text-slate-800"
         >
             {/* Top row: Checkbox, Folder icon, Title/Carrier, Count Badge */}
             <div className="flex items-center justify-between gap-2">
@@ -594,12 +652,12 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                                         : [...prev, folderKey]
                                 );
                             }}
-                            className={`w-3.5 h-3.5 rounded border-white/20 bg-black/40 cursor-pointer ${
+                            className={`w-3.5 h-3.5 rounded border-slate-300 bg-white cursor-pointer ${
                                 isTrashView 
-                                    ? 'text-purple-500 focus:ring-purple-500' 
+                                    ? 'text-purple-600 focus:ring-purple-500' 
                                     : isCompletedView 
-                                        ? 'text-emerald-500 focus:ring-emerald-500' 
-                                        : 'text-sky-500 focus:ring-sky-500'
+                                        ? 'text-emerald-600 focus:ring-emerald-500' 
+                                        : 'text-sky-600 focus:ring-sky-500'
                             }`}
                         />
                     </div>
@@ -656,9 +714,9 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                 <span className="truncate max-w-[140px]">
                     조: {folder.teamNames} ({folder.uploaderNames && folder.uploaderNames.trim() ? folder.uploaderNames : '퇴사자'})
                 </span>
-                <div className="flex items-center gap-2 shrink-0">
-                    <span>
-                        {folder.lastUploadedAt.toLocaleDateString('ko-KR', { month: '2-digit', day: '2-digit' })}
+                <div className="flex items-center gap-1.5 shrink-0">
+                    <span className="text-[10px] font-extrabold text-slate-600" title={`업로드 시각: ${folder.firstUploadedAt ? folder.firstUploadedAt.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false }) : ''}`}>
+                        {folder.firstUploadedAt ? `${folder.firstUploadedAt.toLocaleDateString('ko-KR', { month: '2-digit', day: '2-digit' }).replace(/\. /g, '.').replace(/\.$/, '')} ${folder.firstUploadedAt.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false })}` : ''}
                     </span>
                     <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
                         {isTrashView ? (
@@ -1479,30 +1537,24 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                 initial={{ opacity: 0 }} 
                 animate={{ opacity: 1 }} 
                 exit={{ opacity: 0 }}
-                className="fixed inset-0 z-50 bg-[#07070d]/90 backdrop-blur-md flex flex-col w-full h-full text-slate-100"
+                className="fixed inset-0 z-50 bg-slate-50 flex flex-col w-full h-full text-slate-800 opacity-100 overflow-hidden"
             >
                 {/* Header */}
-                <header className={`flex items-center justify-between px-6 py-4 md:px-8 border-b border-white/5 shrink-0 transition-colors duration-300 ${
-                    isTrashView 
-                        ? "bg-purple-950/20" 
-                        : isCompletedView 
-                            ? "bg-emerald-950/20" 
-                            : "bg-black/20"
-                }`}>
+                <header className="flex items-center justify-between px-6 py-4 md:px-8 border-b border-slate-200 bg-white shrink-0 shadow-xs transition-colors duration-300">
                     <div className="flex items-center gap-3">
                         <button 
                             onClick={onClose}
-                            className="p-2 -ml-2 rounded-xl text-slate-400 hover:text-white hover:bg-white/5 transition-all md:hidden"
+                            className="p-2 -ml-2 rounded-xl text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-all md:hidden"
                         >
                             <ArrowLeft className="w-5 h-5" />
                         </button>
                         <div>
                             <h2 className={`text-lg md:text-xl font-black tracking-tight flex items-center gap-2 transition-colors duration-300 ${
                                 isTrashView 
-                                    ? "text-purple-400" 
+                                    ? "text-purple-700" 
                                     : isCompletedView 
-                                        ? "text-emerald-400" 
-                                        : "text-sky-400"
+                                        ? "text-emerald-700" 
+                                        : "text-sky-700"
                             }`}>
                                 <ImageIcon className="w-5 h-5" /> {
                                     isTrashView 
@@ -1523,73 +1575,73 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                     </div>
                     <button 
                         onClick={onClose}
-                        className="p-2.5 rounded-2xl bg-white/5 border border-white/5 text-slate-400 hover:text-white hover:bg-white/10 hover:border-white/10 transition-all hidden md:flex items-center justify-center"
+                        className="p-2.5 rounded-2xl bg-slate-100 border border-slate-200 text-slate-500 hover:text-slate-900 hover:bg-slate-200 transition-all hidden md:flex items-center justify-center cursor-pointer"
                     >
                         <X className="w-5 h-5" />
                     </button>
                 </header>
 
                 {/* Filter Panel - Mobile-first redesign */}
-                <section className="px-4 py-3 md:px-8 md:py-4 border-b border-white/5 bg-black/10 shrink-0">
+                <section className="px-3 pt-4 pb-2 md:px-8 md:py-4 border-b border-slate-200 bg-white shrink-0 shadow-2xs mt-0.5">
                     {/* PC: Horizontal layout */}
                     <div className="hidden md:flex flex-row gap-3 items-end">
                         <div className="flex gap-3 flex-1 flex-wrap items-end">
                             <div className="space-y-1">
                                 <label className="text-[10px] text-slate-500 font-bold tracking-wider uppercase flex items-center gap-1">
-                                    <Calendar className="w-3 h-3 text-sky-400" /> 시작일
+                                    <Calendar className="w-3 h-3 text-sky-600" /> 시작일
                                 </label>
-                                <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)}
-                                    className="bg-[#12121a]/80 border border-white/5 rounded-xl px-3.5 py-2.5 text-xs text-slate-200 outline-none focus:border-sky-500/50 transition-colors" />
+                                <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} onClick={(e) => { try { e.currentTarget.showPicker(); } catch (err) {} }}
+                                    className="bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-xs text-slate-800 outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 transition-colors shadow-2xs cursor-pointer [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-80 [&::-webkit-calendar-picker-indicator]:hover:opacity-100" />
                             </div>
                             <div className="space-y-1">
                                 <label className="text-[10px] text-slate-500 font-bold tracking-wider uppercase flex items-center gap-1">
-                                    <Calendar className="w-3 h-3 text-sky-400" /> 종료일
+                                    <Calendar className="w-3 h-3 text-sky-600" /> 종료일
                                 </label>
-                                <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)}
-                                    className="bg-[#12121a]/80 border border-white/5 rounded-xl px-3.5 py-2.5 text-xs text-slate-200 outline-none focus:border-sky-500/50 transition-colors" />
+                                <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} onClick={(e) => { try { e.currentTarget.showPicker(); } catch (err) {} }}
+                                    className="bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-xs text-slate-800 outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 transition-colors shadow-2xs cursor-pointer [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-80 [&::-webkit-calendar-picker-indicator]:hover:opacity-100" />
                             </div>
                             <div className="space-y-1 w-44">
                                 <label className="text-[10px] text-slate-500 font-bold tracking-wider uppercase flex items-center gap-1">
-                                    <User className="w-3 h-3 text-emerald-400" /> 작업 조
+                                    <User className="w-3 h-3 text-emerald-600" /> 작업 조
                                 </label>
                                 <select value={selectedTeamId} onChange={(e) => setSelectedTeamId(e.target.value)}
-                                    className="w-full bg-[#12121a]/80 border border-white/5 rounded-xl px-3.5 py-2.5 text-xs text-slate-200 outline-none focus:border-emerald-500/50 transition-colors appearance-none cursor-pointer">
+                                    className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-xs text-slate-800 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-colors appearance-none cursor-pointer shadow-2xs">
                                     <option value="">전체 조</option>
                                     {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
                                 </select>
                             </div>
                             <div className="space-y-1">
                                 <label className="text-[10px] text-slate-500 font-bold tracking-wider uppercase flex items-center gap-1">
-                                    <Folder className="w-3 h-3 text-sky-400" /> 컨테이너 번호
+                                    <Folder className="w-3 h-3 text-sky-600" /> 컨테이너 번호
                                 </label>
                                 <div className="flex items-center gap-2">
                                     <input type="text" placeholder="컨테이너 번호 입력" value={searchCntrNo}
                                         onChange={(e) => setSearchCntrNo(e.target.value)}
                                         onKeyDown={(e) => { if (e.key === 'Enter') loadPhotos(); }}
-                                        className="w-44 bg-[#12121a]/80 border border-white/5 rounded-xl px-3.5 py-2.5 text-xs text-slate-200 outline-none focus:border-sky-500/50 transition-colors" />
+                                        className="w-44 bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-xs text-slate-800 outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 transition-colors shadow-2xs" />
                                     <button onClick={handleResetFilters}
-                                        className="px-4 py-2.5 rounded-xl bg-white/5 border border-white/5 text-slate-400 hover:text-white hover:bg-white/10 transition-all font-black text-xs cursor-pointer flex items-center gap-1.5 h-[38px]">
+                                        className="px-4 py-2.5 rounded-xl bg-slate-100 border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-200 transition-all font-black text-xs cursor-pointer flex items-center gap-1.5 h-[38px]">
                                         <RotateCcw className="w-3.5 h-3.5" /> 초기화
                                     </button>
-                                    <div className="flex bg-[#11111a] border border-white/5 p-0.5 rounded-xl gap-0.5 h-[38px]">
+                                    <div className="flex bg-slate-100 border border-slate-200 p-0.5 rounded-xl gap-0.5 h-[38px]">
                                         <button onClick={() => { setTabState('ACTIVE'); setSelectedFolders([]); setSelectedContainerFolder(null); }}
-                                            className={`px-3 py-1.5 rounded-lg transition-all text-xs font-black cursor-pointer whitespace-nowrap ${tabState === 'ACTIVE' ? "bg-sky-500 text-white shadow-sm" : "text-slate-400 hover:text-white"}`}>
+                                            className={`px-3 py-1.5 rounded-lg transition-all text-xs font-black cursor-pointer whitespace-nowrap ${tabState === 'ACTIVE' ? "bg-sky-600 text-white shadow-xs" : "text-slate-600 hover:text-slate-900"}`}>
                                             진행 중인 작업
                                         </button>
                                         <button onClick={() => { setTabState('COMPLETED'); setSelectedFolders([]); setSelectedContainerFolder(null); }}
-                                            className={`px-3 py-1.5 rounded-lg transition-all text-xs font-black cursor-pointer whitespace-nowrap ${tabState === 'COMPLETED' ? "bg-emerald-500 text-white shadow-sm" : "text-slate-400 hover:text-white"}`}>
+                                            className={`px-3 py-1.5 rounded-lg transition-all text-xs font-black cursor-pointer whitespace-nowrap ${tabState === 'COMPLETED' ? "bg-emerald-600 text-white shadow-xs" : "text-slate-600 hover:text-slate-900"}`}>
                                             완료된 작업
                                         </button>
                                         {isAdmin && (
                                             <button onClick={() => { setTabState('TRASH'); setSelectedFolders([]); setSelectedContainerFolder(null); }}
-                                                className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1 text-xs font-black cursor-pointer whitespace-nowrap ${tabState === 'TRASH' ? "bg-purple-500 text-white shadow-sm" : "text-slate-400 hover:text-white"}`}>
+                                                className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1 text-xs font-black cursor-pointer whitespace-nowrap ${tabState === 'TRASH' ? "bg-purple-600 text-white shadow-xs" : "text-slate-600 hover:text-slate-900"}`}>
                                                 <Trash2 className="w-3.5 h-3.5" /> 휴지통
                                             </button>
                                         )}
                                     </div>
                                     {selectedContainerFolder !== null && (
                                         <button onClick={() => setSelectedContainerFolder(null)}
-                                            className="flex items-center justify-center px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-slate-300 hover:text-white transition-all cursor-pointer h-[38px]">
+                                            className="flex items-center justify-center px-3 py-2.5 rounded-xl bg-slate-100 border border-slate-200 hover:bg-slate-200 text-slate-700 transition-all cursor-pointer h-[38px]">
                                             <ArrowLeft className="w-4 h-4" />
                                         </button>
                                     )}
@@ -1597,11 +1649,13 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                             </div>
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
-                            <button onClick={() => handleUploadToGDriveAndCleanLocal()}
-                                className="flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-sky-600 border border-sky-500 hover:bg-sky-500 text-white font-black text-xs transition-all shadow-lg shadow-sky-600/20 cursor-pointer shrink-0"
-                                title="선택한 폴더 또는 완료된 사진들을 구글드라이브에 백업하고 로컬 PC 용량을 정리합니다.">
-                                <Upload className="w-3.5 h-3.5" /> GDrive 백업 & 용량정리
-                            </button>
+                            {isAdmin && (
+                                <button onClick={() => handleUploadToGDriveAndCleanLocal()}
+                                    className="flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-sky-600 border border-sky-500 hover:bg-sky-500 text-white font-black text-xs transition-all shadow-lg shadow-sky-600/20 cursor-pointer shrink-0"
+                                    title="선택한 폴더 또는 완료된 사진들을 구글드라이브에 백업하고 로컬 PC 용량을 정리합니다.">
+                                    <Upload className="w-3.5 h-3.5" /> GDrive 백업 & 용량정리
+                                </button>
+                            )}
                             <button onClick={loadPhotos}
                                 className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-500 border border-emerald-600 hover:bg-emerald-400 text-white font-black text-xs transition-all shadow-lg shadow-emerald-500/10 cursor-pointer shrink-0">
                                 <RefreshCw className="w-3.5 h-3.5" /> 새로고침
@@ -1609,69 +1663,54 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                         </div>
                     </div>
 
-                    {/* Mobile: Stacked layout */}
-                    <div className="flex flex-col gap-2.5 md:hidden">
-                        {/* Row 1: Dates */}
-                        <div className="grid grid-cols-2 gap-2">
-                            <div className="space-y-1">
-                                <label className="text-[10px] text-slate-500 font-bold tracking-wider uppercase flex items-center gap-1">
-                                    <Calendar className="w-3 h-3 text-sky-400" /> 시작일
-                                </label>
-                                <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)}
-                                    className="w-full bg-[#12121a]/80 border border-white/5 rounded-xl px-3 py-2.5 text-xs text-slate-200 outline-none focus:border-sky-500/50 transition-colors" />
-                            </div>
-                            <div className="space-y-1">
-                                <label className="text-[10px] text-slate-500 font-bold tracking-wider uppercase flex items-center gap-1">
-                                    <Calendar className="w-3 h-3 text-sky-400" /> 종료일
-                                </label>
-                                <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)}
-                                    className="w-full bg-[#12121a]/80 border border-white/5 rounded-xl px-3 py-2.5 text-xs text-slate-200 outline-none focus:border-sky-500/50 transition-colors" />
-                            </div>
+                    {/* Mobile: Ultra-Slim layout */}
+                    <div className="flex flex-col gap-1.5 md:hidden text-slate-800 pt-1">
+                        {/* Row 1: Dates without label */}
+                        <div className="grid grid-cols-2 gap-1.5">
+                            <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} onClick={(e) => { try { e.currentTarget.showPicker(); } catch (err) {} }}
+                                className="w-full bg-white border border-slate-300 rounded-lg px-2 py-1 text-xs text-slate-800 outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 transition-colors shadow-2xs cursor-pointer h-7.5 text-center [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-80" />
+                            <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} onClick={(e) => { try { e.currentTarget.showPicker(); } catch (err) {} }}
+                                className="w-full bg-white border border-slate-300 rounded-lg px-2 py-1 text-xs text-slate-800 outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 transition-colors shadow-2xs cursor-pointer h-7.5 text-center [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-80" />
                         </div>
-                        {/* Row 2: Team select */}
-                        <div className="space-y-1">
-                            <label className="text-[10px] text-slate-500 font-bold tracking-wider uppercase flex items-center gap-1">
-                                <User className="w-3 h-3 text-emerald-400" /> 작업 조
-                            </label>
+                        {/* Row 2: Team select & Container Search side by side */}
+                        <div className="grid grid-cols-2 gap-1.5">
                             <select value={selectedTeamId} onChange={(e) => setSelectedTeamId(e.target.value)}
-                                className="w-full bg-[#12121a]/80 border border-white/5 rounded-xl px-3 py-2.5 text-xs text-slate-200 outline-none focus:border-emerald-500/50 transition-colors appearance-none cursor-pointer">
+                                className="w-full bg-white border border-slate-300 rounded-lg px-2 py-1 text-xs text-slate-800 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-colors cursor-pointer shadow-2xs h-7.5">
                                 <option value="">전체 조</option>
                                 {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
                             </select>
-                        </div>
-                        {/* Row 3: Container number search */}
-                        <div className="space-y-1">
-                            <label className="text-[10px] text-slate-500 font-bold tracking-wider uppercase flex items-center gap-1">
-                                <Folder className="w-3 h-3 text-sky-400" /> 컨테이너 번호
-                            </label>
                             <div className="relative">
-                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500 pointer-events-none" />
-                                <input type="text" placeholder="번호 검색..." value={searchCntrNo}
+                                <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400 pointer-events-none" />
+                                <input type="text" placeholder="컨테이너 번호검색" value={searchCntrNo}
                                     onChange={(e) => setSearchCntrNo(e.target.value)}
                                     onKeyDown={(e) => { if (e.key === 'Enter') loadPhotos(); }}
-                                    className="w-full bg-[#12121a]/80 border border-white/5 rounded-xl pl-9 pr-3 py-2.5 text-xs text-slate-200 outline-none focus:border-sky-500/50 transition-colors" />
+                                    className="w-full bg-white border border-slate-300 rounded-lg pl-7 pr-2 py-1 text-xs text-slate-800 outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 transition-colors shadow-2xs h-7.5" />
                             </div>
                         </div>
-                        {/* Row 4: Action buttons */}
-                        <button onClick={() => handleUploadToGDriveAndCleanLocal()}
-                            className="flex items-center justify-center gap-1.5 py-2.5 w-full rounded-xl bg-sky-600 border border-sky-500 hover:bg-sky-500 text-white font-black text-xs transition-all shadow-lg shadow-sky-600/20 cursor-pointer">
-                            <Upload className="w-3.5 h-3.5" /> ☁️ GDrive 백업 & 용량정리
-                        </button>
-                        <div className="grid grid-cols-2 gap-2">
+                        {/* Row 3: Action buttons (GDrive backup visible ONLY to isAdmin) */}
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                            {isAdmin && (
+                                <button onClick={() => handleUploadToGDriveAndCleanLocal()}
+                                    className="flex-1 flex items-center justify-center gap-1 py-1 px-2 rounded-lg bg-sky-600 border border-sky-500 hover:bg-sky-500 text-white font-black text-[11px] transition-all shadow-xs cursor-pointer h-7.5">
+                                    <Upload className="w-3 h-3" /> ☁️ GDrive 백업
+                                </button>
+                            )}
                             <button onClick={handleResetFilters}
-                                className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-white/5 border border-white/5 text-slate-400 hover:text-white hover:bg-white/10 transition-all font-black text-xs cursor-pointer">
-                                <RotateCcw className="w-3.5 h-3.5" /> 필터 초기화
+                                title="필터 초기화"
+                                className="flex-1 flex items-center justify-center gap-1 px-2 py-1 rounded-lg bg-slate-100 border border-slate-200 text-slate-700 hover:bg-slate-200 transition-all font-black text-[11px] cursor-pointer shadow-2xs h-7.5">
+                                <RotateCcw className="w-3 h-3" /> 초기화
                             </button>
                             <button onClick={loadPhotos}
-                                className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-emerald-500 border border-emerald-600 hover:bg-emerald-400 text-white font-black text-xs transition-all shadow-lg shadow-emerald-500/10 cursor-pointer">
-                                <RefreshCw className="w-3.5 h-3.5" /> 새로고침
+                                title="새로고침"
+                                className="flex-1 flex items-center justify-center gap-1 px-2 py-1 rounded-lg bg-emerald-600 border border-emerald-600 hover:bg-emerald-500 text-white font-black text-[11px] transition-all shadow-xs cursor-pointer h-7.5">
+                                <RefreshCw className="w-3 h-3" /> 새로고침
                             </button>
                         </div>
                         {/* Back button (only when inside a folder) */}
                         {selectedContainerFolder !== null && (
                             <button onClick={() => setSelectedContainerFolder(null)}
-                                className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-slate-300 hover:text-white transition-all cursor-pointer text-xs font-black">
-                                <ArrowLeft className="w-4 h-4" /> 폴더 목록으로 돌아가기
+                                className="flex items-center justify-center gap-1.5 w-full py-1 rounded-lg bg-slate-100 border border-slate-300 hover:bg-slate-200 text-slate-800 transition-all cursor-pointer text-[11px] font-black shadow-2xs h-7">
+                                <ArrowLeft className="w-3 h-3" /> 폴더 목록으로 돌아가기
                             </button>
                         )}
                     </div>
@@ -1694,34 +1733,50 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                         /* FOLDER GRID VIEW */
                         <div className="space-y-4">
                             {/* Selection Toolbar */}
-                            <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                            <div className="flex flex-wrap items-center justify-between gap-1.5 mb-1.5">
                                 {/* Left: Select All + View Mode Toggle */}
-                                <div className="flex items-center gap-2">
+                                <div className="flex items-center gap-1.5">
                                     <button
                                         onClick={handleSelectAllFolders}
-                                        className="px-3 py-2 rounded-xl bg-white/5 border border-white/5 hover:bg-white/10 text-slate-300 hover:text-white transition-all text-xs font-black cursor-pointer"
+                                        className="px-2.5 py-1 rounded-lg bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 transition-all text-[11px] font-black cursor-pointer shadow-2xs"
                                     >
                                         {selectedFolders.length === folders.length && folders.length > 0 ? "전체 해제" : "전체 선택"}
                                     </button>
                                     {/* View Mode Toggle */}
-                                    <div className="flex bg-black/40 border border-white/10 p-1 rounded-xl gap-1">
+                                    <div className="flex bg-slate-200/80 border border-slate-300 p-0.5 rounded-lg gap-0.5 shadow-2xs items-center">
                                         <button
                                             onClick={() => setFolderViewMode('DATE_GROUP')}
-                                            className={`px-2.5 py-1.5 rounded-lg text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer ${folderViewMode === 'DATE_GROUP' ? 'bg-sky-500 text-white shadow-sm' : 'text-slate-400 hover:text-white'}`}
+                                            className={`px-2 py-1 rounded-md text-[11px] font-black transition-all flex items-center gap-1 cursor-pointer ${folderViewMode === 'DATE_GROUP' ? 'bg-sky-600 text-white shadow-2xs' : 'text-slate-600 hover:text-slate-900'}`}
                                             title="작업일자별 그룹 보기"
                                         >
-                                            <Calendar className="w-3.5 h-3.5" />
+                                            <Calendar className="w-3 h-3" />
                                             <span className="hidden sm:inline">작업일자별</span>
                                         </button>
                                         <button
                                             onClick={() => setFolderViewMode('FLAT')}
-                                            className={`px-2.5 py-1.5 rounded-lg text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer ${folderViewMode === 'FLAT' ? 'bg-sky-500 text-white shadow-sm' : 'text-slate-400 hover:text-white'}`}
+                                            className={`px-2 py-1 rounded-md text-[11px] font-black transition-all flex items-center gap-1 cursor-pointer ${folderViewMode === 'FLAT' ? 'bg-sky-600 text-white shadow-2xs' : 'text-slate-600 hover:text-slate-900'}`}
                                             title="전체 목록 보기"
                                         >
-                                            <LayoutGrid className="w-3.5 h-3.5" />
+                                            <LayoutGrid className="w-3 h-3" />
                                             <span className="hidden sm:inline">전체 목록</span>
                                         </button>
                                     </div>
+
+                                    {/* Sub-toggle: Team Grouping inside Date View */}
+                                    {folderViewMode === 'DATE_GROUP' && (
+                                        <button
+                                            onClick={() => setIsTeamGroupEnabled(prev => !prev)}
+                                            className={`px-2 py-1 rounded-lg text-[11px] font-black transition-all flex items-center gap-1 cursor-pointer border shadow-2xs ${
+                                                isTeamGroupEnabled
+                                                    ? 'bg-emerald-600 border-emerald-600 text-white'
+                                                    : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-50'
+                                            }`}
+                                            title="날짜 카드 내부 조별 소그룹 모아보기"
+                                        >
+                                            <User className="w-3 h-3" />
+                                            <span>조별 보기 {isTeamGroupEnabled ? 'ON' : 'OFF'}</span>
+                                        </button>
+                                    )}
                                 </div>
                                 {/* Right: Selection count + download (PC only) */}
                                 <div className="hidden md:flex items-center gap-2">
@@ -1878,67 +1933,78 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                                         const someGroupSelected = group.folders.some(f => selectedFolders.includes(f.cntrNo + '|' + f.workDateStr));
 
                                         return (
-                                            <div key={group.dateStr} className="bg-[#0e0f18]/80 border border-white/5 rounded-3xl p-5 shadow-xl">
-                                                {/* Date Section Header */}
-                                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 mb-4 border-b border-white/5 select-none">
-                                                    <div className="flex items-center gap-3">
+                                            <div key={group.dateStr} className="bg-slate-200/50 border border-slate-300/80 rounded-2xl md:rounded-3xl p-3 md:p-4 shadow-2xs">
+                                                {/* Date Section Header - Compact Single Line */}
+                                                <div className="flex items-center justify-between gap-2 pb-2 mb-2.5 border-b border-slate-300/60 select-none">
+                                                    <div className="flex items-center gap-2 flex-wrap min-w-0 flex-1">
                                                         <button
                                                             onClick={() => toggleCollapseDate(group.dateStr)}
-                                                            className="p-2 rounded-xl bg-sky-500/10 border border-sky-500/20 text-sky-400 hover:bg-sky-500 hover:text-white transition-all cursor-pointer"
+                                                            className="p-1.5 rounded-lg bg-white border border-slate-300 text-sky-600 hover:bg-sky-50 transition-all cursor-pointer shadow-2xs shrink-0"
                                                         >
-                                                            <Calendar className="w-4 h-4" />
+                                                            <Calendar className="w-3.5 h-3.5" />
                                                         </button>
-                                                        <div>
-                                                            <div className="flex items-center gap-2">
-                                                                <h3 className="text-base font-black text-white tracking-tight">
-                                                                    {formatKoreanDate(group.dateStr)} 작업
-                                                                </h3>
-                                                                <span className="text-[10px] font-bold text-sky-400 bg-sky-500/10 border border-sky-500/20 px-2 py-0.5 rounded-md">
-                                                                    작업일
-                                                                </span>
-                                                            </div>
-                                                            <p className="text-xs font-bold text-slate-400 mt-0.5">
-                                                                컨테이너 <strong className="text-sky-400 font-extrabold">{group.folders.length}개</strong> · 총 <strong className="text-slate-200">{group.totalPhotos}장</strong> 사진
-                                                            </p>
-                                                        </div>
-                                                    </div>
-
-                                                    <div className="flex items-center gap-2">
+                                                        <h3 className="text-sm font-black text-slate-900 tracking-tight shrink-0">
+                                                            {formatKoreanDate(group.dateStr)} 작업
+                                                        </h3>
                                                         <button
                                                             onClick={() => handleToggleSelectDateGroup(group.folders)}
-                                                            className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 text-xs font-black text-slate-300 hover:text-white transition-all cursor-pointer"
+                                                            className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-white hover:bg-slate-50 border border-slate-300 text-[11px] font-black text-slate-700 hover:text-slate-900 transition-all cursor-pointer shadow-2xs shrink-0"
                                                         >
-                                                            <div className={`w-4 h-4 rounded border flex items-center justify-center transition-all ${
+                                                            <div className={`w-3.5 h-3.5 rounded border flex items-center justify-center transition-all ${
                                                                 allGroupSelected
-                                                                    ? "bg-sky-500 border-sky-400 text-white"
+                                                                    ? "bg-sky-600 border-sky-600 text-white"
                                                                     : someGroupSelected
-                                                                        ? "bg-sky-500/40 border-sky-400 text-white"
-                                                                        : "bg-slate-900 border-slate-700"
+                                                                        ? "bg-sky-500/40 border-sky-500 text-white"
+                                                                        : "bg-white border-slate-400"
                                                             }`}>
                                                                 {allGroupSelected ? (
-                                                                    <Check className="w-3 h-3 stroke-[3]" />
+                                                                    <Check className="w-2.5 h-2.5 stroke-[3]" />
                                                                 ) : someGroupSelected ? (
-                                                                    <div className="w-2 h-0.5 bg-white rounded-full" />
+                                                                    <div className="w-1.5 h-0.5 bg-white rounded-full" />
                                                                 ) : null}
                                                             </div>
-                                                            <span>이 날짜 전체 선택 ({group.folders.filter(f => selectedFolders.includes(f.cntrNo + '|' + f.workDateStr)).length}/{group.folders.length})</span>
+                                                            <span>{parseInt(group.dateStr.split('-')[2] || '0', 10)}일 전체 선택 ({group.folders.filter(f => selectedFolders.includes(f.cntrNo + '|' + f.workDateStr)).length}/{group.folders.length})</span>
                                                         </button>
+                                                        <span className="text-[11px] font-bold text-slate-600 shrink-0 hidden xs:inline">
+                                                            컨테이너 <strong className="text-sky-700 font-extrabold">{group.folders.length}개</strong> · 총 <strong className="text-slate-800">{group.totalPhotos}장</strong>
+                                                        </span>
+                                                    </div>
 
+                                                    <div className="flex items-center gap-1.5 shrink-0">
                                                         <button
                                                             onClick={() => toggleCollapseDate(group.dateStr)}
-                                                            className="p-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white transition-all cursor-pointer"
+                                                            className="p-1.5 rounded-lg bg-white border border-slate-300 hover:bg-slate-100 text-slate-600 hover:text-slate-900 transition-all cursor-pointer shadow-2xs"
                                                             title={isCollapsed ? "펼치기" : "접기"}
                                                         >
-                                                            <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${isCollapsed ? "-rotate-90" : "rotate-0"}`} />
+                                                            <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${isCollapsed ? "-rotate-90" : "rotate-0"}`} />
                                                         </button>
                                                     </div>
                                                 </div>
 
                                                 {/* Folder Grid for this Date Section */}
                                                 {!isCollapsed && (
-                                                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-                                                        {group.folders.map(folder => renderFolderItem(folder))}
-                                                    </div>
+                                                    isTeamGroupEnabled ? (
+                                                        <div className="space-y-4 mt-2">
+                                                            {group.byTeam.map(subTeam => (
+                                                                <div key={subTeam.teamName} className="bg-white/80 border border-slate-300/60 rounded-xl p-3 shadow-2xs">
+                                                                    <div className="flex items-center justify-between gap-2 pb-2 mb-2.5 border-b border-slate-200 text-xs font-black text-slate-800 select-none">
+                                                                        <div className="flex items-center gap-1.5">
+                                                                            <User className="w-3.5 h-3.5 text-emerald-600" />
+                                                                            <span className="text-slate-900 font-extrabold">{subTeam.teamName}</span>
+                                                                            <span className="text-[10px] text-slate-500 font-bold">({subTeam.folders.length}개 컨테이너 · {subTeam.totalPhotos}장)</span>
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+                                                                        {subTeam.folders.map(folder => renderFolderItem(folder))}
+                                                                    </div>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    ) : (
+                                                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                                                            {group.folders.map(folder => renderFolderItem(folder))}
+                                                        </div>
+                                                    )
                                                 )}
                                             </div>
                                         );
@@ -2609,10 +2675,11 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                                             <>
                                                 {gdriveProgress.percent < 100 && (
                                                     <button 
-                                                        onClick={() => handleUploadToGDriveAndCleanLocal()}
+                                                        onClick={handleResumeGDriveExport}
                                                         className="w-full py-3 rounded-xl bg-sky-600 hover:bg-sky-500 border border-sky-400 text-white font-black text-xs transition-all flex items-center justify-center gap-2 cursor-pointer shadow-lg shadow-sky-500/30 animate-pulse"
+                                                        title="폴더 재선택 없이 끊긴 미완료 사진만 자동으로 이어서 백업"
                                                     >
-                                                        <RotateCw className="w-4 h-4" /> 🔄 남은 사진 이어서 백업 재시작
+                                                        <RotateCw className="w-4 h-4" /> 🔄 끊긴 사진 자동 이어서 재전송
                                                     </button>
                                                 )}
                                                 <button 
@@ -2950,29 +3017,29 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                 </AnimatePresence>
 
                 {/* Mobile Bottom Tab Bar */}
-                <div className="flex md:hidden fixed bottom-0 left-0 right-0 z-50 bg-[#0a0a14]/95 backdrop-blur-xl border-t border-white/8 shadow-2xl">
+                <div className="flex md:hidden fixed bottom-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-md border-t border-slate-200 shadow-lg text-slate-700">
                     <button
                         onClick={() => { setTabState('ACTIVE'); setSelectedFolders([]); setSelectedContainerFolder(null); }}
-                        className={`flex-1 flex flex-col items-center justify-center py-3 gap-1 transition-all ${tabState === 'ACTIVE' ? 'text-sky-400' : 'text-slate-500 hover:text-slate-300'}`}
+                        className={`flex-1 flex flex-col items-center justify-center py-2 gap-0.5 transition-all ${tabState === 'ACTIVE' ? 'text-sky-600' : 'text-slate-400 hover:text-slate-700'}`}
                     >
-                        <div className={`w-6 h-0.5 rounded-full transition-all mb-0.5 ${tabState === 'ACTIVE' ? 'bg-sky-400' : 'bg-transparent'}`} />
+                        <div className={`w-6 h-0.5 rounded-full transition-all mb-0.5 ${tabState === 'ACTIVE' ? 'bg-sky-600' : 'bg-transparent'}`} />
                         <Folder className="w-5 h-5" />
-                        <span className="text-[10px] font-black tracking-tight">진행중</span>
+                        <span className="text-[10px] font-black tracking-tight">진행중인 작업</span>
                     </button>
                     <button
                         onClick={() => { setTabState('COMPLETED'); setSelectedFolders([]); setSelectedContainerFolder(null); }}
-                        className={`flex-1 flex flex-col items-center justify-center py-3 gap-1 transition-all ${tabState === 'COMPLETED' ? 'text-emerald-400' : 'text-slate-500 hover:text-slate-300'}`}
+                        className={`flex-1 flex flex-col items-center justify-center py-2 gap-0.5 transition-all ${tabState === 'COMPLETED' ? 'text-emerald-600' : 'text-slate-400 hover:text-slate-700'}`}
                     >
-                        <div className={`w-6 h-0.5 rounded-full transition-all mb-0.5 ${tabState === 'COMPLETED' ? 'bg-emerald-400' : 'bg-transparent'}`} />
+                        <div className={`w-6 h-0.5 rounded-full transition-all mb-0.5 ${tabState === 'COMPLETED' ? 'bg-emerald-600' : 'bg-transparent'}`} />
                         <Check className="w-5 h-5" />
-                        <span className="text-[10px] font-black tracking-tight">완료</span>
+                        <span className="text-[10px] font-black tracking-tight">완료된 작업</span>
                     </button>
                     {isAdmin && (
                         <button
                             onClick={() => { setTabState('TRASH'); setSelectedFolders([]); setSelectedContainerFolder(null); }}
-                            className={`flex-1 flex flex-col items-center justify-center py-3 gap-1 transition-all ${tabState === 'TRASH' ? 'text-purple-400' : 'text-slate-500 hover:text-slate-300'}`}
+                            className={`flex-1 flex flex-col items-center justify-center py-2 gap-0.5 transition-all ${tabState === 'TRASH' ? 'text-purple-600' : 'text-slate-400 hover:text-slate-700'}`}
                         >
-                            <div className={`w-6 h-0.5 rounded-full transition-all mb-0.5 ${tabState === 'TRASH' ? 'bg-purple-400' : 'bg-transparent'}`} />
+                            <div className={`w-6 h-0.5 rounded-full transition-all mb-0.5 ${tabState === 'TRASH' ? 'bg-purple-600' : 'bg-transparent'}`} />
                             <Trash2 className="w-5 h-5" />
                             <span className="text-[10px] font-black tracking-tight">휴지통</span>
                         </button>

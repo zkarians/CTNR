@@ -7,7 +7,7 @@ import {
     Settings2, ChevronLeft, ChevronRight, Filter, Calendar, Briefcase, Move3d, X,
     Camera, Upload, Loader2, Image as ImageIcon,
     Users, UserPlus, Edit3, Shield, KeyRound, Database, UserCheck, UserX,
-    FileText, Copy, Download, Check, Clock, Ban
+    FileText, Copy, Download, Check, Clock, Ban, Folder, Save
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toPng } from 'html-to-image';
@@ -21,7 +21,7 @@ import {
     Product, PackingResult, ContainerType, CONTAINER_DATA, Job, JobFilters, DbConfig, UserAccount, Team
 } from '@/lib/types';
 import { packContainer } from '@/lib/packer';
-import { fetchJobs, fetchProductsByJob, searchProducts, getDbConfig, updateDbConfig, updatePassword, fetchAllUsers, createUserAccount, updateUserAccount, deleteUserAccount, deleteMultipleUserAccounts, generateWorkReport, fetchTeams, createTeam, updateTeam, deleteTeam, fetchTeamWorkProgress, TeamWorkProgress, updateContainerWorkDuration, updateContainerAdminComment, resetTeamWorkProgress } from '@/lib/actions';
+import { fetchJobs, fetchProductsByJob, searchProducts, getDbConfig, updateDbConfig, updatePassword, fetchAllUsers, createUserAccount, updateUserAccount, deleteUserAccount, deleteMultipleUserAccounts, generateWorkReport, saveDailyWorkReport, getSavedDailyWorkReport, exportDatabaseDump, restoreDatabaseDump, fetchTeams, createTeam, updateTeam, deleteTeam, fetchTeamWorkProgress, TeamWorkProgress, updateContainerWorkDuration, updateContainerAdminComment, resetTeamWorkProgress } from '@/lib/actions';
 import { SessionUser } from '@/lib/auth';
 import { calculateTeamTimeline } from '@/lib/timeline';
 
@@ -657,6 +657,143 @@ export default function Home({ user }: { user: SessionUser }) {
         }
     };
 
+    const [savedReportInfo, setSavedReportInfo] = useState<{ isSaved: boolean; savedAt?: string; savedBy?: string }>({ isSaved: false });
+    const [isSavingReport, setIsSavingReport] = useState<boolean>(false);
+    const [isLoadingSavedReport, setIsLoadingSavedReport] = useState<boolean>(false);
+
+    const handleSaveReport = async () => {
+        if (!reportStartDate || !reportText) return;
+
+        // 기존 저장된 보고서가 있는지 사전 체크
+        try {
+            const checkRes = await getSavedDailyWorkReport(reportStartDate);
+            if (checkRes.success && checkRes.reportText) {
+                const confirmChange = window.confirm(`⚠️ ${reportStartDate}일 보고서가 이미 저장되어 있습니다.\n\n새로운 내용으로 변경하시겠습니까?`);
+                if (!confirmChange) {
+                    return;
+                }
+            }
+        } catch (e) {
+            // ignore check error and proceed
+        }
+
+        setIsSavingReport(true);
+        try {
+            const res = await saveDailyWorkReport({
+                workDate: reportStartDate,
+                reportText,
+                reportData,
+                savedBy: user?.name || user?.username || '관리자'
+            });
+            if (res.success) {
+                setSavedReportInfo({
+                    isSaved: true,
+                    savedAt: res.updatedAt ? new Date(res.updatedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }) : undefined,
+                    savedBy: user?.name || user?.username || '관리자'
+                });
+                alert(`💾 ${res.message}`);
+            } else {
+                alert(res.error || "보고서 저장에 실패했습니다.");
+            }
+        } catch (err: any) {
+            console.error("handleSaveReport Error:", err);
+            alert("보고서 저장 중 오류가 발생했습니다.");
+        } finally {
+            setIsSavingReport(false);
+        }
+    };
+
+    const handleLoadSavedReport = async () => {
+        if (!reportStartDate) return;
+        setIsLoadingSavedReport(true);
+        try {
+            const res = await getSavedDailyWorkReport(reportStartDate);
+            if (res.success && res.reportText) {
+                setReportText(res.reportText);
+                if (res.reportData && res.reportData.length > 0) {
+                    setReportData(res.reportData);
+                }
+                setSavedReportInfo({
+                    isSaved: true,
+                    savedAt: res.updatedAt ? new Date(res.updatedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }) : undefined,
+                    savedBy: res.savedBy
+                });
+                alert(`📂 ${reportStartDate} 저장된 보고서를 불러왔습니다.`);
+            } else {
+                alert(res.error || `${reportStartDate}에 저장된 보고서가 없습니다.`);
+            }
+        } catch (err: any) {
+            console.error("handleLoadSavedReport Error:", err);
+            alert("저장된 보고서 불러오기 중 오류가 발생했습니다.");
+        } finally {
+            setIsLoadingSavedReport(false);
+        }
+    };
+
+    const [isExportingDb, setIsExportingDb] = useState<boolean>(false);
+    const [isRestoringDb, setIsRestoringDb] = useState<boolean>(false);
+    const restoreFileInputRef = useRef<HTMLInputElement | null>(null);
+
+    const handleExportDbDump = async () => {
+        setIsExportingDb(true);
+        try {
+            const res = await exportDatabaseDump();
+            if (res.success && res.dump) {
+                const dateStr = getLocalDateString(new Date()).replace(/-/g, '');
+                const timeStr = new Date().toTimeString().split(' ')[0].replace(/:/g, '');
+                const filename = `ctnr_db_backup_${dateStr}_${timeStr}.json`;
+                const jsonStr = JSON.stringify(res.dump, null, 2);
+                const blob = new Blob([jsonStr], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                alert(`💾 DB 백업 파일(${filename})이 정상 다운로드되었습니다.`);
+            } else {
+                alert(res.error || "DB 백업 추출에 실패했습니다.");
+            }
+        } catch (err: any) {
+            console.error("handleExportDbDump Error:", err);
+            alert("DB 백업 중 오류가 발생했습니다.");
+        } finally {
+            setIsExportingDb(false);
+        }
+    };
+
+    const handleRestoreDbDump = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        const confirmRestore = window.confirm(`⚠️ DB 복구 주의사항\n\n업로드한 백업 데이터(${file.name})로 데이터베이스가 복원됩니다.\n\n정말로 DB 복구를 진행하시겠습니까?`);
+        if (!confirmRestore) {
+            if (restoreFileInputRef.current) restoreFileInputRef.current.value = '';
+            return;
+        }
+
+        setIsRestoringDb(true);
+        try {
+            const text = await file.text();
+            const dumpData = JSON.parse(text);
+            const res = await restoreDatabaseDump(dumpData);
+            if (res.success) {
+                alert(`🎉 ${res.message}\n화면 새로고침 후 복원된 최신 데이터를 확인합니다.`);
+                window.location.reload();
+            } else {
+                alert(res.error || "DB 복구에 실패했습니다.");
+            }
+        } catch (err: any) {
+            console.error("handleRestoreDbDump Error:", err);
+            alert(`DB 백업 파일 구문 해석 및 복구 오류: ${err?.message || '유효한 JSON 파일이 아닙니다.'}`);
+        } finally {
+            setIsRestoringDb(false);
+            if (restoreFileInputRef.current) restoreFileInputRef.current.value = '';
+        }
+    };
+
     const handleCopyReport = () => {
         if (!reportText) return;
         
@@ -1066,11 +1203,11 @@ export default function Home({ user }: { user: SessionUser }) {
                         {user.teamName && (
                             <a
                                 href="/select-team"
-                                className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[11px] font-black hover:bg-emerald-500/20 transition-all mr-0.5"
+                                className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[11px] font-black hover:bg-emerald-500/20 transition-all mr-0.5 whitespace-nowrap shrink-0"
                                 title="조 변경"
                             >
-                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                                {user.teamName}
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+                                <span className="whitespace-nowrap">{user.teamName}</span>
                             </a>
                         )}
                         <button onClick={() => setIsGalleryOpen(true)} className="p-1 hover:bg-white/5 rounded-full text-slate-400 hover:text-sky-400 transition-all" title="사진 보관함">
@@ -1497,11 +1634,11 @@ export default function Home({ user }: { user: SessionUser }) {
                             {user.teamName && (
                                 <a
                                     href="/select-team"
-                                    className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[10px] font-black hover:bg-emerald-500/20 transition-all mr-0.5"
+                                    className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[10px] font-black hover:bg-emerald-500/20 transition-all mr-0.5 whitespace-nowrap shrink-0"
                                     title="조 변경"
                                 >
-                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                                    {user.teamName}
+                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+                                    <span className="whitespace-nowrap">{user.teamName}</span>
                                 </a>
                             )}
                             <button onClick={() => setIsGalleryOpen(true)} className="p-1 hover:bg-white/5 rounded-full text-slate-400" title="사진 보관함">
@@ -1754,6 +1891,45 @@ export default function Home({ user }: { user: SessionUser }) {
                                                 <label className="text-[11px] font-black text-slate-500 ml-1">사진 저장 폴더 (저장지)</label>
                                                 <input value={dbConfig.upload_dir || ''} onChange={e => setDbConfig({ ...dbConfig, upload_dir: e.target.value })}
                                                     className="w-full bg-black/40 border border-white/10 rounded-2xl px-4 py-3 text-sm focus:border-sky-500 outline-none transition-all" placeholder="예: C:\CTNR_uploads (기본값: uploads)" />
+                                            </div>
+
+                                            {/* DB Backup & Restore Panel */}
+                                            <div className="pt-4 border-t border-white/10 space-y-3">
+                                                <div className="flex items-center justify-between">
+                                                    <label className="text-xs font-black text-slate-300 flex items-center gap-1.5">
+                                                        <Database className="w-4 h-4 text-sky-400" />
+                                                        <span>🗄️ DB 백업 & 복구 (데이터 덤프)</span>
+                                                    </label>
+                                                    <span className="text-[10px] font-bold text-slate-500">사진 실물 제외 (메타데이터 덤프)</span>
+                                                </div>
+                                                <div className="grid grid-cols-2 gap-3">
+                                                    <button
+                                                        type="button"
+                                                        onClick={handleExportDbDump}
+                                                        disabled={isExportingDb}
+                                                        className="py-3 px-3 rounded-2xl bg-sky-500/20 border border-sky-500/40 hover:bg-sky-500/30 text-sky-300 font-bold text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 shadow-md"
+                                                        title="PostgreSQL 전체 메타데이터를 JSON 파일로 추출 저장"
+                                                    >
+                                                        {isExportingDb ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                                                        <span>💾 DB 백업 저장</span>
+                                                    </button>
+
+                                                    <label
+                                                        className={`py-3 px-3 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 hover:bg-emerald-500/30 text-emerald-300 font-bold text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-md ${isRestoringDb ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                                        title="백업받은 JSON 파일로 DB 복원"
+                                                    >
+                                                        {isRestoringDb ? <Loader2 className="w-4 h-4 animate-spin text-emerald-300" /> : <Upload className="w-4 h-4 text-emerald-300" />}
+                                                        <span>{isRestoringDb ? '복원 진행 중...' : '📤 DB 복구 파일 선택'}</span>
+                                                        <input
+                                                            ref={restoreFileInputRef}
+                                                            type="file"
+                                                            accept=".json"
+                                                            onChange={handleRestoreDbDump}
+                                                            disabled={isRestoringDb}
+                                                            className="hidden"
+                                                        />
+                                                    </label>
+                                                </div>
                                             </div>
                                         </div>
 
@@ -2378,6 +2554,15 @@ export default function Home({ user }: { user: SessionUser }) {
                                             조회
                                         </button>
                                         <button
+                                            onClick={handleLoadSavedReport}
+                                            disabled={isLoadingSavedReport}
+                                            className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-white font-black text-xs rounded-xl transition-all shadow-md cursor-pointer flex items-center gap-1.5 shrink-0 disabled:opacity-50"
+                                            title="선택된 날짜의 DB 저장된 보고서 덮어씌워 불러오기"
+                                        >
+                                            {isLoadingSavedReport ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Folder className="w-3.5 h-3.5" />}
+                                            <span>저장된 보고서 불러오기</span>
+                                        </button>
+                                        <button
                                             onClick={() => setIsCancelManageOpen(true)}
                                             className="px-3.5 py-1.5 bg-rose-50 border border-rose-200 hover:bg-rose-600 hover:text-white text-rose-600 font-black text-xs rounded-xl transition-all shadow-sm cursor-pointer flex items-center gap-1.5 shrink-0"
                                             title="조별 작업취소 선택 및 관리"
@@ -2700,6 +2885,24 @@ export default function Home({ user }: { user: SessionUser }) {
                             </div>
 
                             <div className="flex flex-wrap items-center justify-end gap-2 mt-3 shrink-0">
+                                {savedReportInfo.isSaved && (
+                                    <span className="mr-auto text-xs font-black text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-xl flex items-center gap-1 shadow-2xs">
+                                        <Check className="w-3.5 h-3.5 text-emerald-600" />
+                                        <span>{savedReportInfo.savedAt}에 DB 저장 완료 ({savedReportInfo.savedBy})</span>
+                                    </span>
+                                )}
+                                {isAdmin && (
+                                    <button
+                                        onClick={handleSaveReport}
+                                        disabled={isSavingReport || !reportText}
+                                        className="py-2.5 px-4 md:px-5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-black text-xs md:text-sm transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50 shadow-md"
+                                        title="현재 선택 일자의 단 1장 보고서로 DB에 덮어쓰기 저장"
+                                    >
+                                        {isSavingReport ? <Loader2 className="w-4 h-4 animate-spin text-white" /> : <Save className="w-4 h-4" />}
+                                        {isSavingReport ? '저장 중...' : '💾 보고서 저장'}
+                                    </button>
+                                )}
+
                                 {isAdmin && (
                                     <button
                                         onClick={handleCopyReport}

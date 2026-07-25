@@ -294,6 +294,11 @@ export async function generateWorkReport(filters: JobFilters): Promise<{ success
     try {
         const client = await pool.connect();
         try {
+            const todayWorkDateStr = getWorkDateString(new Date());
+            const targetDateStr = filters.startDate || todayWorkDateStr;
+            const isPastDate = targetDateStr < todayWorkDateStr;
+            const photoCompletedCondition = isPastDate ? "(is_completed IS TRUE)" : "(is_completed IS NOT TRUE)";
+
             const whereClauses: string[] = [];
             const params: any[] = [];
             let paramIdx = 1;
@@ -346,7 +351,7 @@ export async function generateWorkReport(filters: JobFilters): Promise<{ success
                         MAX(remark) as remark
                     FROM container_photos
                     WHERE (is_deleted IS NOT TRUE)
-                      AND (is_completed IS NOT TRUE)
+                      AND ${photoCompletedCondition}
                     GROUP BY job_id, cntr_no
                 ) p ON p.job_id = j.id AND (p.cntr_no = r.cntr_no OR (r.cntr_no IS NULL AND p.cntr_no IS NULL))
                 LEFT JOIN teams t ON p.team_id = t.id
@@ -768,6 +773,272 @@ export async function resetTeamWorkProgress(
         }
     } catch (error: any) {
         console.error("resetTeamWorkProgress Error:", error);
-        return { success: false, error: `초기화 오류: ${error?.message || '알 수 없는 오류'}` };
+        return { success: false, error: `작업 초기화 오류: ${error?.message || '알 수 없는 오류'}` };
+    }
+}
+
+export async function saveDailyWorkReport({
+    workDate,
+    reportText,
+    reportData,
+    savedBy
+}: {
+    workDate: string;
+    reportText: string;
+    reportData?: any;
+    savedBy?: string;
+}): Promise<{ success: boolean; message?: string; error?: string; updatedAt?: string }> {
+    try {
+        const client = await pool.connect();
+        try {
+            await client.query(`
+                CREATE TABLE IF NOT EXISTS daily_work_reports (
+                    work_date VARCHAR(20) PRIMARY KEY,
+                    report_text TEXT NOT NULL,
+                    report_data JSONB,
+                    saved_by VARCHAR(100),
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                );
+            `);
+
+            const res = await client.query(`
+                INSERT INTO daily_work_reports (work_date, report_text, report_data, saved_by, updated_at)
+                VALUES ($1, $2, $3, $4, NOW())
+                ON CONFLICT (work_date)
+                DO UPDATE SET
+                    report_text = EXCLUDED.report_text,
+                    report_data = EXCLUDED.report_data,
+                    saved_by = EXCLUDED.saved_by,
+                    updated_at = NOW()
+                RETURNING updated_at;
+            `, [workDate, reportText, JSON.stringify(reportData || []), savedBy || '관리자']);
+
+            const updatedAt = res.rows[0]?.updated_at;
+
+            return {
+                success: true,
+                message: `${workDate} 보고서가 성공적으로 저장되었습니다.`,
+                updatedAt: updatedAt ? new Date(updatedAt).toISOString() : new Date().toISOString()
+            };
+        } finally {
+            client.release();
+        }
+    } catch (err: any) {
+        console.error("saveDailyWorkReport Error:", err);
+        return { success: false, error: `보고서 저장 오류: ${err?.message || '알 수 없는 오류'}` };
+    }
+}
+
+export async function getSavedDailyWorkReport(workDate: string): Promise<{ success: boolean; reportText?: string; reportData?: any[]; savedBy?: string; updatedAt?: string; error?: string }> {
+    try {
+        const client = await pool.connect();
+        try {
+            await client.query(`
+                CREATE TABLE IF NOT EXISTS daily_work_reports (
+                    work_date VARCHAR(20) PRIMARY KEY,
+                    report_text TEXT NOT NULL,
+                    report_data JSONB,
+                    saved_by VARCHAR(100),
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                );
+            `);
+
+            const res = await client.query(`
+                SELECT work_date, report_text, report_data, saved_by, updated_at
+                FROM daily_work_reports
+                WHERE work_date = $1
+            `, [workDate]);
+
+            if (res.rows.length === 0) {
+                return { success: false, error: `${workDate}에 저장된 보고서가 없습니다.` };
+            }
+
+            const row = res.rows[0];
+            let parsedData = [];
+            try {
+                parsedData = typeof row.report_data === 'string' ? JSON.parse(row.report_data) : (row.report_data || []);
+            } catch (e) {
+                parsedData = [];
+            }
+
+            return {
+                success: true,
+                reportText: row.report_text,
+                reportData: parsedData,
+                savedBy: row.saved_by,
+                updatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : undefined
+            };
+        } finally {
+            client.release();
+        }
+    } catch (err: any) {
+        console.error("getSavedDailyWorkReport Error:", err);
+        return { success: false, error: `저장된 보고서 조회 오류: ${err?.message || '알 수 없는 오류'}` };
+    }
+}
+
+export async function exportDatabaseDump(): Promise<{ success: boolean; dump?: any; error?: string }> {
+    try {
+        const client = await pool.connect();
+        try {
+            const tables = ['teams', 'users', 'container_jobs', 'container_results', 'container_photos', 'container_comments', 'daily_work_reports', 'db_config'];
+            const dumpData: any = {
+                version: '1.0',
+                exportedAt: new Date().toISOString(),
+                tables: {}
+            };
+
+            for (const table of tables) {
+                try {
+                    const res = await client.query(`SELECT * FROM ${table}`);
+                    dumpData.tables[table] = res.rows;
+                } catch (e) {
+                    dumpData.tables[table] = [];
+                }
+            }
+
+            return { success: true, dump: dumpData };
+        } finally {
+            client.release();
+        }
+    } catch (err: any) {
+        console.error("exportDatabaseDump Error:", err);
+        return { success: false, error: `DB 백업 추출 오류: ${err?.message || '알 수 없는 오류'}` };
+    }
+}
+
+export async function restoreDatabaseDump(dumpData: any): Promise<{ success: boolean; message?: string; error?: string }> {
+    if (!dumpData || !dumpData.tables) {
+        return { success: false, error: '유효하지 않은 백업 데이터 파일입니다.' };
+    }
+
+    try {
+        const client = await pool.connect();
+        try {
+            await client.query('BEGIN');
+
+            const tables = dumpData.tables;
+
+            // Restore teams
+            if (Array.isArray(tables.teams)) {
+                for (const row of tables.teams) {
+                    await client.query(`
+                        INSERT INTO teams (id, name, created_at)
+                        VALUES ($1, $2, COALESCE($3::timestamp, NOW()))
+                        ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name;
+                    `, [row.id, row.name, row.created_at]);
+                }
+            }
+
+            // Restore users
+            if (Array.isArray(tables.users)) {
+                for (const row of tables.users) {
+                    await client.query(`
+                        INSERT INTO users (id, username, password_hash, name, role, team_name, is_active, created_at)
+                        VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7, true), COALESCE($8::timestamp, NOW()))
+                        ON CONFLICT (username) DO UPDATE SET
+                            name = EXCLUDED.name,
+                            role = EXCLUDED.role,
+                            team_name = EXCLUDED.team_name,
+                            is_active = EXCLUDED.is_active;
+                    `, [row.id, row.username, row.password_hash, row.name, row.role, row.team_name, row.is_active, row.created_at]);
+                }
+            }
+
+            // Restore container_jobs
+            if (Array.isArray(tables.container_jobs)) {
+                for (const row of tables.container_jobs) {
+                    await client.query(`
+                        INSERT INTO container_jobs (id, job_name, original_filename, saved_at)
+                        VALUES ($1, $2, $3, COALESCE($4::timestamp, NOW()))
+                        ON CONFLICT (id) DO UPDATE SET
+                            job_name = EXCLUDED.job_name,
+                            original_filename = EXCLUDED.original_filename;
+                    `, [row.id, row.job_name, row.original_filename, row.saved_at]);
+                }
+            }
+
+            // Restore container_results
+            if (Array.isArray(tables.container_results)) {
+                for (const row of tables.container_results) {
+                    await client.query(`
+                        INSERT INTO container_results (id, job_id, cntr_no, prod_name, qty_plan, division, transporter, created_at)
+                        VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE($8::timestamp, NOW()))
+                        ON CONFLICT (id) DO UPDATE SET
+                            qty_plan = EXCLUDED.qty_plan,
+                            division = EXCLUDED.division,
+                            transporter = EXCLUDED.transporter;
+                    `, [row.id, row.job_id, row.cntr_no, row.prod_name, row.qty_plan, row.division, row.transporter, row.created_at]);
+                }
+            }
+
+            // Restore container_photos
+            if (Array.isArray(tables.container_photos)) {
+                for (const row of tables.container_photos) {
+                    await client.query(`
+                        INSERT INTO container_photos (
+                            id, job_id, cntr_no, photo_path, original_name, uploader_username, uploader_name, team_id, team_name,
+                            uploaded_at, file_created_at, is_completed, completed_at, is_deleted, deleted_at, gdrive_file_id,
+                            gdrive_view_link, work_duration_minutes, remark
+                        )
+                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, COALESCE($10::timestamp, NOW()), $11, $12, $13, $14, $15, $16, $17, $18, $19)
+                        ON CONFLICT (id) DO UPDATE SET
+                            is_completed = EXCLUDED.is_completed,
+                            completed_at = EXCLUDED.completed_at,
+                            is_deleted = EXCLUDED.is_deleted,
+                            deleted_at = EXCLUDED.deleted_at,
+                            gdrive_file_id = EXCLUDED.gdrive_file_id,
+                            gdrive_view_link = EXCLUDED.gdrive_view_link,
+                            work_duration_minutes = EXCLUDED.work_duration_minutes,
+                            remark = EXCLUDED.remark;
+                    `, [
+                        row.id, row.job_id, row.cntr_no, row.photo_path, row.original_name, row.uploader_username, row.uploader_name, row.team_id, row.team_name,
+                        row.uploaded_at, row.file_created_at, row.is_completed, row.completed_at, row.is_deleted, row.deleted_at, row.gdrive_file_id,
+                        row.gdrive_view_link, row.work_duration_minutes, row.remark
+                    ]);
+                }
+            }
+
+            // Restore container_comments
+            if (Array.isArray(tables.container_comments)) {
+                for (const row of tables.container_comments) {
+                    await client.query(`
+                        INSERT INTO container_comments (cntr_no, admin_comment, updated_at)
+                        VALUES ($1, $2, COALESCE($3::timestamp, NOW()))
+                        ON CONFLICT (cntr_no) DO UPDATE SET
+                            admin_comment = EXCLUDED.admin_comment,
+                            updated_at = NOW();
+                    `, [row.cntr_no, row.admin_comment, row.updated_at]);
+                }
+            }
+
+            // Restore daily_work_reports
+            if (Array.isArray(tables.daily_work_reports)) {
+                for (const row of tables.daily_work_reports) {
+                    await client.query(`
+                        INSERT INTO daily_work_reports (work_date, report_text, report_data, saved_by, created_at, updated_at)
+                        VALUES ($1, $2, $3, $4, COALESCE($5::timestamp, NOW()), COALESCE($6::timestamp, NOW()))
+                        ON CONFLICT (work_date) DO UPDATE SET
+                            report_text = EXCLUDED.report_text,
+                            report_data = EXCLUDED.report_data,
+                            saved_by = EXCLUDED.saved_by,
+                            updated_at = EXCLUDED.updated_at;
+                    `, [row.work_date, row.report_text, JSON.stringify(row.report_data || []), row.saved_by, row.created_at, row.updated_at]);
+                }
+            }
+
+            await client.query('COMMIT');
+            return { success: true, message: 'DB 백업 데이터가 성공적으로 복구되었습니다.' };
+        } catch (err: any) {
+            await client.query('ROLLBACK');
+            throw err;
+        } finally {
+            client.release();
+        }
+    } catch (err: any) {
+        console.error("restoreDatabaseDump Error:", err);
+        return { success: false, error: `DB 복구 실패: ${err?.message || '알 수 없는 오류'}` };
     }
 }
