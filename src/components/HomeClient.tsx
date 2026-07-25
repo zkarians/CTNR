@@ -27,6 +27,11 @@ import { calculateTeamTimeline } from '@/lib/timeline';
 
 
 export default function Home({ user }: { user: SessionUser }) {
+    const [mounted, setMounted] = useState(false);
+    useEffect(() => {
+        setMounted(true);
+    }, []);
+
     const userRole = (user?.role || '').toUpperCase();
     const isAdmin = userRole === 'ADMIN' || userRole === 'MANAGER';
 
@@ -1955,7 +1960,7 @@ export default function Home({ user }: { user: SessionUser }) {
     );
 
     return (
-        <>
+        <div suppressHydrationWarning>
             <style jsx global>{`
                 input[type="date"]::-webkit-calendar-picker-indicator {
                     filter: invert(1);
@@ -1964,8 +1969,8 @@ export default function Home({ user }: { user: SessionUser }) {
             `}</style>
 
             {/* ──────────── 데스크탑 레이아웃 (md 이상) ──────────── */}
-            <main className="hidden md:flex h-screen bg-[#030712] text-slate-100 overflow-hidden font-sans antialiased">
-                <aside className="w-[460px] h-full flex flex-col border-r border-white/5 bg-[#0a0a0f] px-5 py-6 gap-4 z-20 overflow-hidden shadow-2xl shadow-black/80">
+            <main className="hidden md:flex h-screen bg-[#030712] text-slate-100 overflow-hidden font-sans antialiased" suppressHydrationWarning>
+                <aside className="w-[460px] h-full flex flex-col border-r border-white/5 bg-[#0a0a0f] px-5 py-6 gap-4 z-20 overflow-hidden shadow-2xl shadow-black/80" suppressHydrationWarning>
                     {controlPanel}
                 </aside>
                 <div className="flex-1 relative p-6 bg-[#030712]">
@@ -1975,7 +1980,7 @@ export default function Home({ user }: { user: SessionUser }) {
             </main>
 
             {/* ──────────── 모바일 레이아웃 (md 미만) ──────────── */}
-            <div className="md:hidden flex flex-col h-screen bg-[#030712] text-slate-100 overflow-hidden">
+            <div className="md:hidden flex flex-col h-screen bg-[#030712] text-slate-100 overflow-hidden" suppressHydrationWarning>
 
                 {/* Mobile Floating Header (Single Fixed Container, Ultra-Tight) */}
                 <header className="fixed top-0 left-0 right-0 z-[60] px-3 py-1.5 bg-[#030712]/95 backdrop-blur-xl border-b border-white/10 flex flex-col gap-1">
@@ -3734,6 +3739,6 @@ export default function Home({ user }: { user: SessionUser }) {
             </AnimatePresence>
 
             <PhotoGallery user={user} isOpen={isGalleryOpen} initialSearchCntrNo={gallerySearchCntrNo} onClose={() => { setIsGalleryOpen(false); setGallerySearchCntrNo(''); refreshJobs(); loadTeamProgress(); }} />
-        </>
+        </div>
     );
 }
