@@ -1367,16 +1367,20 @@ export default function Home({ user }: { user: SessionUser }) {
                         <button onClick={refreshJobs} className={`p-1.5 hover:bg-white/5 rounded-lg text-slate-400 transition-all ${isLoading ? "animate-spin text-sky-500" : ""}`} title="새로고침">
                             <RotateCw className="w-4 h-4 md:w-3.5 md:h-3.5" />
                         </button>
-                        <button 
-                            onClick={() => setShowOnlyWithPhotos(!showOnlyWithPhotos)} 
-                            className={`p-1.5 hover:bg-white/5 rounded-lg transition-colors ${showOnlyWithPhotos ? "text-sky-500 bg-sky-500/10" : "text-slate-400"}`} 
-                            title={showOnlyWithPhotos ? "전체 작업 보기" : "사진 등록된 작업만 보기"}
-                        >
-                            <Camera className="w-4 h-4 md:w-3.5 md:h-3.5" />
-                        </button>
-                        <button onClick={() => setIsFilterOpen(!isFilterOpen)} className="p-1.5 hover:bg-white/5 rounded-lg text-slate-400 transition-colors">
-                            <Filter className={`w-5 h-5 md:w-4 md:h-4 ${isFilterOpen ? "text-sky-500" : ""}`} />
-                        </button>
+                        {isAdmin && (
+                            <>
+                                <button 
+                                    onClick={() => setShowOnlyWithPhotos(!showOnlyWithPhotos)} 
+                                    className={`p-1.5 hover:bg-white/5 rounded-lg transition-colors ${showOnlyWithPhotos ? "text-sky-500 bg-sky-500/10" : "text-slate-400"}`} 
+                                    title={showOnlyWithPhotos ? "전체 작업 보기" : "사진 등록된 작업만 보기"}
+                                >
+                                    <Camera className="w-4 h-4 md:w-3.5 md:h-3.5" />
+                                </button>
+                                <button onClick={() => setIsFilterOpen(!isFilterOpen)} className="p-1.5 hover:bg-white/5 rounded-lg text-slate-400 transition-colors">
+                                    <Filter className={`w-5 h-5 md:w-4 md:h-4 ${isFilterOpen ? "text-sky-500" : ""}`} />
+                                </button>
+                            </>
+                        )}
                     </div>
                 </div>
 
