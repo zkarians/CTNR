@@ -275,6 +275,7 @@ export default function Home({ user }: { user: SessionUser }) {
     const [isReportGenerating, setIsReportGenerating] = useState(false);
     const [isCopied, setIsCopied] = useState(false);
     const [isImageCopied, setIsImageCopied] = useState(false);
+    const [imageCopyModalUrl, setImageCopyModalUrl] = useState<string | null>(null);
     const [reportStartDate, setReportStartDate] = useState('');
     const [reportEndDate, setReportEndDate] = useState('');
     const reportCaptureRef = useRef<HTMLDivElement>(null);
@@ -606,7 +607,7 @@ export default function Home({ user }: { user: SessionUser }) {
             let copied = false;
 
             // 1. Standard Clipboard API (HTTPS or localhost)
-            if (navigator.clipboard && window.ClipboardItem) {
+            if (window.isSecureContext && navigator.clipboard && window.ClipboardItem) {
                 try {
                     await navigator.clipboard.write([
                         new window.ClipboardItem({
@@ -615,41 +616,7 @@ export default function Home({ user }: { user: SessionUser }) {
                     ]);
                     copied = true;
                 } catch (clipErr) {
-                    console.warn("Clipboard API write failed, trying fallback:", clipErr);
-                }
-            }
-
-            // 2. Fallback for HTTP (non-secure context) using execCommand + selection
-            if (!copied) {
-                try {
-                    const div = document.createElement('div');
-                    div.contentEditable = 'true';
-                    div.style.position = 'fixed';
-                    div.style.left = '-9999px';
-                    div.style.top = '-9999px';
-                    div.style.opacity = '0';
-
-                    const img = document.createElement('img');
-                    img.src = dataUrl;
-                    div.appendChild(img);
-                    document.body.appendChild(div);
-
-                    const range = document.createRange();
-                    range.selectNodeContents(div);
-                    const selection = window.getSelection();
-                    if (selection) {
-                        selection.removeAllRanges();
-                        selection.addRange(range);
-                    }
-
-                    copied = document.execCommand('copy');
-
-                    if (selection) {
-                        selection.removeAllRanges();
-                    }
-                    document.body.removeChild(div);
-                } catch (execErr) {
-                    console.error("execCommand fallback failed:", execErr);
+                    console.warn("Clipboard API write failed:", clipErr);
                 }
             }
 
@@ -657,11 +624,12 @@ export default function Home({ user }: { user: SessionUser }) {
                 setIsImageCopied(true);
                 setTimeout(() => setIsImageCopied(false), 2000);
             } else {
-                alert("현재 HTTP(비보안) 접속 환경에서는 브라우저 보안 정책상 클립보드 직접 복사가 제한됩니다.\n\n[🖼️ 이미지 저장 (.png)] 버튼을 사용하여 이미지를 다운로드 후 카카오톡에 전송해 주세요.");
+                // HTTP / non-secure context fallback: open dedicated KakaoTalk image copy modal
+                setImageCopyModalUrl(dataUrl);
             }
         } catch (err) {
             console.error("Copy report image error:", err);
-            alert("보고서 이미지 복사 중 오류가 발생했습니다.");
+            alert("보고서 이미지 생성 중 오류가 발생했습니다.");
         } finally {
             setIsExportingImage(false);
         }
@@ -3408,6 +3376,70 @@ export default function Home({ user }: { user: SessionUser }) {
                                     닫기
                                 </button>
                             </div>
+
+                            {/* KakaoTalk Image Copy Modal for HTTP non-secure contexts */}
+                            {imageCopyModalUrl && (
+                                <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+                                    <div className="bg-[#11111a] border border-white/10 rounded-3xl p-5 md:p-6 w-full max-w-2xl shadow-2xl space-y-4 text-white flex flex-col max-h-[90vh]">
+                                        <div className="flex items-center justify-between border-b border-white/10 pb-3 shrink-0">
+                                            <div className="flex items-center gap-2">
+                                                <Copy className="w-5 h-5 text-sky-400" />
+                                                <h3 className="text-base font-black text-white">카카오톡 전송용 이미지 복사</h3>
+                                            </div>
+                                            <button 
+                                                onClick={() => setImageCopyModalUrl(null)}
+                                                className="p-1 hover:bg-white/10 rounded-full text-slate-400 hover:text-white transition-colors"
+                                            >
+                                                <X className="w-5 h-5" />
+                                            </button>
+                                        </div>
+
+                                        <div className="bg-sky-500/10 border border-sky-500/30 rounded-2xl p-3.5 text-xs text-sky-300 space-y-1 shrink-0">
+                                            <p className="font-bold text-sky-200 flex items-center gap-1">
+                                                <span>💡</span>
+                                                <span>카카오톡 전송 방법 (우클릭 ➔ 이미지 복사)</span>
+                                            </p>
+                                            <p className="leading-relaxed">
+                                                아래 생성된 이미지 위에서 <strong>[마우스 우클릭 ➔ 이미지 복사]</strong> 하시면 카카오톡 채팅창에 바로 <strong>Ctrl+V (붙여넣기)</strong> 전송이 가능합니다!
+                                                <br />
+                                                <span className="text-[11px] text-slate-400">(모바일: 이미지를 1초간 길게 누르기 ➔ 이미지 복사)</span>
+                                            </p>
+                                        </div>
+
+                                        <div className="flex-1 overflow-auto rounded-2xl border border-white/10 bg-white p-2 flex justify-center items-start">
+                                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                                            <img 
+                                                src={imageCopyModalUrl} 
+                                                alt="작업완료보고서" 
+                                                className="max-w-full h-auto rounded-lg shadow-md select-all cursor-pointer" 
+                                                title="우클릭하여 이미지 복사"
+                                            />
+                                        </div>
+
+                                        <div className="flex items-center justify-end gap-2 pt-1 shrink-0">
+                                            <button
+                                                onClick={() => {
+                                                    const dateStr = reportStartDate || getWorkDateString(new Date());
+                                                    const link = document.createElement('a');
+                                                    link.download = `작업완료보고서_${dateStr}.png`;
+                                                    link.href = imageCopyModalUrl;
+                                                    link.click();
+                                                }}
+                                                className="py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs md:text-sm transition-all flex items-center gap-2 cursor-pointer shadow-md"
+                                            >
+                                                <Download className="w-4 h-4" />
+                                                <span>이미지 파일 다운로드</span>
+                                            </button>
+                                            <button
+                                                onClick={() => setImageCopyModalUrl(null)}
+                                                className="py-2.5 px-4 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs md:text-sm transition-all cursor-pointer"
+                                            >
+                                                닫기
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
 
                             {/* Manual Entry Modal Popover */}
                             {isAddManualOpen && (
