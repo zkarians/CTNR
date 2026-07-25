@@ -354,6 +354,8 @@ export default function Home({ user }: { user: SessionUser }) {
 
     const handleToggleCancelCntr = (cntrNo: string, mode?: 'cancel' | 'exclude') => {
         const targetMode = mode || cancelMode;
+        let updatedComment: string | null = null;
+
         setReportData((prevData: any[]) => {
             if (!prevData || prevData.length === 0) return prevData;
             const nextData = JSON.parse(JSON.stringify(prevData));
@@ -365,13 +367,16 @@ export default function Home({ user }: { user: SessionUser }) {
                             const currentlyCancelled = cntr.isCancelled || cntr.adminComment?.includes('[취소]') || cntr.adminComment?.includes('[작업취소]') || cntr.adminComment?.includes('[작업제외]');
                             if (currentlyCancelled) {
                                 cntr.isCancelled = false;
-                                if (cntr.adminComment) {
-                                    cntr.adminComment = cntr.adminComment.replace(/\[작업취소\]/g, '').replace(/\[작업제외\]/g, '').replace(/\[취소\]/g, '').trim();
-                                }
+                                const clean = (cntr.adminComment || '').replace(/\[작업취소\]/g, '').replace(/\[작업제외\]/g, '').replace(/\[취소\]/g, '').trim();
+                                cntr.adminComment = clean;
+                                updatedComment = clean;
                             } else {
                                 cntr.isCancelled = true;
                                 const tag = targetMode === 'exclude' ? '[작업제외]' : '[작업취소]';
-                                cntr.adminComment = cntr.adminComment ? `${cntr.adminComment} ${tag}`.trim() : tag;
+                                const clean = (cntr.adminComment || '').replace(/\[작업취소\]/g, '').replace(/\[작업제외\]/g, '').replace(/\[취소\]/g, '').trim();
+                                const newComment = clean ? `${clean} ${tag}`.trim() : tag;
+                                cntr.adminComment = newComment;
+                                updatedComment = newComment;
                             }
                         }
                     });
@@ -381,9 +386,15 @@ export default function Home({ user }: { user: SessionUser }) {
             setReportText(rebuildReportTextFromData(nextData));
             return nextData;
         });
+
+        if (updatedComment !== null) {
+            updateContainerAdminComment(cntrNo, updatedComment, reportStartDate).catch(err => console.error("Cancel comment DB save error:", err));
+        }
     };
 
     const handleSetCancelType = (cntrNo: string, targetMode: 'cancel' | 'exclude') => {
+        let updatedComment: string | null = null;
+
         setReportData((prevData: any[]) => {
             if (!prevData || prevData.length === 0) return prevData;
             const nextData = JSON.parse(JSON.stringify(prevData));
@@ -396,7 +407,9 @@ export default function Home({ user }: { user: SessionUser }) {
                             let comment = cntr.adminComment || '';
                             comment = comment.replace(/\[작업취소\]/g, '').replace(/\[작업제외\]/g, '').replace(/\[취소\]/g, '').trim();
                             const tag = targetMode === 'exclude' ? '[작업제외]' : '[작업취소]';
-                            cntr.adminComment = comment ? `${comment} ${tag}`.trim() : tag;
+                            const newComment = comment ? `${comment} ${tag}`.trim() : tag;
+                            cntr.adminComment = newComment;
+                            updatedComment = newComment;
                         }
                     });
                 });
@@ -405,6 +418,10 @@ export default function Home({ user }: { user: SessionUser }) {
             setReportText(rebuildReportTextFromData(nextData));
             return nextData;
         });
+
+        if (updatedComment !== null) {
+            updateContainerAdminComment(cntrNo, updatedComment, reportStartDate).catch(err => console.error("Set cancel type DB save error:", err));
+        }
     };
 
     const handleAddManualSubmit = () => {
@@ -512,7 +529,7 @@ export default function Home({ user }: { user: SessionUser }) {
         setEditingCommentCntr(null);
         if (!isAdmin) return;
         try {
-            await updateContainerAdminComment(cntrNo, commentInput);
+            await updateContainerAdminComment(cntrNo, commentInput, reportStartDate);
             setReportData((prevData: any[]) =>
                 prevData.map((dGroup) => ({
                     ...dGroup,

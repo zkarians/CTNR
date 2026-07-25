@@ -126,10 +126,13 @@ export async function performBackupAndRemoteSync(): Promise<{ success: boolean; 
                 remark TEXT
             );
             CREATE TABLE IF NOT EXISTS container_comments (
-                cntr_no VARCHAR(100) PRIMARY KEY,
+                work_date VARCHAR(20) NOT NULL DEFAULT '',
+                cntr_no VARCHAR(100) NOT NULL,
                 admin_comment TEXT,
-                updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (work_date, cntr_no)
             );
+            ALTER TABLE container_comments ADD COLUMN IF NOT EXISTS work_date VARCHAR(20) NOT NULL DEFAULT '';
             CREATE TABLE IF NOT EXISTS daily_work_reports (
                 work_date VARCHAR(20) PRIMARY KEY,
                 report_text TEXT NOT NULL,
@@ -176,7 +179,7 @@ export async function performBackupAndRemoteSync(): Promise<{ success: boolean; 
             if (tableName === 'daily_work_reports') {
                 conflictClause = 'ON CONFLICT (work_date) DO UPDATE SET report_text = EXCLUDED.report_text, report_data = EXCLUDED.report_data, saved_by = EXCLUDED.saved_by, updated_at = EXCLUDED.updated_at';
             } else if (tableName === 'container_comments') {
-                conflictClause = 'ON CONFLICT (cntr_no) DO UPDATE SET admin_comment = EXCLUDED.admin_comment, updated_at = EXCLUDED.updated_at';
+                conflictClause = 'ON CONFLICT (work_date, cntr_no) DO UPDATE SET admin_comment = EXCLUDED.admin_comment, updated_at = EXCLUDED.updated_at';
             } else if (columns.includes('id')) {
                 const updateCols = columns.filter(c => c !== 'id').map(c => `"${c}" = EXCLUDED."${c}"`).join(', ');
                 if (updateCols) {

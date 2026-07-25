@@ -50,10 +50,26 @@ export function getPool(): Pool {
             ALTER TABLE container_photos ADD COLUMN IF NOT EXISTS work_duration_minutes INTEGER DEFAULT 45;
 
             CREATE TABLE IF NOT EXISTS container_comments (
-                cntr_no VARCHAR(100) PRIMARY KEY,
+                work_date VARCHAR(20) NOT NULL DEFAULT '',
+                cntr_no VARCHAR(100) NOT NULL,
                 admin_comment TEXT,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (work_date, cntr_no)
             );
+            ALTER TABLE container_comments ADD COLUMN IF NOT EXISTS work_date VARCHAR(20) NOT NULL DEFAULT '';
+            DO $$
+            BEGIN
+                IF EXISTS (
+                    SELECT 1 FROM information_schema.table_constraints 
+                    WHERE constraint_name = 'container_comments_pkey' 
+                    AND table_name = 'container_comments'
+                ) THEN
+                    ALTER TABLE container_comments DROP CONSTRAINT container_comments_pkey;
+                    ALTER TABLE container_comments ADD PRIMARY KEY (work_date, cntr_no);
+                END IF;
+            EXCEPTION
+                WHEN OTHERS THEN NULL;
+            END $$;
         `).then(() => {
             console.log("DB Migration: teams and container_comments table ensured.");
         }).catch(err => {

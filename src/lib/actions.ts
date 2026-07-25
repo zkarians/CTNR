@@ -322,6 +322,9 @@ export async function generateWorkReport(filters: JobFilters): Promise<{ success
                 params.push(`%${filters.containerNo}%`);
             }
 
+            const commentDateParamIdx = paramIdx++;
+            params.push(targetDateStr);
+
             const whereSql = "WHERE " + whereClauses.join(" AND ");
 
             const query = `
@@ -355,7 +358,9 @@ export async function generateWorkReport(filters: JobFilters): Promise<{ success
                     GROUP BY job_id, cntr_no
                 ) p ON p.job_id = j.id AND (p.cntr_no = r.cntr_no OR (r.cntr_no IS NULL AND p.cntr_no IS NULL))
                 LEFT JOIN teams t ON p.team_id = t.id
-                LEFT JOIN container_comments cc ON cc.cntr_no = COALESCE(r.cntr_no, j.job_name, '미지정')
+                LEFT JOIN container_comments cc 
+                  ON cc.cntr_no = COALESCE(r.cntr_no, j.job_name, '미지정')
+                 AND (cc.work_date = $${commentDateParamIdx} OR cc.work_date = '' OR cc.work_date IS NULL)
                 ${whereSql}
                 GROUP BY COALESCE(r.cntr_no, j.job_name, '미지정'), r.prod_name, r.division, t.name
                 ORDER BY team_name, cntr_no, r.prod_name
@@ -703,17 +708,20 @@ export async function updateContainerWorkDuration(
 
 export async function updateContainerAdminComment(
     cntrNo: string,
-    comment: string
+    comment: string,
+    workDate?: string
 ): Promise<{ success: boolean; error?: string }> {
     try {
         const client = await pool.connect();
         try {
+            const todayStr = getWorkDateString(new Date());
+            const targetWorkDate = workDate || todayStr;
             await client.query(`
-                INSERT INTO container_comments (cntr_no, admin_comment, updated_at)
-                VALUES ($1, $2, NOW())
-                ON CONFLICT (cntr_no)
+                INSERT INTO container_comments (work_date, cntr_no, admin_comment, updated_at)
+                VALUES ($1, $2, $3, NOW())
+                ON CONFLICT (work_date, cntr_no)
                 DO UPDATE SET admin_comment = EXCLUDED.admin_comment, updated_at = NOW()
-            `, [cntrNo, comment]);
+            `, [targetWorkDate, cntrNo, comment]);
             return { success: true };
         } finally {
             client.release();
@@ -1004,13 +1012,14 @@ export async function restoreDatabaseDump(dumpData: any): Promise<{ success: boo
             // Restore container_comments
             if (Array.isArray(tables.container_comments)) {
                 for (const row of tables.container_comments) {
+                    const wDate = row.work_date || '';
                     await client.query(`
-                        INSERT INTO container_comments (cntr_no, admin_comment, updated_at)
-                        VALUES ($1, $2, COALESCE($3::timestamp, NOW()))
-                        ON CONFLICT (cntr_no) DO UPDATE SET
+                        INSERT INTO container_comments (work_date, cntr_no, admin_comment, updated_at)
+                        VALUES ($1, $2, $3, COALESCE($4::timestamp, NOW()))
+                        ON CONFLICT (work_date, cntr_no) DO UPDATE SET
                             admin_comment = EXCLUDED.admin_comment,
                             updated_at = NOW();
-                    `, [row.cntr_no, row.admin_comment, row.updated_at]);
+                    `, [wDate, row.cntr_no, row.admin_comment, row.updated_at]);
                 }
             }
 
