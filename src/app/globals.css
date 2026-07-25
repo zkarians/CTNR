@@ -59,3 +59,8 @@
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
+
+input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(1);
+  opacity: 0.5;
+}

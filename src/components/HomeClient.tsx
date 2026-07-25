@@ -310,6 +310,8 @@ export default function Home({ user }: { user: SessionUser }) {
         return teamGroup?.containers || [];
     }, [reportData, manualTeamName]);
 
+    const [cancelMode, setCancelMode] = useState<'cancel' | 'exclude'>('cancel');
+
     const rebuildReportTextFromData = (dataArray: any[]) => {
         if (!dataArray || dataArray.length === 0) return '';
         let lines: string[] = [];
@@ -319,18 +321,22 @@ export default function Home({ user }: { user: SessionUser }) {
             lines.push(`📅 ${dateGroup.dateStr || dateGroup.date} 작업 분량`);
             let totalCntr = 0;
             dateGroup.uploaders.forEach((u: any) => {
-                const activeCntrs = u.containers.filter((c: any) => !c.isCancelled && !c.adminComment?.includes('[취소]') && !c.adminComment?.includes('[작업취소]'));
+                const activeCntrs = u.containers.filter((c: any) => !c.isCancelled && !c.adminComment?.includes('[취소]') && !c.adminComment?.includes('[작업취소]') && !c.adminComment?.includes('[작업제외]'));
                 totalCntr += activeCntrs.length;
             });
             lines.push(`총합계: ${totalCntr}개 작업완료\n`);
 
             dateGroup.uploaders.forEach((team: any) => {
-                const activeTeamCntrs = team.containers.filter((c: any) => !c.isCancelled && !c.adminComment?.includes('[취소]') && !c.adminComment?.includes('[작업취소]'));
+                const activeTeamCntrs = team.containers.filter((c: any) => !c.isCancelled && !c.adminComment?.includes('[취소]') && !c.adminComment?.includes('[작업취소]') && !c.adminComment?.includes('[작업제외]'));
                 lines.push(`■ ${team.teamName} (합계 ${activeTeamCntrs.length}개)`);
                 team.containers.forEach((cntr: any) => {
-                    const isCancelled = cntr.isCancelled || cntr.adminComment?.includes('[취소]') || cntr.adminComment?.includes('[작업취소]');
-                    const cancelTag = isCancelled ? ' [작업취소]' : '';
-                    const adminCommentNote = cntr.adminComment ? ` (${cntr.adminComment})` : '';
+                    const isExcluded = cntr.adminComment?.includes('[작업제외]');
+                    const isCancelled = !isExcluded && (cntr.isCancelled || cntr.adminComment?.includes('[취소]') || cntr.adminComment?.includes('[작업취소]'));
+                    const cancelTag = isExcluded ? ' [작업제외]' : isCancelled ? ' [작업취소]' : '';
+                    
+                    let cleanComment = cntr.adminComment ? cntr.adminComment.replace(/\[작업취소\]/g, '').replace(/\[작업제외\]/g, '').replace(/\[취소\]/g, '').trim() : '';
+                    const adminCommentNote = cleanComment ? ` (${cleanComment})` : '';
+
                     lines.push(`${cntr.cntrNo}${cancelTag} (${cntr.modelCount || cntr.products.length}모델, ${cntr.totalQty ? cntr.totalQty.toLocaleString() : cntr.products.reduce((s: number, p: any) => s + p.qty, 0).toLocaleString()}개${adminCommentNote}) [${cntr.workTimeStr}]`);
                     if (cntr.lastRemark && cntr.lastRemark.trim()) {
                         lines.push(`- 💬 ${cntr.lastRemark.trim()}`);
@@ -346,7 +352,8 @@ export default function Home({ user }: { user: SessionUser }) {
         return lines.join('\n');
     };
 
-    const handleToggleCancelCntr = (cntrNo: string) => {
+    const handleToggleCancelCntr = (cntrNo: string, mode?: 'cancel' | 'exclude') => {
+        const targetMode = mode || cancelMode;
         setReportData((prevData: any[]) => {
             if (!prevData || prevData.length === 0) return prevData;
             const nextData = JSON.parse(JSON.stringify(prevData));
@@ -355,16 +362,41 @@ export default function Home({ user }: { user: SessionUser }) {
                 dateGroup.uploaders.forEach((team: any) => {
                     team.containers.forEach((cntr: any) => {
                         if (cntr.cntrNo === cntrNo) {
-                            const currentlyCancelled = cntr.isCancelled || cntr.adminComment?.includes('[취소]') || cntr.adminComment?.includes('[작업취소]');
+                            const currentlyCancelled = cntr.isCancelled || cntr.adminComment?.includes('[취소]') || cntr.adminComment?.includes('[작업취소]') || cntr.adminComment?.includes('[작업제외]');
                             if (currentlyCancelled) {
                                 cntr.isCancelled = false;
                                 if (cntr.adminComment) {
-                                    cntr.adminComment = cntr.adminComment.replace(/\[작업취소\]/g, '').replace(/\[취소\]/g, '').trim();
+                                    cntr.adminComment = cntr.adminComment.replace(/\[작업취소\]/g, '').replace(/\[작업제외\]/g, '').replace(/\[취소\]/g, '').trim();
                                 }
                             } else {
                                 cntr.isCancelled = true;
-                                cntr.adminComment = cntr.adminComment ? `${cntr.adminComment} [작업취소]`.trim() : '[작업취소]';
+                                const tag = targetMode === 'exclude' ? '[작업제외]' : '[작업취소]';
+                                cntr.adminComment = cntr.adminComment ? `${cntr.adminComment} ${tag}`.trim() : tag;
                             }
+                        }
+                    });
+                });
+            });
+
+            setReportText(rebuildReportTextFromData(nextData));
+            return nextData;
+        });
+    };
+
+    const handleSetCancelType = (cntrNo: string, targetMode: 'cancel' | 'exclude') => {
+        setReportData((prevData: any[]) => {
+            if (!prevData || prevData.length === 0) return prevData;
+            const nextData = JSON.parse(JSON.stringify(prevData));
+            
+            nextData.forEach((dateGroup: any) => {
+                dateGroup.uploaders.forEach((team: any) => {
+                    team.containers.forEach((cntr: any) => {
+                        if (cntr.cntrNo === cntrNo) {
+                            cntr.isCancelled = true;
+                            let comment = cntr.adminComment || '';
+                            comment = comment.replace(/\[작업취소\]/g, '').replace(/\[작업제외\]/g, '').replace(/\[취소\]/g, '').trim();
+                            const tag = targetMode === 'exclude' ? '[작업제외]' : '[작업취소]';
+                            cntr.adminComment = comment ? `${comment} ${tag}`.trim() : tag;
                         }
                     });
                 });
@@ -1961,13 +1993,6 @@ export default function Home({ user }: { user: SessionUser }) {
 
     return (
         <div suppressHydrationWarning>
-            <style jsx global>{`
-                input[type="date"]::-webkit-calendar-picker-indicator {
-                    filter: invert(1);
-                    opacity: 0.5;
-                }
-            `}</style>
-
             {/* ──────────── 데스크탑 레이아웃 (md 이상) ──────────── */}
             <main className="hidden md:flex h-screen bg-[#030712] text-slate-100 overflow-hidden font-sans antialiased" suppressHydrationWarning>
                 <aside className="w-[460px] h-full flex flex-col border-r border-white/5 bg-[#0a0a0f] px-5 py-6 gap-4 z-20 overflow-hidden shadow-2xl shadow-black/80" suppressHydrationWarning>
@@ -2900,7 +2925,7 @@ export default function Home({ user }: { user: SessionUser }) {
                         : `${workerMins}분`;
 
                     return (
-                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-1 sm:p-4">
                         <motion.div 
                             initial={{ opacity: 0 }} 
                             animate={{ opacity: 1 }} 
@@ -2912,9 +2937,9 @@ export default function Home({ user }: { user: SessionUser }) {
                             initial={{ scale: 0.95, opacity: 0, y: 20 }} 
                             animate={{ scale: 1, opacity: 1, y: 0 }} 
                             exit={{ scale: 0.95, opacity: 0, y: 20 }}
-                            className="relative w-full max-w-[99vw] md:max-w-[96vw] bg-white border border-slate-300 rounded-[1.5rem] md:rounded-[2rem] shadow-2xl overflow-hidden p-2.5 sm:p-4 md:p-5 z-10 h-[98vh] flex flex-col text-slate-900"
+                            className="relative w-full max-w-[99vw] md:max-w-[96vw] bg-white border border-slate-300 rounded-[1.2rem] sm:rounded-[1.5rem] md:rounded-[2rem] shadow-2xl overflow-hidden p-2 pb-2.5 sm:p-4 md:p-5 z-10 h-[96dvh] max-h-[97dvh] md:h-[96vh] md:max-h-[98vh] flex flex-col text-slate-900"
                         >
-                            <div className="flex items-start justify-between pb-3 mb-2 border-b border-slate-200 shrink-0 gap-2">
+                            <div className="flex items-start justify-between pb-2 mb-1.5 border-b border-slate-200 shrink-0 gap-2">
                                 <div className="flex items-start gap-3 min-w-0">
                                     <div className="p-2 bg-emerald-500/10 rounded-xl shrink-0 mt-0.5">
                                         <FileText className="w-5 h-5 text-emerald-600" />
@@ -2942,7 +2967,7 @@ export default function Home({ user }: { user: SessionUser }) {
                             </div>
 
                             {/* Date Selector & Controls inside Modal */}
-                            <div className="mb-2.5 bg-slate-100 border border-slate-200 rounded-xl p-2 md:p-2.5 text-slate-900 shrink-0">
+                            <div className="mb-1.5 bg-slate-100 border border-slate-200 rounded-xl p-1.5 md:p-2.5 text-slate-900 shrink-0">
                                 {/* Desktop Layout */}
                                 <div className="hidden md:flex items-center justify-between gap-2">
                                     {isAdmin ? (
@@ -2990,10 +3015,10 @@ export default function Home({ user }: { user: SessionUser }) {
                                                 onClick={handleLoadSavedReport}
                                                 disabled={isLoadingSavedReport}
                                                 className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-white font-black text-xs rounded-xl transition-all shadow-sm cursor-pointer flex items-center gap-1.5 shrink-0 disabled:opacity-50"
-                                                title="선택된 날짜의 DB 저장된 보고서 덮어씌워 불러오기"
+                                                title="선택된 날짜의 DB 저장된 보고서 불러오기"
                                             >
                                                 {isLoadingSavedReport ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Folder className="w-3.5 h-3.5" />}
-                                                <span>저장된 보고서 불러오기</span>
+                                                <span>불러오기</span>
                                             </button>
                                             <button
                                                 onClick={() => setIsCancelManageOpen(true)}
@@ -3001,7 +3026,7 @@ export default function Home({ user }: { user: SessionUser }) {
                                                 title="조별 작업취소 선택 및 관리"
                                             >
                                                 <Ban className="w-3.5 h-3.5 text-rose-500" />
-                                                <span>작업취소관리</span>
+                                                <span>작업취소</span>
                                             </button>
                                             <div className="ml-auto flex items-center gap-1 bg-slate-200/80 p-1 rounded-xl shrink-0">
                                                 <button
@@ -3012,7 +3037,7 @@ export default function Home({ user }: { user: SessionUser }) {
                                                             : 'text-slate-600 hover:text-slate-900'
                                                     }`}
                                                 >
-                                                    📋 전체 상세
+                                                    📋 상세보기
                                                 </button>
                                                 <button
                                                     onClick={() => setReportViewMode('compact')}
@@ -3022,7 +3047,7 @@ export default function Home({ user }: { user: SessionUser }) {
                                                             : 'text-slate-600 hover:text-slate-900'
                                                     }`}
                                                 >
-                                                    ⚡ 요약 보기
+                                                    ⚡ 요약보기
                                                 </button>
                                             </div>
                                         </>
@@ -3041,15 +3066,15 @@ export default function Home({ user }: { user: SessionUser }) {
                                         title="보고서 전용 수동 항목 추가"
                                     >
                                         <Plus className="w-4 h-4" />
-                                        <span>수동 항목 추가</span>
+                                        <span>추가</span>
                                     </button>
                                 </div>
 
-                                {/* Mobile Layout (Ultra Clean Layered Stack) */}
-                                <div className="flex md:hidden flex-col gap-2">
-                                    {/* Row 1: Date Navigator & Refresh Query */}
+                                {/* Mobile Layout (2-Row Streamlined Stack) */}
+                                <div className="flex md:hidden flex-col gap-1.5">
+                                    {/* Row 1: Date Navigator, Refresh Query & Load Saved Report */}
                                     <div className="flex items-center gap-1.5 w-full">
-                                        <div className="flex-1 flex items-center justify-between bg-white border border-slate-300 rounded-xl p-1 shadow-xs">
+                                        <div className="flex-1 flex items-center justify-between bg-white border border-slate-300 rounded-xl p-1 shadow-xs min-w-0">
                                             <button
                                                 onClick={() => handleNavigateDate(-1)}
                                                 className="p-1 text-slate-700 hover:bg-slate-100 rounded-lg transition-all flex items-center justify-center cursor-pointer shrink-0"
@@ -3076,67 +3101,69 @@ export default function Home({ user }: { user: SessionUser }) {
                                             </button>
                                         </div>
                                         {isAdmin && (
-                                            <button
-                                                onClick={handleRegenerateReport}
-                                                className="px-3.5 py-1.5 bg-emerald-600 text-white font-black text-xs rounded-xl shadow-xs cursor-pointer flex items-center gap-1 shrink-0 h-9"
-                                            >
-                                                <RotateCw className="w-3.5 h-3.5" />
-                                                <span>조회</span>
-                                            </button>
+                                            <>
+                                                <button
+                                                    onClick={handleRegenerateReport}
+                                                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs rounded-xl shadow-xs cursor-pointer flex items-center gap-1 shrink-0 h-9"
+                                                >
+                                                    <RotateCw className="w-3.5 h-3.5" />
+                                                    <span>조회</span>
+                                                </button>
+                                                <button
+                                                    onClick={handleLoadSavedReport}
+                                                    disabled={isLoadingSavedReport}
+                                                    className="px-2.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-white font-black text-xs rounded-xl shadow-xs flex items-center justify-center gap-1 shrink-0 h-9 disabled:opacity-50"
+                                                    title="선택된 날짜의 DB 저장된 보고서 불러오기"
+                                                >
+                                                    {isLoadingSavedReport ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Folder className="w-3.5 h-3.5" />}
+                                                    <span>불러오기</span>
+                                                </button>
+                                            </>
                                         )}
                                     </div>
 
-                                    {/* Row 2: Secondary Action Tools */}
+                                    {/* Row 2: Cancel Manage & Add Manual + View Mode Toggle */}
                                     {isAdmin && (
-                                        <div className="grid grid-cols-3 gap-1.5 w-full text-[11px]">
-                                            <button
-                                                onClick={handleLoadSavedReport}
-                                                disabled={isLoadingSavedReport}
-                                                className="py-1.5 px-1 bg-amber-500 hover:bg-amber-400 text-white font-black rounded-lg shadow-xs flex items-center justify-center gap-1 disabled:opacity-50 text-center truncate"
-                                            >
-                                                {isLoadingSavedReport ? <Loader2 className="w-3 h-3 animate-spin shrink-0" /> : <Folder className="w-3 h-3 shrink-0" />}
-                                                <span className="truncate">저장본 덮기</span>
-                                            </button>
-                                            <button
-                                                onClick={() => setIsCancelManageOpen(true)}
-                                                className="py-1.5 px-1 bg-rose-50 border border-rose-200 text-rose-600 font-black rounded-lg shadow-2xs flex items-center justify-center gap-1 text-center truncate"
-                                            >
-                                                <Ban className="w-3 h-3 text-rose-500 shrink-0" />
-                                                <span className="truncate">작업취소관리</span>
-                                            </button>
-                                            <button
-                                                onClick={handleOpenAddManual}
-                                                className="py-1.5 px-1 bg-sky-600 text-white font-black rounded-lg shadow-xs flex items-center justify-center gap-1 text-center truncate"
-                                            >
-                                                <Plus className="w-3 h-3 shrink-0" />
-                                                <span className="truncate">수동추가</span>
-                                            </button>
-                                        </div>
-                                    )}
+                                        <div className="flex items-center justify-between gap-1.5 w-full">
+                                            <div className="flex items-center gap-1 flex-1 min-w-0">
+                                                <button
+                                                    onClick={() => setIsCancelManageOpen(true)}
+                                                    className="flex-1 py-1.5 px-1 bg-rose-50 border border-rose-200 text-rose-600 font-black rounded-lg shadow-2xs flex items-center justify-center gap-1 text-[11px] truncate cursor-pointer h-8"
+                                                >
+                                                    <Ban className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                                                    <span className="truncate">작업취소</span>
+                                                </button>
+                                                <button
+                                                    onClick={handleOpenAddManual}
+                                                    className="flex-1 py-1.5 px-1 bg-sky-600 hover:bg-sky-500 text-white font-black rounded-lg shadow-xs flex items-center justify-center gap-1 text-[11px] truncate cursor-pointer h-8"
+                                                >
+                                                    <Plus className="w-3.5 h-3.5 shrink-0" />
+                                                    <span className="truncate">추가</span>
+                                                </button>
+                                            </div>
 
-                                    {/* Row 3: View Mode Toggle Segmented Bar */}
-                                    {isAdmin && (
-                                        <div className="flex items-center bg-slate-200/80 p-0.5 rounded-lg w-full">
-                                            <button
-                                                onClick={() => setReportViewMode('full')}
-                                                className={`flex-1 py-1 text-center text-xs font-black rounded-md transition-all ${
-                                                    reportViewMode === 'full' 
-                                                        ? 'bg-white text-slate-900 shadow-2xs' 
-                                                        : 'text-slate-600'
-                                                }`}
-                                            >
-                                                📋 전체 상세
-                                            </button>
-                                            <button
-                                                onClick={() => setReportViewMode('compact')}
-                                                className={`flex-1 py-1 text-center text-xs font-black rounded-md transition-all ${
-                                                    reportViewMode === 'compact' 
-                                                        ? 'bg-white text-slate-900 shadow-2xs' 
-                                                        : 'text-slate-600'
-                                                }`}
-                                            >
-                                                ⚡ 요약 보기
-                                            </button>
+                                            <div className="flex items-center bg-slate-200/80 p-0.5 rounded-lg shrink-0 h-8">
+                                                <button
+                                                    onClick={() => setReportViewMode('full')}
+                                                    className={`px-2.5 py-1 text-center text-xs font-black rounded-md transition-all cursor-pointer ${
+                                                        reportViewMode === 'full' 
+                                                            ? 'bg-white text-slate-900 shadow-2xs' 
+                                                            : 'text-slate-600'
+                                                    }`}
+                                                >
+                                                    📋 상세보기
+                                                </button>
+                                                <button
+                                                    onClick={() => setReportViewMode('compact')}
+                                                    className={`px-2.5 py-1 text-center text-xs font-black rounded-md transition-all cursor-pointer ${
+                                                        reportViewMode === 'compact' 
+                                                            ? 'bg-white text-slate-900 shadow-2xs' 
+                                                            : 'text-slate-600'
+                                                    }`}
+                                                >
+                                                    ⚡ 요약보기
+                                                </button>
+                                            </div>
                                         </div>
                                     )}
                                 </div>
@@ -3152,13 +3179,13 @@ export default function Home({ user }: { user: SessionUser }) {
                                     isAdmin ? (
                                     <div className="space-y-8">
                                         {reportData.map((dateGroup: any) => {
-                                            const activeContainers = dateGroup.uploaders.flatMap((u: any) => u.containers).filter((c: any) => !c.isCancelled && !c.adminComment?.includes('[취소]') && !c.adminComment?.includes('[작업취소]'));
+                                            const activeContainers = dateGroup.uploaders.flatMap((u: any) => u.containers).filter((c: any) => !c.isCancelled && !c.adminComment?.includes('[취소]') && !c.adminComment?.includes('[작업취소]') && !c.adminComment?.includes('[작업제외]'));
                                             const totalCntr = activeContainers.length;
                                             
                                             const activeCarrierCounts: Record<string, number> = {};
                                             dateGroup.uploaders.forEach((u: any) => {
                                                 u.containers.forEach((c: any) => {
-                                                    if (c.isCancelled || c.adminComment?.includes('[취소]') || c.adminComment?.includes('[작업취소]')) return;
+                                                    if (c.isCancelled || c.adminComment?.includes('[취소]') || c.adminComment?.includes('[작업취소]') || c.adminComment?.includes('[작업제외]')) return;
                                                     const cName = c.transporter ? (c.transporter.includes("천마") ? "천마" : (c.transporter.includes("BNI") || c.transporter.includes("비엔아이") ? "BNI" : c.transporter.split('(')[0])) : "기타";
                                                     activeCarrierCounts[cName] = (activeCarrierCounts[cName] || 0) + 1;
                                                 });
@@ -3205,7 +3232,7 @@ export default function Home({ user }: { user: SessionUser }) {
                                                     </div>
                                                     <div className={`grid grid-cols-1 ${gridColsStyle} gap-4 items-start w-full`}>
                                                         {dateGroup.uploaders.map((upGroup: any) => {
-                                                            const activeTeamCntrs = upGroup.containers.filter((c: any) => !c.isCancelled && !c.adminComment?.includes('[취소]') && !c.adminComment?.includes('[작업취소]'));
+                                                            const activeTeamCntrs = upGroup.containers.filter((c: any) => !c.isCancelled && !c.adminComment?.includes('[취소]') && !c.adminComment?.includes('[작업취소]') && !c.adminComment?.includes('[작업제외]'));
                                                             return (
                                                             <div key={upGroup.teamName ?? upGroup.uploaderName} className="bg-white border border-slate-200 rounded-xl md:rounded-2xl p-2.5 sm:p-4 flex flex-col gap-3 md:gap-4 h-auto shadow-sm">
                                                                 <div className="flex items-center justify-between pb-2 border-b border-slate-200">
@@ -3218,17 +3245,22 @@ export default function Home({ user }: { user: SessionUser }) {
                                                                 <div className="space-y-3">
                                                                     {upGroup.containers.map((cntr: any) => {
                                                                         const totalQty = cntr.products.reduce((sum: number, p: any) => sum + p.qty, 0);
-                                                                        const isCancelled = cntr.isCancelled || cntr.adminComment?.includes('[취소]') || cntr.adminComment?.includes('[작업취소]');
+                                                                        const isExcluded = cntr.adminComment?.includes('[작업제외]');
+                                                                        const isCancelled = !isExcluded && (cntr.isCancelled || cntr.adminComment?.includes('[취소]') || cntr.adminComment?.includes('[작업취소]'));
                                                                         return (
                                                                             <div key={cntr.cntrNo} className="bg-slate-50 border border-slate-200 rounded-lg md:rounded-xl p-2.5 sm:p-3 hover:border-slate-300 transition-all space-y-1.5">
                                                                                 <div className="flex items-center justify-between gap-1.5 mb-1.5">
                                                                                     <div className="flex items-center gap-1.5 min-w-0">
                                                                                         <span className={`text-sm font-black truncate uppercase ${getCarrierColor(cntr.transporter)}`}>{cntr.cntrNo}</span>
-                                                                                        {isCancelled && (
+                                                                                        {isExcluded ? (
+                                                                                            <span className="px-1.5 py-0.5 rounded-md bg-amber-500/10 border border-amber-500/30 text-amber-700 font-extrabold text-[11px] shrink-0">
+                                                                                                [작업제외]
+                                                                                            </span>
+                                                                                        ) : isCancelled ? (
                                                                                             <span className="px-1.5 py-0.5 rounded-md bg-rose-500/10 border border-rose-500/20 text-rose-600 font-extrabold text-[11px] shrink-0">
                                                                                                 [작업취소]
                                                                                             </span>
-                                                                                        )}
+                                                                                        ) : null}
                                                                                     </div>
                                                                                     <div className="flex items-center gap-1.5 shrink-0">
                                                                                         {isAdmin && !isExportingImage && isCancelled && (
@@ -3414,71 +3446,74 @@ export default function Home({ user }: { user: SessionUser }) {
                                 )}
                             </div>
 
-                            <div className="flex flex-wrap items-center justify-end gap-2 mt-3 shrink-0">
+                            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 mt-2 sm:mt-3 shrink-0 pb-1 sm:pb-0">
                                 {savedReportInfo.isSaved && (
-                                    <span className="mr-auto text-xs font-black text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-xl flex items-center gap-1 shadow-2xs">
-                                        <Check className="w-3.5 h-3.5 text-emerald-600" />
+                                    <span className="text-[11px] sm:text-xs font-black text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-xl flex items-center justify-center sm:justify-start gap-1 shadow-2xs w-full sm:w-auto truncate">
+                                        <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                                         <span>{savedReportInfo.savedAt}에 DB 저장 완료 ({savedReportInfo.savedBy})</span>
                                     </span>
                                 )}
-                                {isAdmin && (
-                                    <button
-                                        onClick={handleSaveReport}
-                                        disabled={isSavingReport || !reportText}
-                                        className="py-2.5 px-4 md:px-5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-black text-xs md:text-sm transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50 shadow-md"
-                                        title="현재 선택 일자의 단 1장 보고서로 DB에 덮어쓰기 저장"
-                                    >
-                                        {isSavingReport ? <Loader2 className="w-4 h-4 animate-spin text-white" /> : <Save className="w-4 h-4" />}
-                                        {isSavingReport ? '저장 중...' : '💾 보고서 저장'}
-                                    </button>
-                                )}
 
-                                {isAdmin && (
-                                    <button
-                                        onClick={handleCopyReport}
-                                        disabled={isReportGenerating || !reportText}
-                                        className={`py-2.5 px-4 rounded-xl font-bold text-xs md:text-sm transition-all shadow-sm flex items-center gap-2 cursor-pointer disabled:opacity-50 ${
-                                            isCopied
-                                                ? 'bg-emerald-600 text-white'
-                                                : 'bg-slate-100 border border-slate-300 text-slate-700 hover:bg-slate-200'
-                                        }`}
-                                    >
-                                        {isCopied ? <Check className="w-4 h-4 text-emerald-100" /> : <Copy className="w-4 h-4 text-slate-500" />}
-                                        {isCopied ? '복사 완료!' : '📋 텍스트 복사'}
-                                    </button>
-                                )}
-
-                                {isAdmin && (
-                                    <>
+                                <div className={`w-full sm:w-auto ml-auto ${isAdmin ? 'grid grid-cols-4 gap-1 sm:gap-2 sm:flex sm:items-center sm:justify-end' : 'flex justify-end'}`}>
+                                    {isAdmin && (
                                         <button
-                                            onClick={handleCopyReportImage}
-                                            disabled={isReportGenerating || isExportingImage || !reportData || reportData.length === 0}
-                                            className={`py-2.5 px-4 md:px-5 rounded-xl font-bold text-xs md:text-sm transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50 shadow-md ${
-                                                isImageCopied
+                                            onClick={handleSaveReport}
+                                            disabled={isSavingReport || !reportText}
+                                            className="py-2 px-1 sm:py-2.5 sm:px-4 md:px-5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-black text-[11px] sm:text-xs md:text-sm transition-all flex items-center justify-center gap-1 sm:gap-1.5 cursor-pointer disabled:opacity-50 shadow-md whitespace-nowrap"
+                                            title="현재 선택 일자의 단 1장 보고서로 DB에 덮어쓰기 저장"
+                                        >
+                                            {isSavingReport ? <Loader2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 animate-spin text-white shrink-0" /> : <Save className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />}
+                                            <span>{isSavingReport ? '저장 중...' : '보고서 저장'}</span>
+                                        </button>
+                                    )}
+
+                                    {isAdmin && (
+                                        <button
+                                            onClick={handleCopyReport}
+                                            disabled={isReportGenerating || !reportText}
+                                            className={`py-2 px-1 sm:py-2.5 sm:px-4 rounded-xl font-bold text-[11px] sm:text-xs md:text-sm transition-all shadow-sm flex items-center justify-center gap-1 sm:gap-1.5 cursor-pointer disabled:opacity-50 whitespace-nowrap ${
+                                                isCopied
                                                     ? 'bg-emerald-600 text-white'
-                                                    : 'bg-sky-600 hover:bg-sky-500 text-white'
+                                                    : 'bg-slate-100 border border-slate-300 text-slate-700 hover:bg-slate-200'
                                             }`}
                                         >
-                                            {isExportingImage ? <Loader2 className="w-4 h-4 animate-spin text-white" /> : isImageCopied ? <Check className="w-4 h-4 text-emerald-100" /> : <Copy className="w-4 h-4" />}
-                                            {isExportingImage ? '이미지 생성 중...' : isImageCopied ? '이미지 복사 완료!' : '📋 이미지 복사'}
+                                            {isCopied ? <Check className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-100 shrink-0" /> : <Copy className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-500 shrink-0" />}
+                                            <span>{isCopied ? '복사 완료!' : '텍스트 복사'}</span>
                                         </button>
-                                        <button
-                                            onClick={handleDownloadReportImage}
-                                            disabled={isReportGenerating || isExportingImage || !reportData || reportData.length === 0}
-                                            className="py-2.5 px-4 md:px-5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs md:text-sm transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50 shadow-md"
-                                        >
-                                            {isExportingImage ? <Loader2 className="w-4 h-4 animate-spin text-white" /> : <Download className="w-4 h-4" />}
-                                            {isExportingImage ? '이미지 생성 중...' : '🖼️ 이미지 저장 (.png)'}
-                                        </button>
-                                    </>
-                                )}
+                                    )}
 
-                                <button
-                                    onClick={() => setIsReportOpen(false)}
-                                    className="py-2.5 px-4 rounded-xl bg-slate-100 border border-slate-300 hover:bg-slate-200 text-slate-700 font-bold text-xs md:text-sm transition-all cursor-pointer"
-                                >
-                                    닫기
-                                </button>
+                                    {isAdmin && (
+                                        <>
+                                            <button
+                                                onClick={handleCopyReportImage}
+                                                disabled={isReportGenerating || isExportingImage || !reportData || reportData.length === 0}
+                                                className={`py-2 px-1 sm:py-2.5 sm:px-4 md:px-5 rounded-xl font-bold text-[11px] sm:text-xs md:text-sm transition-all flex items-center justify-center gap-1 sm:gap-1.5 cursor-pointer disabled:opacity-50 shadow-md whitespace-nowrap ${
+                                                    isImageCopied
+                                                        ? 'bg-emerald-600 text-white'
+                                                        : 'bg-sky-600 hover:bg-sky-500 text-white'
+                                                }`}
+                                            >
+                                                {isExportingImage ? <Loader2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 animate-spin text-white shrink-0" /> : isImageCopied ? <Check className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-100 shrink-0" /> : <Copy className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />}
+                                                <span>{isExportingImage ? '생성 중...' : isImageCopied ? '복사 완료!' : '이미지 복사'}</span>
+                                            </button>
+                                            <button
+                                                onClick={handleDownloadReportImage}
+                                                disabled={isReportGenerating || isExportingImage || !reportData || reportData.length === 0}
+                                                className="py-2 px-1 sm:py-2.5 sm:px-4 md:px-5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] sm:text-xs md:text-sm transition-all flex items-center justify-center gap-1 sm:gap-1.5 cursor-pointer disabled:opacity-50 shadow-md whitespace-nowrap"
+                                            >
+                                                {isExportingImage ? <Loader2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 animate-spin text-white shrink-0" /> : <Download className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />}
+                                                <span>{isExportingImage ? '생성 중...' : '이미지 저장'}<span className="hidden sm:inline"> (.png)</span></span>
+                                            </button>
+                                        </>
+                                    )}
+
+                                    <button
+                                        onClick={() => setIsReportOpen(false)}
+                                        className={`py-2 px-3 sm:py-2.5 sm:px-4 rounded-xl bg-slate-100 border border-slate-300 hover:bg-slate-200 text-slate-700 font-bold text-xs md:text-sm transition-all cursor-pointer ${isAdmin ? 'hidden sm:inline-flex items-center justify-center' : 'w-full sm:w-auto inline-flex items-center justify-center'}`}
+                                    >
+                                        닫기
+                                    </button>
+                                </div>
                             </div>
 
                             {/* KakaoTalk Image Copy Modal for HTTP non-secure contexts */}
@@ -3736,14 +3771,14 @@ export default function Home({ user }: { user: SessionUser }) {
                                 </div>
                             )}
 
-                            {/* 작업취소관리 팝업 모달 */}
+                            {/* 작업취소 / 작업제외 관리 팝업 모달 */}
                             {isCancelManageOpen && (
                                 <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
                                     <div className="bg-white border border-slate-200 rounded-3xl w-full max-w-2xl shadow-2xl p-5 md:p-6 flex flex-col max-h-[85vh] animate-fade-in text-slate-900">
-                                        <div className="flex items-center justify-between pb-4 border-b border-slate-200 shrink-0">
+                                        <div className="flex items-center justify-between pb-3 border-b border-slate-200 shrink-0">
                                             <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
                                                 <Ban className="w-5 h-5 text-rose-600" />
-                                                조별 작업취소관리
+                                                조별 작업취소 및 작업제외 관리
                                             </h3>
                                             <button
                                                 onClick={() => setIsCancelManageOpen(false)}
@@ -3753,15 +3788,44 @@ export default function Home({ user }: { user: SessionUser }) {
                                             </button>
                                         </div>
 
-                                        <p className="text-xs text-slate-500 font-bold mt-3 mb-4">
-                                            💡 체크한 컨테이너는 <strong className="text-rose-600">[작업취소]</strong>로 지정되며, 보고서 수량 합계에서 자동 제외됩니다. 체크 해제 시 즉시 정상 복원됩니다.
+                                        {/* 표기 선택 버튼 */}
+                                        <div className="flex items-center justify-between bg-slate-100 p-2 rounded-2xl border border-slate-200 mt-3 mb-2 flex-wrap gap-2 shrink-0">
+                                            <span className="text-xs font-bold text-slate-700">체크 시 기본 지정 표기:</span>
+                                            <div className="flex items-center gap-1.5">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setCancelMode('cancel')}
+                                                    className={`px-3 py-1 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1 ${
+                                                        cancelMode === 'cancel'
+                                                            ? 'bg-rose-600 text-white shadow-xs'
+                                                            : 'bg-white border border-slate-300 text-slate-600 hover:bg-slate-50'
+                                                    }`}
+                                                >
+                                                    <span>🚫 작업취소</span>
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setCancelMode('exclude')}
+                                                    className={`px-3 py-1 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1 ${
+                                                        cancelMode === 'exclude'
+                                                            ? 'bg-amber-600 text-white shadow-xs'
+                                                            : 'bg-white border border-slate-300 text-slate-600 hover:bg-slate-50'
+                                                    }`}
+                                                >
+                                                    <span>⚠️ 작업제외</span>
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        <p className="text-xs text-slate-500 font-bold mb-3 shrink-0">
+                                            💡 체크한 컨테이너는 <strong className={cancelMode === 'cancel' ? "text-rose-600" : "text-amber-600"}>[{cancelMode === 'cancel' ? '작업취소' : '작업제외'}]</strong>로 지정되며, 수량 합계에서 자동 제외됩니다. 항목 오른쪽 버튼으로 개별 전환할 수 있습니다.
                                         </p>
 
-                                        <div className="overflow-y-auto flex-1 custom-scrollbar space-y-5 pr-1">
+                                        <div className="overflow-y-auto flex-1 custom-scrollbar space-y-4 pr-1">
                                             {reportData && reportData.length > 0 ? (
                                                 reportData.map((dateGroup: any) =>
                                                     dateGroup.uploaders?.map((teamGroup: any) => (
-                                                        <div key={teamGroup.teamName || teamGroup.uploaderName} className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3">
+                                                        <div key={teamGroup.teamName || teamGroup.uploaderName} className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 space-y-2.5">
                                                             <div className="flex items-center justify-between border-b border-slate-200 pb-2">
                                                                 <span className="text-sm font-black text-slate-900 flex items-center gap-2">
                                                                     <div className="w-2.5 h-2.5 rounded-full bg-sky-600" />
@@ -3774,38 +3838,74 @@ export default function Home({ user }: { user: SessionUser }) {
 
                                                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                                                                 {teamGroup.containers.map((cntr: any) => {
-                                                                    const isCancelled = cntr.isCancelled || cntr.adminComment?.includes('[취소]') || cntr.adminComment?.includes('[작업취소]');
+                                                                    const isExcluded = cntr.adminComment?.includes('[작업제외]');
+                                                                    const isCancelled = !isExcluded && (cntr.isCancelled || cntr.adminComment?.includes('[취소]') || cntr.adminComment?.includes('[작업취소]'));
+                                                                    const isSelected = isCancelled || isExcluded;
+
                                                                     return (
-                                                                        <label
+                                                                        <div
                                                                             key={cntr.cntrNo}
-                                                                            className={`flex items-center justify-between p-3 rounded-xl border transition-all cursor-pointer select-none ${
-                                                                                isCancelled
+                                                                            className={`flex items-center justify-between p-2.5 rounded-xl border transition-all ${
+                                                                                isExcluded
+                                                                                    ? 'bg-amber-50 border-amber-200 text-amber-900 shadow-sm'
+                                                                                    : isCancelled
                                                                                     ? 'bg-rose-50 border-rose-200 text-rose-900 shadow-sm'
                                                                                     : 'bg-white border-slate-200 hover:border-slate-300 text-slate-800'
                                                                             }`}
                                                                         >
-                                                                            <div className="flex items-center gap-2.5 min-w-0">
+                                                                            <label className="flex items-center gap-2.5 min-w-0 flex-1 cursor-pointer select-none">
                                                                                 <input
                                                                                     type="checkbox"
-                                                                                    checked={!!isCancelled}
-                                                                                    onChange={() => handleToggleCancelCntr(cntr.cntrNo)}
+                                                                                    checked={isSelected}
+                                                                                    onChange={() => handleToggleCancelCntr(cntr.cntrNo, cancelMode)}
                                                                                     className="w-4 h-4 rounded text-rose-600 focus:ring-rose-500 cursor-pointer shrink-0"
                                                                                 />
-                                                                                <div className="min-w-0">
+                                                                                <div className="min-w-0 flex-1">
                                                                                     <div className="font-black text-xs uppercase truncate flex items-center gap-1.5">
                                                                                         <span>{cntr.cntrNo}</span>
-                                                                                        {isCancelled && (
+                                                                                        {isExcluded ? (
+                                                                                            <span className="px-1.5 py-0.2 rounded bg-amber-600 text-white font-extrabold text-[10px]">
+                                                                                                작업제외
+                                                                                            </span>
+                                                                                        ) : isCancelled ? (
                                                                                             <span className="px-1.5 py-0.2 rounded bg-rose-600 text-white font-extrabold text-[10px]">
                                                                                                 작업취소
                                                                                             </span>
-                                                                                        )}
+                                                                                        ) : null}
                                                                                     </div>
                                                                                     <div className="text-[11px] text-slate-500 font-medium truncate mt-0.5">
                                                                                         {cntr.modelSummaryStr || `${cntr.products?.length || 1}모델`}
                                                                                     </div>
                                                                                 </div>
-                                                                            </div>
-                                                                        </label>
+                                                                            </label>
+
+                                                                            {isSelected && (
+                                                                                <div className="flex items-center gap-1 shrink-0 ml-1.5">
+                                                                                    <button
+                                                                                        type="button"
+                                                                                        onClick={() => handleSetCancelType(cntr.cntrNo, 'cancel')}
+                                                                                        className={`px-1.5 py-0.5 rounded text-[10px] font-extrabold transition-all cursor-pointer ${
+                                                                                            isCancelled
+                                                                                                ? 'bg-rose-600 text-white shadow-2xs'
+                                                                                                : 'bg-white border border-slate-300 text-slate-600 hover:bg-slate-100'
+                                                                                        }`}
+                                                                                    >
+                                                                                        취소
+                                                                                    </button>
+                                                                                    <button
+                                                                                        type="button"
+                                                                                        onClick={() => handleSetCancelType(cntr.cntrNo, 'exclude')}
+                                                                                        className={`px-1.5 py-0.5 rounded text-[10px] font-extrabold transition-all cursor-pointer ${
+                                                                                            isExcluded
+                                                                                                ? 'bg-amber-600 text-white shadow-2xs'
+                                                                                                : 'bg-white border border-slate-300 text-slate-600 hover:bg-slate-100'
+                                                                                        }`}
+                                                                                    >
+                                                                                        제외
+                                                                                    </button>
+                                                                                </div>
+                                                                            )}
+                                                                        </div>
                                                                     );
                                                                 })}
                                                             </div>
@@ -3819,7 +3919,7 @@ export default function Home({ user }: { user: SessionUser }) {
                                             )}
                                         </div>
 
-                                        <div className="pt-4 border-t border-slate-200 shrink-0 flex justify-end">
+                                        <div className="pt-3 border-t border-slate-200 shrink-0 flex justify-end">
                                             <button
                                                 type="button"
                                                 onClick={() => setIsCancelManageOpen(false)}
