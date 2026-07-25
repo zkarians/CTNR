@@ -274,6 +274,7 @@ export default function Home({ user }: { user: SessionUser }) {
     const [reportData, setReportData] = useState<any[]>([]);
     const [isReportGenerating, setIsReportGenerating] = useState(false);
     const [isCopied, setIsCopied] = useState(false);
+    const [isImageCopied, setIsImageCopied] = useState(false);
     const [reportStartDate, setReportStartDate] = useState('');
     const [reportEndDate, setReportEndDate] = useState('');
     const reportCaptureRef = useRef<HTMLDivElement>(null);
@@ -546,6 +547,76 @@ export default function Home({ user }: { user: SessionUser }) {
         } catch (err) {
             console.error("Download report image error:", err);
             alert("보고서 이미지 저장 중 오류가 발생했습니다.");
+        } finally {
+            setIsExportingImage(false);
+        }
+    };
+
+    const handleCopyReportImage = async () => {
+        if (!reportCaptureRef.current) return;
+        setIsExportingImage(true);
+        try {
+            const node = reportCaptureRef.current;
+
+            // Temporarily expand all inner scrollable children (team cards & container lists)
+            const scrollableChildren = node.querySelectorAll('.overflow-y-auto, [class*="max-h-"], .custom-scrollbar');
+            const originalStyles: { el: HTMLElement; maxHeight: string; height: string; overflowY: string }[] = [];
+            
+            scrollableChildren.forEach((child) => {
+                const htmlEl = child as HTMLElement;
+                originalStyles.push({
+                    el: htmlEl,
+                    maxHeight: htmlEl.style.maxHeight,
+                    height: htmlEl.style.height,
+                    overflowY: htmlEl.style.overflowY
+                });
+                htmlEl.style.maxHeight = 'none';
+                htmlEl.style.height = 'auto';
+                htmlEl.style.overflowY = 'visible';
+            });
+
+            // Measure full unclipped scroll dimensions
+            const finalWidth = Math.max(node.scrollWidth, node.offsetWidth);
+            const finalHeight = Math.max(node.scrollHeight, node.offsetHeight);
+
+            const dataUrl = await toPng(node, {
+                quality: 0.98,
+                pixelRatio: 2,
+                width: finalWidth,
+                height: finalHeight,
+                backgroundColor: '#ffffff',
+                style: {
+                    maxHeight: 'none',
+                    height: `${finalHeight}px`,
+                    width: `${finalWidth}px`,
+                    overflow: 'visible'
+                }
+            });
+
+            // Restore original styles
+            originalStyles.forEach(({ el, maxHeight, height, overflowY }) => {
+                el.style.maxHeight = maxHeight;
+                el.style.height = height;
+                el.style.overflowY = overflowY;
+            });
+
+            const res = await fetch(dataUrl);
+            const blob = await res.blob();
+
+            if (navigator.clipboard && window.ClipboardItem) {
+                await navigator.clipboard.write([
+                    new window.ClipboardItem({
+                        [blob.type]: blob
+                    })
+                ]);
+                setIsImageCopied(true);
+                setTimeout(() => setIsImageCopied(false), 2000);
+            } else {
+                alert("이 브라우저 환경에서는 클립보드 이미지 복사를 지원하지 않습니다.");
+            }
+        } catch (err) {
+            console.error("Copy report image error:", err);
+            alert("보고서 이미지 복사 중 오류가 발생했습니다.");
         } finally {
             setIsExportingImage(false);
         }
@@ -3261,14 +3332,28 @@ export default function Home({ user }: { user: SessionUser }) {
                                 )}
 
                                 {isAdmin && (
-                                    <button
-                                        onClick={handleDownloadReportImage}
-                                        disabled={isReportGenerating || isExportingImage || !reportData || reportData.length === 0}
-                                        className="py-2.5 px-4 md:px-5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs md:text-sm transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50 shadow-md"
-                                    >
-                                        {isExportingImage ? <Loader2 className="w-4 h-4 animate-spin text-white" /> : <Download className="w-4 h-4" />}
-                                        {isExportingImage ? '이미지 생성 중...' : '🖼️ 이미지 저장 (.png)'}
-                                    </button>
+                                    <>
+                                        <button
+                                            onClick={handleCopyReportImage}
+                                            disabled={isReportGenerating || isExportingImage || !reportData || reportData.length === 0}
+                                            className={`py-2.5 px-4 md:px-5 rounded-xl font-bold text-xs md:text-sm transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50 shadow-md ${
+                                                isImageCopied
+                                                    ? 'bg-emerald-600 text-white'
+                                                    : 'bg-sky-600 hover:bg-sky-500 text-white'
+                                            }`}
+                                        >
+                                            {isExportingImage ? <Loader2 className="w-4 h-4 animate-spin text-white" /> : isImageCopied ? <Check className="w-4 h-4 text-emerald-100" /> : <Copy className="w-4 h-4" />}
+                                            {isExportingImage ? '이미지 생성 중...' : isImageCopied ? '이미지 복사 완료!' : '📋 이미지 복사'}
+                                        </button>
+                                        <button
+                                            onClick={handleDownloadReportImage}
+                                            disabled={isReportGenerating || isExportingImage || !reportData || reportData.length === 0}
+                                            className="py-2.5 px-4 md:px-5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs md:text-sm transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50 shadow-md"
+                                        >
+                                            {isExportingImage ? <Loader2 className="w-4 h-4 animate-spin text-white" /> : <Download className="w-4 h-4" />}
+                                            {isExportingImage ? '이미지 생성 중...' : '🖼️ 이미지 저장 (.png)'}
+                                        </button>
+                                    </>
                                 )}
 
                                 <button
