@@ -48,6 +48,7 @@ next-env.d.ts
 !package.json
 !package-lock.json
 !tsconfig.json
+!public/manifest.json
 !next-env.d.ts
 !postcss.config.js
 !tailwind.config.ts
