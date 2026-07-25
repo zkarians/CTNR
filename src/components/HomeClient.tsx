@@ -603,16 +603,61 @@ export default function Home({ user }: { user: SessionUser }) {
             const res = await fetch(dataUrl);
             const blob = await res.blob();
 
+            let copied = false;
+
+            // 1. Standard Clipboard API (HTTPS or localhost)
             if (navigator.clipboard && window.ClipboardItem) {
-                await navigator.clipboard.write([
-                    new window.ClipboardItem({
-                        [blob.type]: blob
-                    })
-                ]);
+                try {
+                    await navigator.clipboard.write([
+                        new window.ClipboardItem({
+                            [blob.type]: blob
+                        })
+                    ]);
+                    copied = true;
+                } catch (clipErr) {
+                    console.warn("Clipboard API write failed, trying fallback:", clipErr);
+                }
+            }
+
+            // 2. Fallback for HTTP (non-secure context) using execCommand + selection
+            if (!copied) {
+                try {
+                    const div = document.createElement('div');
+                    div.contentEditable = 'true';
+                    div.style.position = 'fixed';
+                    div.style.left = '-9999px';
+                    div.style.top = '-9999px';
+                    div.style.opacity = '0';
+
+                    const img = document.createElement('img');
+                    img.src = dataUrl;
+                    div.appendChild(img);
+                    document.body.appendChild(div);
+
+                    const range = document.createRange();
+                    range.selectNodeContents(div);
+                    const selection = window.getSelection();
+                    if (selection) {
+                        selection.removeAllRanges();
+                        selection.addRange(range);
+                    }
+
+                    copied = document.execCommand('copy');
+
+                    if (selection) {
+                        selection.removeAllRanges();
+                    }
+                    document.body.removeChild(div);
+                } catch (execErr) {
+                    console.error("execCommand fallback failed:", execErr);
+                }
+            }
+
+            if (copied) {
                 setIsImageCopied(true);
                 setTimeout(() => setIsImageCopied(false), 2000);
             } else {
-                alert("이 브라우저 환경에서는 클립보드 이미지 복사를 지원하지 않습니다.");
+                alert("현재 HTTP(비보안) 접속 환경에서는 브라우저 보안 정책상 클립보드 직접 복사가 제한됩니다.\n\n[🖼️ 이미지 저장 (.png)] 버튼을 사용하여 이미지를 다운로드 후 카카오톡에 전송해 주세요.");
             }
         } catch (err) {
             console.error("Copy report image error:", err);
