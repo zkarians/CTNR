@@ -70,6 +70,9 @@ export interface Job {
     transporter?: string;
     work_date?: string;
     photo_count?: number;
+    active_photo_count?: number;
+    seal_photo_count?: number;
+    uploaders?: string[];
     work_duration_minutes?: number;
     remark?: string;
 }

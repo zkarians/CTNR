@@ -26,6 +26,7 @@ export async function POST(req: NextRequest) {
         const remark = formData.get('remark') as string | null;
         const durationMinutesStr = formData.get('durationMinutes') as string | null;
         const durationMinutes = durationMinutesStr && !isNaN(parseInt(durationMinutesStr, 10)) ? parseInt(durationMinutesStr, 10) : 45;
+        const photoType = (formData.get('photoType') as string | null) || 'normal';
 
         if (!file || !jobIdStr || !cntrNo) {
             return NextResponse.json({ error: '필수 데이터가 누락되었습니다.' }, { status: 400 });
@@ -160,11 +161,11 @@ export async function POST(req: NextRequest) {
             const relativeDbPath = `${sanitizedCntrNo}/${filename}`;
 
             const query = `
-                INSERT INTO container_photos (job_id, cntr_no, photo_path, remark, uploaded_by, team_id, work_duration_minutes)
-                VALUES ($1, $2, $3, $4, $5, $6, $7)
-                RETURNING id, job_id, cntr_no, photo_path, remark, uploaded_at, work_duration_minutes
+                INSERT INTO container_photos (job_id, cntr_no, photo_path, remark, uploaded_by, uploader_username, uploader_name, team_id, work_duration_minutes, photo_type)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                RETURNING id, job_id, cntr_no, photo_path, remark, uploaded_at, work_duration_minutes, photo_type
             `;
-            const values = [jobId, cntrNo, relativeDbPath, remark || '', validUploadedBy, session.teamId ?? null, durationMinutes];
+            const values = [jobId, cntrNo, relativeDbPath, remark || '', validUploadedBy, session.username || '', session.name || '', session.teamId ?? null, durationMinutes, photoType];
             const res = await client.query(query, values);
             
             // Sync durationMinutes & remark to all existing photos for this container

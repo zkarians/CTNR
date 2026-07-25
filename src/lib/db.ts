@@ -30,6 +30,7 @@ export function getPool(): Pool {
             ALTER TABLE container_photos ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP;
             ALTER TABLE container_photos ADD COLUMN IF NOT EXISTS gdrive_file_id VARCHAR(255);
             ALTER TABLE container_photos ADD COLUMN IF NOT EXISTS gdrive_url TEXT;
+            ALTER TABLE container_photos ADD COLUMN IF NOT EXISTS photo_type VARCHAR(20) DEFAULT 'normal';
         `).then(() => {
             console.log("DB Migration: container_photos soft delete and completion columns ensured.");
         }).catch(err => {
@@ -42,6 +43,9 @@ export function getPool(): Pool {
                 id   SERIAL PRIMARY KEY,
                 name VARCHAR(50) NOT NULL UNIQUE
             );
+            ALTER TABLE container_photos ADD COLUMN IF NOT EXISTS uploader_username VARCHAR(100);
+            ALTER TABLE container_photos ADD COLUMN IF NOT EXISTS uploader_name VARCHAR(100);
+            ALTER TABLE container_photos ADD COLUMN IF NOT EXISTS uploaded_by VARCHAR(100);
             ALTER TABLE container_photos ADD COLUMN IF NOT EXISTS team_id INTEGER REFERENCES teams(id);
             ALTER TABLE container_photos ADD COLUMN IF NOT EXISTS work_duration_minutes INTEGER DEFAULT 45;
 
@@ -53,7 +57,7 @@ export function getPool(): Pool {
         `).then(() => {
             console.log("DB Migration: teams and container_comments table ensured.");
         }).catch(err => {
-            console.error("DB Migration (teams/duration) Error:", err);
+            console.error("DB Migration Error:", err);
         });
     }
     return _pool;
@@ -128,6 +132,14 @@ export async function getJobsFromDB(filters?: JobFilters): Promise<Job[]> {
                         r.transporter,
                         r.cntr_type,
                         (SELECT COUNT(*)::integer FROM container_photos p WHERE p.job_id = j.id AND (r.cntr_no IS NULL OR p.cntr_no = r.cntr_no) AND (p.is_deleted IS NOT TRUE)) as photo_count,
+                        (SELECT COUNT(*)::integer FROM container_photos p WHERE p.job_id = j.id AND (r.cntr_no IS NULL OR p.cntr_no = r.cntr_no) AND (p.is_deleted IS NOT TRUE) AND (p.is_completed IS NOT TRUE)) as active_photo_count,
+                        (SELECT COUNT(*)::integer FROM container_photos p WHERE p.job_id = j.id AND (r.cntr_no IS NULL OR p.cntr_no = r.cntr_no) AND (p.is_deleted IS NOT TRUE) AND p.photo_type = 'seal') as seal_photo_count,
+                        (SELECT ARRAY_AGG(DISTINCT uploader_info) FROM (
+                            SELECT COALESCE(p.uploader_username, u.username, u.name, p.uploaded_by::text) as uploader_info
+                            FROM container_photos p
+                            LEFT JOIN "User" u ON (u.id::text = p.uploaded_by::text OR u.username = p.uploader_username)
+                            WHERE p.job_id = j.id AND (r.cntr_no IS NULL OR p.cntr_no = r.cntr_no) AND (p.is_deleted IS NOT TRUE) AND (p.is_completed IS NOT TRUE)
+                        ) sub_u WHERE uploader_info IS NOT NULL) as uploaders,
                         (SELECT p.work_duration_minutes FROM container_photos p WHERE p.job_id = j.id AND (r.cntr_no IS NULL OR p.cntr_no = r.cntr_no) AND (p.is_deleted IS NOT TRUE) ORDER BY p.id DESC LIMIT 1) as work_duration_minutes,
                         (SELECT p.remark FROM container_photos p WHERE p.job_id = j.id AND (r.cntr_no IS NULL OR p.cntr_no = r.cntr_no) AND (p.is_deleted IS NOT TRUE) AND p.remark IS NOT NULL AND p.remark != '' ORDER BY p.id DESC LIMIT 1) as last_remark
                     FROM container_jobs j
@@ -148,6 +160,9 @@ export async function getJobsFromDB(filters?: JobFilters): Promise<Job[]> {
                 cntr_no: row.cntr_no,
                 transporter: row.transporter,
                 photo_count: Number(row.photo_count) || 0,
+                active_photo_count: Number(row.active_photo_count) || 0,
+                seal_photo_count: Number(row.seal_photo_count) || 0,
+                uploaders: Array.isArray(row.uploaders) ? row.uploaders.filter(Boolean) : [],
                 work_duration_minutes: row.work_duration_minutes ? Number(row.work_duration_minutes) : undefined,
                 remark: row.last_remark || undefined,
                 work_date: (() => {

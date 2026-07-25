@@ -28,12 +28,14 @@ interface Photo {
     transporter?: string;
     gdrive_file_id?: string;
     gdrive_url?: string;
+    is_completed?: boolean;
 }
 
 interface PhotoGalleryProps {
     isOpen: boolean;
     onClose: () => void;
     user: SessionUser;
+    initialSearchCntrNo?: string;
 }
 
 
@@ -64,7 +66,7 @@ function getLocalDateString(d: Date): string {
     return `${year}-${month}-${day}`;
 }
 
-export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProps) {
+export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrNo }: PhotoGalleryProps) {
     const isAdmin = user && (user.role.toUpperCase() === 'ADMIN' || user.role.toUpperCase() === 'MANAGER');
 
     const [photos, setPhotos] = useState<Photo[]>([]);
@@ -781,6 +783,31 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
     const [endDate, setEndDate] = useState('');
     const [selectedTeamId, setSelectedTeamId] = useState('');
     const [searchCntrNo, setSearchCntrNo] = useState('');
+
+    React.useEffect(() => {
+        if (isOpen && initialSearchCntrNo) {
+            setSearchCntrNo(initialSearchCntrNo);
+            if (folders.length > 0) {
+                const targetStr = initialSearchCntrNo.toUpperCase().trim();
+                const targetFolder = folders.find(f => f.cntrNo.toUpperCase().trim() === targetStr);
+                if (targetFolder) {
+                    const folderKey = targetFolder.cntrNo + '|' + targetFolder.workDateStr;
+                    setSelectedContainerFolder(folderKey);
+
+                    const allCompleted = targetFolder.photos.length > 0 && targetFolder.photos.every(p => p.is_completed);
+                    if (allCompleted) {
+                        setTabState('COMPLETED');
+                    } else {
+                        setTabState('ACTIVE');
+                    }
+
+                    if (targetFolder.photos.length > 0) {
+                        setActivePhotoIdx(null);
+                    }
+                }
+            }
+        }
+    }, [isOpen, initialSearchCntrNo, folders]);
 
     // Local copy state
     const [isLocalCopyOpen, setIsLocalCopyOpen] = useState(false);
@@ -1540,16 +1567,10 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                 className="fixed inset-0 z-50 bg-slate-50 flex flex-col w-full h-full text-slate-800 opacity-100 overflow-hidden"
             >
                 {/* Header */}
-                <header className="flex items-center justify-between px-6 py-4 md:px-8 border-b border-slate-200 bg-white shrink-0 shadow-xs transition-colors duration-300">
+                <header className="flex items-center justify-between px-4 py-3 md:px-8 border-b border-slate-200 bg-white shrink-0 shadow-xs transition-colors duration-300">
                     <div className="flex items-center gap-3">
-                        <button 
-                            onClick={onClose}
-                            className="p-2 -ml-2 rounded-xl text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-all md:hidden"
-                        >
-                            <ArrowLeft className="w-5 h-5" />
-                        </button>
                         <div>
-                            <h2 className={`text-lg md:text-xl font-black tracking-tight flex items-center gap-2 transition-colors duration-300 ${
+                            <h2 className={`text-base md:text-xl font-black tracking-tight flex items-center gap-2 transition-colors duration-300 ${
                                 isTrashView 
                                     ? "text-purple-700" 
                                     : isCompletedView 
@@ -1575,9 +1596,11 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                     </div>
                     <button 
                         onClick={onClose}
-                        className="p-2.5 rounded-2xl bg-slate-100 border border-slate-200 text-slate-500 hover:text-slate-900 hover:bg-slate-200 transition-all hidden md:flex items-center justify-center cursor-pointer"
+                        className="flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-rose-500/10 hover:bg-rose-500 text-rose-600 hover:text-white border border-rose-500/30 font-black text-xs transition-all cursor-pointer shadow-2xs shrink-0"
+                        title="사진 보관함 창 닫기"
                     >
-                        <X className="w-5 h-5" />
+                        <X className="w-4 h-4" />
+                        <span>닫기</span>
                     </button>
                 </header>
 
@@ -1641,10 +1664,18 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                                     </div>
                                     {selectedContainerFolder !== null && (
                                         <button onClick={() => setSelectedContainerFolder(null)}
-                                            className="flex items-center justify-center px-3 py-2.5 rounded-xl bg-slate-100 border border-slate-200 hover:bg-slate-200 text-slate-700 transition-all cursor-pointer h-[38px]">
-                                            <ArrowLeft className="w-4 h-4" />
+                                            className="flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-100 border border-slate-200 hover:bg-slate-200 text-slate-700 font-black text-xs transition-all cursor-pointer h-[38px]"
+                                            title="이전 폴더 목록으로 뒤로가기">
+                                            <ArrowLeft className="w-3.5 h-3.5" />
+                                            <span>뒤로가기</span>
                                         </button>
                                     )}
+                                    <button onClick={onClose}
+                                        className="flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-rose-500/10 hover:bg-rose-500 text-rose-600 hover:text-white border border-rose-500/30 font-black text-xs transition-all cursor-pointer h-[38px] shadow-2xs"
+                                        title="사진 보관함 창 닫기">
+                                        <X className="w-3.5 h-3.5" />
+                                        <span>닫기</span>
+                                    </button>
                                 </div>
                             </div>
                         </div>
@@ -1706,13 +1737,19 @@ export default function PhotoGallery({ isOpen, onClose, user }: PhotoGalleryProp
                                 <RefreshCw className="w-3 h-3" /> 새로고침
                             </button>
                         </div>
-                        {/* Back button (only when inside a folder) */}
-                        {selectedContainerFolder !== null && (
-                            <button onClick={() => setSelectedContainerFolder(null)}
-                                className="flex items-center justify-center gap-1.5 w-full py-1 rounded-lg bg-slate-100 border border-slate-300 hover:bg-slate-200 text-slate-800 transition-all cursor-pointer text-[11px] font-black shadow-2xs h-7">
-                                <ArrowLeft className="w-3 h-3" /> 폴더 목록으로 돌아가기
+                        {/* Mobile Navigation Bar: Back & Close */}
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                            {selectedContainerFolder !== null && (
+                                <button onClick={() => setSelectedContainerFolder(null)}
+                                    className="flex-1 flex items-center justify-center gap-1 py-1 px-2 rounded-lg bg-slate-100 border border-slate-300 hover:bg-slate-200 text-slate-800 transition-all cursor-pointer text-[11px] font-black shadow-2xs h-7.5">
+                                    <ArrowLeft className="w-3 h-3" /> 뒤로가기
+                                </button>
+                            )}
+                            <button onClick={onClose}
+                                className="flex-1 flex items-center justify-center gap-1 py-1 px-2 rounded-lg bg-rose-500/10 hover:bg-rose-500 text-rose-600 hover:text-white border border-rose-500/30 transition-all cursor-pointer text-[11px] font-black shadow-2xs h-7.5">
+                                <X className="w-3 h-3" /> 보관함 닫기
                             </button>
-                        )}
+                        </div>
                     </div>
                 </section>
 
