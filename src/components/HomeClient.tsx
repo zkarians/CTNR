@@ -1472,7 +1472,7 @@ export default function Home({ user }: { user: SessionUser }) {
                                                     <Camera className="w-4 h-4 md:w-3.5 md:h-3.5" />
                                                 </button>
                                                 {/* 씰사진 전용 빨간 카메라: seal_photo_count가 0일 때만 표시 */}
-                                                {(job.seal_photo_count === undefined || job.seal_photo_count === 0) && (
+                                                {(job.photo_count && job.photo_count > 0) && (job.seal_photo_count === undefined || job.seal_photo_count === 0) && (
                                                     <button
                                                         onClick={(e) => {
                                                             e.stopPropagation();
@@ -1656,7 +1656,7 @@ export default function Home({ user }: { user: SessionUser }) {
                                                         <Camera className="w-3.5 h-3.5" />
                                                     </button>
                                                     {/* 씰사진 전용 빨간 카메라: seal_photo_count가 0일 때만 표시 */}
-                                                    {(job.seal_photo_count === undefined || job.seal_photo_count === 0) && (
+                                                    {(job.photo_count && job.photo_count > 0) && (job.seal_photo_count === undefined || job.seal_photo_count === 0) && (
                                                         <button
                                                             onClick={(e) => {
                                                                 e.stopPropagation();
