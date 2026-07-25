@@ -66,4 +66,7 @@ get*.js
 # uploads and backups
 /uploads/
 /backup_src_20260724/
+src_backup_*/
+archive/
+
 

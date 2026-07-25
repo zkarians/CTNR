@@ -302,10 +302,10 @@ export async function generateWorkReport(filters: JobFilters): Promise<{ success
 
             if (filters.startDate) {
                 whereClauses.push(`COALESCE(p.uploaded_at, j.saved_at) AT TIME ZONE 'Asia/Seoul' >= $${paramIdx++}::timestamp`);
-                params.push(`${filters.startDate} 19:00:00`);
+                params.push(`${filters.startDate} 13:00:00`);
             }
             if (filters.endDate) {
-                whereClauses.push(`COALESCE(p.uploaded_at, j.saved_at) AT TIME ZONE 'Asia/Seoul' <= ($${paramIdx++}::date + INTERVAL '1 day 18 hours 59 minutes 59.999 seconds')`);
+                whereClauses.push(`COALESCE(p.uploaded_at, j.saved_at) AT TIME ZONE 'Asia/Seoul' <= ($${paramIdx++}::date + INTERVAL '1 day 12 hours 59 minutes 59.999 seconds')`);
                 params.push(filters.endDate);
             }
             if (filters.productName) {
@@ -346,6 +346,7 @@ export async function generateWorkReport(filters: JobFilters): Promise<{ success
                         MAX(remark) as remark
                     FROM container_photos
                     WHERE (is_deleted IS NOT TRUE)
+                      AND (is_completed IS NOT TRUE)
                     GROUP BY job_id, cntr_no
                 ) p ON p.job_id = j.id AND (p.cntr_no = r.cntr_no OR (r.cntr_no IS NULL AND p.cntr_no IS NULL))
                 LEFT JOIN teams t ON p.team_id = t.id
@@ -732,7 +733,13 @@ export async function resetTeamWorkProgress(
                     UPDATE container_photos
                     SET is_completed = false, completed_at = NULL
                     WHERE (is_deleted IS NOT TRUE)
-                      AND (uploaded_at - INTERVAL '6 hours')::date = $1::date
+                      AND (
+                        CASE
+                          WHEN EXTRACT(HOUR FROM (uploaded_at + INTERVAL '9 hours')) < 13
+                          THEN (uploaded_at + INTERVAL '9 hours')::date - INTERVAL '1 day'
+                          ELSE (uploaded_at + INTERVAL '9 hours')::date
+                        END
+                      ) = $1::date
                 `, [dateStr]);
                 return {
                     success: true,
@@ -743,7 +750,13 @@ export async function resetTeamWorkProgress(
                     UPDATE container_photos
                     SET is_deleted = true, deleted_at = NOW()
                     WHERE (is_deleted IS NOT TRUE)
-                      AND (uploaded_at - INTERVAL '6 hours')::date = $1::date
+                      AND (
+                        CASE
+                          WHEN EXTRACT(HOUR FROM (uploaded_at + INTERVAL '9 hours')) < 13
+                          THEN (uploaded_at + INTERVAL '9 hours')::date - INTERVAL '1 day'
+                          ELSE (uploaded_at + INTERVAL '9 hours')::date
+                        END
+                      ) = $1::date
                 `, [dateStr]);
                 return {
                     success: true,

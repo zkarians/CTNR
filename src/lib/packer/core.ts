@@ -1,4 +1,4 @@
-import { ContainerDimensions, Product, PackedItem, PackingResult } from "./types";
+import { ContainerDimensions, Product, PackedItem, PackingResult } from "../types";
 
 /**
  * V6.10 - Floating Item Fix

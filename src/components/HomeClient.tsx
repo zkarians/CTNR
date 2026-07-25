@@ -15,14 +15,8 @@ import ContainerViewer from '@/components/ContainerViewer';
 import LogoutButton from '@/components/LogoutButton';
 import PhotoGallery from '@/components/PhotoGallery';
 
-function isSameTeam(t1?: string, t2?: string): boolean {
-    if (!t1 || !t2) return false;
-    if (t1 === t2) return true;
-    const clean1 = t1.replace(/\s*\([^)]*\)/g, '').trim();
-    const clean2 = t2.replace(/\s*\([^)]*\)/g, '').trim();
-    if (clean1 && clean2 && clean1 === clean2) return true;
-    return t1.includes(t2) || t2.includes(t1);
-}
+import { getLocalDateString, getWorkDateString } from '@/lib/utils/dateUtils';
+import { isSameTeam } from '@/lib/utils/teamUtils';
 import {
     Product, PackingResult, ContainerType, CONTAINER_DATA, Job, JobFilters, DbConfig, UserAccount, Team
 } from '@/lib/types';
@@ -31,24 +25,6 @@ import { fetchJobs, fetchProductsByJob, searchProducts, getDbConfig, updateDbCon
 import { SessionUser } from '@/lib/auth';
 import { calculateTeamTimeline } from '@/lib/timeline';
 
-
-function getLocalDateString(d: Date): string {
-    const year = d.getFullYear();
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-}
-
-function getWorkDateString(d: Date = new Date()): string {
-    const workDate = new Date(d);
-    if (workDate.getHours() < 13) {
-        workDate.setDate(workDate.getDate() - 1);
-    }
-    const year = workDate.getFullYear();
-    const month = String(workDate.getMonth() + 1).padStart(2, '0');
-    const day = String(workDate.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-}
 
 export default function Home({ user }: { user: SessionUser }) {
     const isAdmin = user && (user.role.toUpperCase() === 'ADMIN' || user.role.toUpperCase() === 'MANAGER');

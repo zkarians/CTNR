@@ -247,11 +247,11 @@ export async function GET(req: NextRequest) {
 
         if (startDate) {
             whereSuffix += ` AND p.uploaded_at AT TIME ZONE 'Asia/Seoul' >= $${paramIdx++}::timestamp`;
-            params.push(`${startDate} 19:00:00`);
+            params.push(`${startDate} 13:00:00`);
         }
 
         if (endDate) {
-            whereSuffix += ` AND p.uploaded_at AT TIME ZONE 'Asia/Seoul' <= ($${paramIdx++}::date + INTERVAL '1 day 18 hours 59 minutes 59.999 seconds')`;
+            whereSuffix += ` AND p.uploaded_at AT TIME ZONE 'Asia/Seoul' <= ($${paramIdx++}::date + INTERVAL '1 day 12 hours 59 minutes 59.999 seconds')`;
             params.push(endDate);
         }
 
@@ -552,12 +552,12 @@ export async function DELETE(req: NextRequest) {
 
                 if (startDate) {
                     updateQuery += ` AND uploaded_at AT TIME ZONE 'Asia/Seoul' >= $${paramIdx}::timestamp`;
-                    params.push(`${startDate} 19:00:00`);
+                    params.push(`${startDate} 13:00:00`);
                     paramIdx++;
                 }
 
                 if (endDate) {
-                    updateQuery += ` AND uploaded_at AT TIME ZONE 'Asia/Seoul' <= ($${paramIdx}::date + INTERVAL '1 day 18 hours 59 minutes 59.999 seconds')`;
+                    updateQuery += ` AND uploaded_at AT TIME ZONE 'Asia/Seoul' <= ($${paramIdx}::date + INTERVAL '1 day 12 hours 59 minutes 59.999 seconds')`;
                     params.push(endDate);
                     paramIdx++;
                 }

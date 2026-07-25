@@ -55,10 +55,10 @@ export async function GET(req: NextRequest) {
 
                 if (startDate) {
                     query += ` AND uploaded_at AT TIME ZONE 'Asia/Seoul' >= ${paramIdx++}::timestamp`;
-                    params.push(`${startDate} 19:00:00`);
+                    params.push(`${startDate} 13:00:00`);
                 }
                 if (endDate) {
-                    query += ` AND uploaded_at AT TIME ZONE 'Asia/Seoul' <= (${paramIdx++}::date + INTERVAL '1 day 18 hours 59 minutes 59.999 seconds')`;
+                    query += ` AND uploaded_at AT TIME ZONE 'Asia/Seoul' <= (${paramIdx++}::date + INTERVAL '1 day 12 hours 59 minutes 59.999 seconds')`;
                     params.push(endDate);
                 }
                 if (userId) {
