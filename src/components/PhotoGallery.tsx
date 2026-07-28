@@ -787,6 +787,9 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
     React.useEffect(() => {
         if (isOpen && initialSearchCntrNo) {
             setSearchCntrNo(initialSearchCntrNo);
+            setStartDate('');
+            setEndDate('');
+            setSelectedTeamId('');
             if (folders.length > 0) {
                 const targetStr = initialSearchCntrNo.toUpperCase().trim();
                 const targetFolder = folders.find(f => f.cntrNo.toUpperCase().trim() === targetStr);
@@ -855,11 +858,11 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
     // Force non-admins to view their selected team if available
     useEffect(() => {
         if (isOpen && user) {
-            if (!isAdmin && user.teamId) {
+            if (!isAdmin && user.teamId && !initialSearchCntrNo) {
                 setSelectedTeamId(String(user.teamId));
             }
         }
-    }, [isOpen, user, isAdmin]);
+    }, [isOpen, user, isAdmin, initialSearchCntrNo]);
 
     // Load photos
     const loadPhotos = async () => {

@@ -605,7 +605,7 @@ function doTwoPhasePacking(container: any, normalProducts: Product[], smallProdu
         }
 
         let curZ = getMinTopZOfWall(wall, placed);
-        let filled = !isTopLay; // V5.02: Block filling if top item is laid down
+        let filled = true;
         let safetyCounter = 0;
         while (filled && curZ < container.height && safetyCounter++ < 200) {
             filled = false;
@@ -617,9 +617,29 @@ function doTwoPhasePacking(container: any, normalProducts: Product[], smallProdu
                 const avail = unpacked.get(sp.id) || 0;
                 if (avail <= 0) continue;
 
-                const orients = getOrients(sp);
-                for (const to of orients) {
-                    if (to.h > (container.height - curZ) + 0.5 || to.l > wallBaseL || to.w > wallMaxW + 100) continue;
+                const p2Orients: { w: number; l: number; h: number; type: 'std' | 'rot' | 'lay' }[] = [
+                    { w: sp.width, l: sp.length, h: sp.height, type: 'std' }
+                ];
+                if (sp.allow_rotate && sp.width !== sp.length) {
+                    p2Orients.push({ w: sp.length, l: sp.width, h: sp.height, type: 'rot' });
+                }
+                if (sp.height > sp.width || sp.height > sp.length) {
+                    p2Orients.push({ w: sp.width, l: sp.height, h: sp.length, type: 'lay' });
+                    if (sp.allow_rotate && sp.width !== sp.length) {
+                        p2Orients.push({ w: sp.length, l: sp.height, h: sp.width, type: 'lay' });
+                    }
+                }
+
+                for (const to of p2Orients) {
+                    const isLayOrient = (to.type === 'lay');
+                    const maxAvailL = isLayOrient ? (container.length - wall.y) : wallBaseL;
+                    if (to.h > (container.height - curZ) + 0.5 || to.l > maxAvailL || to.w > wallMaxW + 100) continue;
+
+                    // 눕힘 박스 위 눕힘 중복 적재(Z축) 엄격 금지 규칙
+                    if (isLayOrient) {
+                        const hasUnderLay = wall.items.some(it => it.orientation === 'lay');
+                        if (hasUnderLay) continue;
+                    }
 
                     const baseMaxH = wall.items.reduce((max: number, it: any) => Math.max(max, isSmallProduct(it.product) ? 0 : it.h), 0);
                     if (baseMaxH < 500 && to.h >= 670) continue;
@@ -628,11 +648,11 @@ function doTwoPhasePacking(container: any, normalProducts: Product[], smallProdu
                     if (isTopperLow && baseMaxH < 500) continue;
 
                     const suppW = Math.min(to.w, wallMaxW);
-                    const suppL = Math.min(to.l, wallBaseL);
+                    const suppL = Math.min(to.l, maxAvailL);
                     if (suppW * suppL < to.w * to.l * 0.66) continue;
 
                     const fitCountW = Math.floor((wallMaxW + 100) / to.w);
-                    const fitCountL = Math.floor((wallBaseL + 100) / to.l);
+                    const fitCountL = Math.floor((maxAvailL + 100) / to.l);
                     if (fitCountW === 0 || fitCountL === 0) continue;
                     const fitCount = fitCountW * fitCountL;
                     const rowCount = Math.min(fitCount, avail);
@@ -684,10 +704,13 @@ function doTwoPhasePacking(container: any, normalProducts: Product[], smallProdu
                                     break; // 지탱 공간이 확보되지 않으면 슬라이딩 불가
                                 }
                                 let overlap = false;
-                                for (let i = 0; i < overlapCandidates.length; i++) {
-                                    const other = overlapCandidates[i];
+                                const checkList = [...placed, ...rowItems];
+                                for (let i = 0; i < checkList.length; i++) {
+                                    const other = checkList[i];
+                                    const xOverlap = Math.max(targetX, other.x) < Math.min(targetX + to.w, other.x + other.w) - 0.5;
                                     const yOverlap = Math.max(candidateY, other.y) < Math.min(candidateY + to.l, other.y + other.l) - 0.5;
-                                    if (yOverlap) {
+                                    const zOverlap = Math.max(targetZ, other.z) < Math.min(targetZ + to.h, other.z + other.h) - 0.5;
+                                    if (xOverlap && yOverlap && zOverlap) {
                                         overlap = true;
                                         break;
                                     }

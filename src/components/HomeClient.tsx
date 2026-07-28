@@ -2008,6 +2008,14 @@ export default function Home({ user }: { user: SessionUser }) {
         </>
     );
 
+    if (!mounted) {
+        return (
+            <div className="h-screen w-screen bg-[#030712] flex items-center justify-center text-slate-400 font-sans">
+                <div className="w-8 h-8 border-2 border-sky-500 border-t-transparent rounded-full animate-spin" />
+            </div>
+        );
+    }
+
     return (
         <div suppressHydrationWarning>
             {/* ──────────── 데스크탑 레이아웃 (md 이상) ──────────── */}

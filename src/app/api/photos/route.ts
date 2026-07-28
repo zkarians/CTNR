@@ -242,16 +242,17 @@ export async function GET(req: NextRequest) {
         let paramIdx = 1;
         let whereSuffix = `WHERE ${showTrash ? 'p.is_deleted = true' : '(p.is_deleted IS NULL OR p.is_deleted = false)'}`;
         
-        if (!showTrash) {
+        // 특정 컨테이너 번호(cntrNo)로 검색/조회 시 완료 여부, 날짜, 조 제한 없이 전체 사진 조회 허용
+        if (!showTrash && !cntrNo) {
             whereSuffix += ` AND ${showCompleted ? 'p.is_completed = true' : '(p.is_completed IS NULL OR p.is_completed = false)'}`;
         }
 
-        if (startDate) {
+        if (startDate && !cntrNo) {
             whereSuffix += ` AND p.uploaded_at AT TIME ZONE 'Asia/Seoul' >= $${paramIdx++}::timestamp`;
             params.push(`${startDate} 13:00:00`);
         }
 
-        if (endDate) {
+        if (endDate && !cntrNo) {
             whereSuffix += ` AND p.uploaded_at AT TIME ZONE 'Asia/Seoul' <= ($${paramIdx++}::date + INTERVAL '1 day 12 hours 59 minutes 59.999 seconds')`;
             params.push(endDate);
         }
@@ -264,7 +265,10 @@ export async function GET(req: NextRequest) {
             targetTeamId = String(session.teamId);
         }
 
-        if (targetTeamId) {
+        if (cntrNo) {
+            whereSuffix += ` AND p.cntr_no ILIKE $${paramIdx++}`;
+            params.push(`%${cntrNo}%`);
+        } else if (targetTeamId) {
             whereSuffix += ` AND p.team_id = $${paramIdx++}`;
             params.push(targetTeamId);
         } else if (userId) {
@@ -272,41 +276,30 @@ export async function GET(req: NextRequest) {
             params.push(userId);
         }
 
-        if (cntrNo) {
-            whereSuffix += ` AND p.cntr_no ILIKE $${paramIdx++}`;
-            params.push(`%${cntrNo}%`);
-        }
-
-        // Wrap with subquery: inner DISTINCT ON deduplicates rows from 1:N join,
-        // outer ORDER BY applies final sort by uploaded_at DESC
         const query = `
-            SELECT * FROM (
-                SELECT DISTINCT ON (p.id)
-                    p.id, 
-                    p.job_id, 
-                    p.cntr_no, 
-                    p.photo_path, 
-                    p.remark, 
-                    p.uploaded_at, 
-                    p.uploaded_by, 
-                    p.team_id,
-                    p.work_duration_minutes,
-                    p.is_completed,
-                    p.completed_at, p.gdrive_file_id, p.gdrive_url,
-                    t.name as team_name,
-                    COALESCE(NULLIF(u.name, ''), NULLIF(u.username, ''), '퇴사자') as uploader_name, 
-                    COALESCE(u.username, '') as uploader_username, 
-                    j.job_name,
-                    r.transporter
-                FROM container_photos p
-                LEFT JOIN teams t ON p.team_id = t.id
-                LEFT JOIN "User" u ON p.uploaded_by = u.id
-                LEFT JOIN container_jobs j ON p.job_id = j.id
-                LEFT JOIN container_results r ON r.job_id = p.job_id AND r.cntr_no = p.cntr_no
-                ${whereSuffix}
-                ORDER BY p.id
-            ) sub
-            ORDER BY sub.uploaded_at DESC
+            SELECT 
+                p.id, 
+                p.job_id, 
+                p.cntr_no, 
+                p.photo_path, 
+                p.remark, 
+                p.uploaded_at, 
+                p.uploaded_by, 
+                p.team_id,
+                p.work_duration_minutes,
+                p.is_completed,
+                p.completed_at, p.gdrive_file_id, p.gdrive_url,
+                t.name as team_name,
+                COALESCE(NULLIF(u.name, ''), NULLIF(u.username, ''), NULLIF(p.uploader_name, ''), '퇴사자') as uploader_name, 
+                COALESCE(u.username, p.uploader_username, '') as uploader_username, 
+                j.job_name,
+                (SELECT transporter FROM container_results WHERE cntr_no = p.cntr_no LIMIT 1) as transporter
+            FROM container_photos p
+            LEFT JOIN teams t ON p.team_id = t.id
+            LEFT JOIN "User" u ON u.id = p.uploaded_by
+            LEFT JOIN container_jobs j ON p.job_id = j.id
+            ${whereSuffix}
+            ORDER BY p.uploaded_at DESC
         `;
 
         const client = await pool.connect();

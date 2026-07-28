@@ -261,11 +261,31 @@ function getLocalDateString(d: Date): string {
 }
 
 function getWorkDateString(d: Date = new Date()): string {
-    const workDate = new Date(d);
-    if (workDate.getHours() < 13) {
-        workDate.setDate(workDate.getDate() - 1);
+    const formatter = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'Asia/Seoul',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        hour12: false
+    });
+    const parts = formatter.formatToParts(d);
+    let year = '', month = '', day = '', hour = 0;
+    for (const part of parts) {
+        if (part.type === 'year') year = part.value;
+        if (part.type === 'month') month = part.value;
+        if (part.type === 'day') day = part.value;
+        if (part.type === 'hour') hour = parseInt(part.value, 10);
     }
-    return getLocalDateString(workDate);
+    if (hour < 13) {
+        const kstDate = new Date(Date.UTC(parseInt(year, 10), parseInt(month, 10) - 1, parseInt(day, 10)));
+        kstDate.setUTCDate(kstDate.getUTCDate() - 1);
+        const yyyy = kstDate.getUTCFullYear();
+        const mm = String(kstDate.getUTCMonth() + 1).padStart(2, '0');
+        const dd = String(kstDate.getUTCDate()).padStart(2, '0');
+        return `${yyyy}-${mm}-${dd}`;
+    }
+    return `${year}-${month}-${day}`;
 }
 
 
@@ -606,9 +626,9 @@ export async function fetchTeamWorkProgress(targetWorkDate?: string): Promise<Re
                   AND (p.is_completed IS NOT TRUE)
                   AND (
                     CASE
-                      WHEN EXTRACT(HOUR FROM (p.uploaded_at + INTERVAL '9 hours')) < 13
-                      THEN (p.uploaded_at + INTERVAL '9 hours')::date - INTERVAL '1 day'
-                      ELSE (p.uploaded_at + INTERVAL '9 hours')::date
+                      WHEN EXTRACT(HOUR FROM (p.uploaded_at AT TIME ZONE 'Asia/Seoul')) < 13
+                      THEN ((p.uploaded_at AT TIME ZONE 'Asia/Seoul')::date - INTERVAL '1 day')::date
+                      ELSE (p.uploaded_at AT TIME ZONE 'Asia/Seoul')::date
                     END
                   ) = $1::date
                 GROUP BY COALESCE(t.name, '미지정 조'), COALESCE(p.cntr_no, j.job_name, '미지정')
@@ -748,9 +768,9 @@ export async function resetTeamWorkProgress(
                     WHERE (is_deleted IS NOT TRUE)
                       AND (
                         CASE
-                          WHEN EXTRACT(HOUR FROM (uploaded_at + INTERVAL '9 hours')) < 13
-                          THEN (uploaded_at + INTERVAL '9 hours')::date - INTERVAL '1 day'
-                          ELSE (uploaded_at + INTERVAL '9 hours')::date
+                          WHEN EXTRACT(HOUR FROM (uploaded_at AT TIME ZONE 'Asia/Seoul')) < 13
+                          THEN ((uploaded_at AT TIME ZONE 'Asia/Seoul')::date - INTERVAL '1 day')::date
+                          ELSE (uploaded_at AT TIME ZONE 'Asia/Seoul')::date
                         END
                       ) = $1::date
                 `, [dateStr]);
@@ -765,9 +785,9 @@ export async function resetTeamWorkProgress(
                     WHERE (is_deleted IS NOT TRUE)
                       AND (
                         CASE
-                          WHEN EXTRACT(HOUR FROM (uploaded_at + INTERVAL '9 hours')) < 13
-                          THEN (uploaded_at + INTERVAL '9 hours')::date - INTERVAL '1 day'
-                          ELSE (uploaded_at + INTERVAL '9 hours')::date
+                          WHEN EXTRACT(HOUR FROM (uploaded_at AT TIME ZONE 'Asia/Seoul')) < 13
+                          THEN ((uploaded_at AT TIME ZONE 'Asia/Seoul')::date - INTERVAL '1 day')::date
+                          ELSE (uploaded_at AT TIME ZONE 'Asia/Seoul')::date
                         END
                       ) = $1::date
                 `, [dateStr]);

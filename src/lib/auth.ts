@@ -45,26 +45,33 @@ export async function isTeamSelectionValid(user: SessionUser | null): Promise<bo
         const selectedDate = new Date(user.teamSelectedAt);
         if (isNaN(selectedDate.getTime())) return false;
 
-        // KST 기준 (UTC+9) 날짜/시간 변환
-        const kstOffsetMs = 9 * 60 * 60 * 1000;
-        const selectedKst = new Date(selectedDate.getTime() + kstOffsetMs);
+        const formatter = new Intl.DateTimeFormat('en-US', {
+            timeZone: 'Asia/Seoul',
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            hour12: false
+        });
 
-        // 만료 일시 산출 (KST 기준)
-        // 13시 이전 선택 시 -> 당일 13시 KST
-        // 13시 이후 선택 시 -> 익일 13시 KST
-        const expireKst = new Date(selectedKst);
-        expireKst.setUTCHours(13, 0, 0, 0); // KST 13:00 설정 (UTC 기준 04:00)
-
-        if (selectedKst.getUTCHours() >= 13) {
-            // 13시 이후 선택했으면 다음날 13시로 연장
-            expireKst.setUTCDate(expireKst.getUTCDate() + 1);
+        const parts = formatter.formatToParts(selectedDate);
+        let year = 0, month = 0, day = 0, hour = 0;
+        for (const part of parts) {
+            if (part.type === 'year') year = parseInt(part.value, 10);
+            if (part.type === 'month') month = parseInt(part.value, 10);
+            if (part.type === 'day') day = parseInt(part.value, 10);
+            if (part.type === 'hour') hour = parseInt(part.value, 10);
         }
 
-        // expireKst (KST)를 UTC 타임스탬프로 환산하여 비교
-        const expireUtcMs = expireKst.getTime() - kstOffsetMs;
-        const nowMs = Date.now();
+        // KST 13:00 equals 04:00 UTC
+        let expireUtc: Date;
+        if (hour < 13) {
+            expireUtc = new Date(Date.UTC(year, month - 1, day, 4, 0, 0, 0));
+        } else {
+            expireUtc = new Date(Date.UTC(year, month - 1, day + 1, 4, 0, 0, 0));
+        }
 
-        return nowMs < expireUtcMs;
+        return Date.now() < expireUtc.getTime();
     } catch {
         return false;
     }
