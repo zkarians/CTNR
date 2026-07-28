@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { getSession, isTeamSelectionValid } from "@/lib/auth";
-import HomeClient from "@/components/HomeClient";
+import ClientOnlyHome from "@/components/ClientOnlyHome";
 
 export default async function Page() {
     const user = await getSession();
@@ -17,5 +17,5 @@ export default async function Page() {
         redirect("/select-team");
     }
 
-    return <HomeClient user={user} />;
+    return <ClientOnlyHome user={user} />;
 }
