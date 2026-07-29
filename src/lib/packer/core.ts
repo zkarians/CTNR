@@ -1352,8 +1352,16 @@ function blockPackShelf(W: number, H: number, D: number, allProducts: Product[],
                                          const isLastBlock = (W - currentX - totalW) <= 50;
                                          const topperWLimit = (isMixedWidthSpecialJob && !isLastBlock) ? 0 : 300;
                                          const maxAllowedW = Math.min(totalW + topperWLimit, W - currentX);
-                                         const fitCountW = Math.floor(maxAllowedW / to.w);
-                                         const fitCountL = Math.floor(Math.min(totalL + 100, D) / to.l);
+                                         
+                                         // V5.06: 눕힌 제품(lay)은 Z축 적재가 불가한 대신, 
+                                         // 축이 변경되어 XY축 방향으로 제약 없이 확장이 가능하도록 허용합니다.
+                                         const actualMaxW = to.type === 'lay' ? (W - currentX) : maxAllowedW;
+                                         const fitCountW = Math.floor(actualMaxW / to.w);
+                                         
+                                         // 깊이(Y축)도 동일하게 베이스 블록(totalL)의 제약을 풀고 남은 공간(D) 끝까지 허용합니다.
+                                         const actualMaxL = to.type === 'lay' ? D : Math.min(totalL + 100, D);
+                                         const fitCountL = Math.floor(actualMaxL / to.l);
+                                         
                                          const fitCount = fitCountW * fitCountL;
                                         if (fitCount === 0) continue;
                                         const rowCount = Math.min(fitCount, combinedAvail);
@@ -1471,6 +1479,12 @@ function blockPackShelf(W: number, H: number, D: number, allProducts: Product[],
                                     if (rpAvail <= 0) continue;
                                     const rpOrients = getOrients(rp).filter(ro => ro.w <= remainW + 0.5 && ro.l <= D + 0.5 && ro.h <= H + 0.5);
                                     for (const ro of rpOrients) {
+                                        // V6.13: Don't let lookAheadVol overestimate lay items that will be rejected by layPenalty
+                                        if (ro.type === 'lay') {
+                                            const wastedH = H - ro.h;
+                                            if (wastedH > H * 0.2) continue;
+                                        }
+
                                         const bwFit = Math.floor((remainW + 0.5) / ro.w);
                                         const lFit = Math.floor(((isMixedWidthSpecialJob ? D : totalL) + 0.5) / ro.l);
                                         
