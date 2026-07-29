@@ -1425,6 +1425,16 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
         }
     };
 
+    const handleToggleTeamFolders = (teamFolders: ContainerFolder[]) => {
+        const teamFolderKeys = teamFolders.map(f => f.cntrNo + '|' + f.workDateStr);
+        const allSelected = teamFolderKeys.length > 0 && teamFolderKeys.every(key => selectedFolders.includes(key));
+        if (allSelected) {
+            setSelectedFolders(prev => prev.filter(key => !teamFolderKeys.includes(key)));
+        } else {
+            setSelectedFolders(prev => Array.from(new Set([...prev, ...teamFolderKeys])));
+        }
+    };
+
     const handleBrowseFolder = async () => {
         setIsLoading(true);
         try {
@@ -2165,6 +2175,12 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
                                                                             <span className="text-slate-900 font-extrabold">{subTeam.teamName}</span>
                                                                             <span className="text-[10px] text-slate-500 font-bold">({subTeam.folders.length}개 컨테이너 · {subTeam.totalPhotos}장)</span>
                                                                         </div>
+                                                                        <button
+                                                                            onClick={() => handleToggleTeamFolders(subTeam.folders)}
+                                                                            className="px-2.5 py-1 text-[10px] font-black rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-100 border border-emerald-200 transition-colors cursor-pointer"
+                                                                        >
+                                                                            {subTeam.folders.length > 0 && subTeam.folders.every(f => selectedFolders.includes(f.cntrNo + '|' + f.workDateStr)) ? '전체 해제' : '전체 선택'}
+                                                                        </button>
                                                                     </div>
                                                                     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
                                                                         {subTeam.folders.map(folder => renderFolderItem(folder))}
