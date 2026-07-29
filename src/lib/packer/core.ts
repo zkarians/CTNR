@@ -623,10 +623,12 @@ function doTwoPhasePacking(container: any, normalProducts: Product[], smallProdu
                 if (sp.allow_rotate && sp.width !== sp.length) {
                     p2Orients.push({ w: sp.length, l: sp.width, h: sp.height, type: 'rot' });
                 }
-                if (sp.height > sp.width || sp.height > sp.length) {
+                if (sp.allow_lay_down) {
                     p2Orients.push({ w: sp.width, l: sp.height, h: sp.length, type: 'lay' });
+                    p2Orients.push({ w: sp.height, l: sp.length, h: sp.width, type: 'lay' });
                     if (sp.allow_rotate && sp.width !== sp.length) {
                         p2Orients.push({ w: sp.length, l: sp.height, h: sp.width, type: 'lay' });
+                        p2Orients.push({ w: sp.height, l: sp.width, h: sp.length, type: 'lay' });
                     }
                 }
 
@@ -830,8 +832,11 @@ function doTwoPhasePacking(container: any, normalProducts: Product[], smallProdu
 
             const p1 = rem[0];
             const depthCandidates = p1.allow_rotate 
-                ? [p1.length, p1.width, p1.height] 
-                : [p1.length, p1.height];
+                ? [p1.length, p1.width] 
+                : [p1.length];
+            if (p1.allow_lay_down) {
+                depthCandidates.push(p1.height);
+            }
             
             // V4.27 Depth Expansion (Phase 3)
             const smallRem = allProducts.filter(p => (unpacked.get(p.id) || 0) > 0 && isSmallProduct(p));
@@ -1073,8 +1078,11 @@ function doTwoPhasePacking(container: any, normalProducts: Product[], smallProdu
 
             const p1 = rem[0];
             const depthCandidates = p1.allow_rotate 
-                ? [p1.length, p1.width, p1.height] 
-                : [p1.length, p1.height];
+                ? [p1.length, p1.width] 
+                : [p1.length];
+            if (p1.allow_lay_down) {
+                depthCandidates.push(p1.height);
+            }
             const depths = Array.from(new Set(depthCandidates)).filter(d => d > 0 && d <= (container.length - currentY) + 0.5).sort((a, b) => b - a);
 
             let bestWItems: any[] = [];
