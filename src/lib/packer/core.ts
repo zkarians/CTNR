@@ -1234,8 +1234,8 @@ function blockPackShelf(W: number, H: number, D: number, allProducts: Product[],
                             if (totalW > (W - currentX) + 0.5) break;
                             if (totalL > D + 0.5) break;
 
-                            // V5.05: If orientation is 'lay', limit height count to 1 to prevent stacking laid down items
-                            const maxHCount = o.type === 'lay' ? 1 : Math.floor((H + 0.5) / o.h);
+                            // V5.05: If orientation is 'lay', limit height count to 2 to allow stacking laid down items up to 2 high
+                            const maxHCount = o.type === 'lay' ? 2 : Math.floor((H + 0.5) / o.h);
                             let limitHCount = Math.min(maxHCount, Math.floor(unpacked.get(p.id)! / (bW * bL)));
                             if (isLowHeightProduct(p, o.h)) {
                                 limitHCount = Math.min(limitHCount, 10);
@@ -1287,8 +1287,9 @@ function blockPackShelf(W: number, H: number, D: number, allProducts: Product[],
                                 const effectiveAllowSmall = allowSmall || (passIdx === 1);
 
                             // ROW-BASED TOPPING (V4.12)
-                            // V5.02: No stacking on top of laid down (lay) items
-                            let zPossible = o.type !== 'lay';
+                            // V5.02: Allow up to 2 stacked lay items
+                            let layStackCount = o.type === 'lay' ? hCount : 0;
+                            let zPossible = o.type !== 'lay' || layStackCount < 2;
                             while (curZ < H && zPossible) {
                                 zPossible = false;
                                 let bestRowScore = -Infinity;
@@ -1442,8 +1443,9 @@ function blockPackShelf(W: number, H: number, D: number, allProducts: Product[],
                                         tempU_Col.set(ri.product.id, tempU_Col.get(ri.product.id)! - 1);
                                     }
                                     curZ += bestRowH;
-                                    // V5.04: If the stacked item is laid down, stop filling on top of it.
-                                    zPossible = bestRowItems[0].orientation !== 'lay';
+                                    // V5.04: Check stacked lay item limits
+                                    if (bestRowItems[0].orientation === 'lay') layStackCount++;
+                                    zPossible = bestRowItems[0].orientation !== 'lay' || layStackCount < 2;
                                 }
                             }
 
