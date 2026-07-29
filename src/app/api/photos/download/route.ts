@@ -4,6 +4,7 @@ import { pool } from '@/lib/db';
 import fs from 'fs';
 import path from 'path';
 import JSZip from 'jszip';
+import { downloadFromGoogleDrive, findGoogleDriveFileByName } from '@/lib/gdrive';
 
 export async function GET(req: NextRequest) {
     try {
@@ -31,12 +32,12 @@ export async function GET(req: NextRequest) {
         }
 
         const client = await pool.connect();
-        let photos: { cntr_no: string; photo_path: string }[] = [];
+        let photos: { cntr_no: string; photo_path: string; gdrive_file_id?: string; gdrive_url?: string }[] = [];
         try {
             if (idsParam) {
                 const ids = idsParam.split(',').map(s => s.trim()).filter(Boolean);
                 const res = await client.query(
-                    `SELECT cntr_no, photo_path 
+                    `SELECT cntr_no, photo_path, gdrive_file_id, gdrive_url 
                      FROM container_photos 
                      WHERE id = ANY($1) AND (is_deleted IS NULL OR is_deleted = false)`,
                     [ids]
@@ -45,7 +46,7 @@ export async function GET(req: NextRequest) {
             } else {
                 const cntrNos = cntrNosParam!.split(',').map(s => s.trim().toUpperCase()).filter(Boolean);
                 let query = `
-                    SELECT cntr_no, photo_path 
+                    SELECT cntr_no, photo_path, gdrive_file_id, gdrive_url 
                     FROM container_photos 
                     WHERE cntr_no = ANY($1)
                       AND (is_deleted IS NULL OR is_deleted = false)
@@ -77,7 +78,7 @@ export async function GET(req: NextRequest) {
             return new NextResponse('No photos found for selected containers', { status: 404 });
         }
 
-        const uploadsDir = process.env.UPLOAD_DIR || path.join(process.cwd(), 'uploads');
+        const uploadsDir = path.resolve(process.env.UPLOAD_DIR || path.join(process.cwd(), 'uploads'));
 
         // 2. Build ZIP using JSZip (pure JS, no native streams needed)
         const zip = new JSZip();
@@ -88,9 +89,59 @@ export async function GET(req: NextRequest) {
                 const relativePath = photo.photo_path;
                 const fullPath = path.resolve(uploadsDir, relativePath);
 
+                let fileBuffer: Buffer | null = null;
+                const relPath = path.relative(uploadsDir, fullPath);
+                const isSafe = !relPath.startsWith('..') && !path.isAbsolute(relPath);
+
                 // Security check: ensure filePath is inside uploads directory
-                if (fullPath.startsWith(uploadsDir) && fs.existsSync(fullPath)) {
-                    const fileBuffer = await fs.promises.readFile(fullPath);
+                if (isSafe && fs.existsSync(fullPath)) {
+                    fileBuffer = await fs.promises.readFile(fullPath);
+                } else {
+                    // Try fetching from GDrive if local file is missing
+                    try {
+                        let gdriveFileId = photo.gdrive_file_id;
+                        let gdriveUrl = photo.gdrive_url;
+
+                        if (!gdriveFileId) {
+                            const foundGDrive = await findGoogleDriveFileByName(relativePath);
+                            if (foundGDrive) {
+                                gdriveFileId = foundGDrive.fileId;
+                                gdriveUrl = foundGDrive.gdriveUrl;
+                            }
+                        }
+
+                        const fetchUrl = gdriveUrl || (gdriveFileId ? `https://lh3.googleusercontent.com/d/${gdriveFileId}` : null);
+                        if (fetchUrl) {
+                            try {
+                                const res = await fetch(fetchUrl, { signal: AbortSignal.timeout(5000) });
+                                if (res.ok) {
+                                    fileBuffer = Buffer.from(await res.arrayBuffer());
+                                }
+                            } catch (e) {}
+                        }
+
+                        if (!fileBuffer && gdriveFileId) {
+                            try {
+                                fileBuffer = await downloadFromGoogleDrive(gdriveFileId);
+                            } catch (e) {}
+                        }
+
+                        if (fileBuffer) {
+                            // Cache locally for future use
+                            try {
+                                const dir = path.dirname(fullPath);
+                                if (!fs.existsSync(dir)) {
+                                    fs.mkdirSync(dir, { recursive: true });
+                                }
+                                await fs.promises.writeFile(fullPath, fileBuffer);
+                            } catch (e) {}
+                        }
+                    } catch (err) {
+                        console.warn(`[Zip GDrive Fetch Error] ${relativePath}:`, err);
+                    }
+                }
+
+                if (fileBuffer) {
                     zip.file(relativePath, fileBuffer);
                 }
             })

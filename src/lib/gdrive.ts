@@ -92,3 +92,19 @@ export async function findGoogleDriveFileByName(
     }
     return null;
 }
+
+/**
+ * Download a file from Google Drive as a Buffer
+ */
+export async function downloadFromGoogleDrive(fileId: string): Promise<Buffer> {
+    const auth = getOAuth2Client();
+    const drive = google.drive({ version: 'v3', auth });
+
+    const response = await drive.files.get(
+        { fileId, alt: 'media' },
+        { responseType: 'arraybuffer' }
+    );
+
+    return Buffer.from(response.data as ArrayBuffer);
+}
+

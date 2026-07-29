@@ -3,6 +3,7 @@ import { getSession } from '@/lib/auth';
 import { pool } from '@/lib/db';
 import fs from 'fs';
 import path from 'path';
+import { downloadFromGoogleDrive, findGoogleDriveFileByName } from '@/lib/gdrive';
 
 export async function POST(req: NextRequest) {
     try {
@@ -37,12 +38,12 @@ export async function POST(req: NextRequest) {
 
         // 1. Fetch photo paths from the database for the selected containers
         const client = await pool.connect();
-        let photos: { cntr_no: string; photo_path: string }[] = [];
+        let photos: { cntr_no: string; photo_path: string; gdrive_file_id?: string; gdrive_url?: string }[] = [];
         try {
             if (idsParam) {
                 const ids = (Array.isArray(idsParam) ? idsParam : String(idsParam).split(',')).map((s: any) => String(s).trim()).filter(Boolean);
                 const res = await client.query(
-                    `SELECT cntr_no, photo_path 
+                    `SELECT cntr_no, photo_path, gdrive_file_id, gdrive_url 
                      FROM container_photos 
                      WHERE id = ANY($1) AND (is_deleted IS NULL OR is_deleted = false)`,
                     [ids]
@@ -60,7 +61,7 @@ export async function POST(req: NextRequest) {
                 }
 
                 const query = `
-                    SELECT cntr_no, photo_path 
+                    SELECT cntr_no, photo_path, gdrive_file_id, gdrive_url 
                     FROM container_photos 
                     WHERE UPPER(TRIM(cntr_no)) = ANY($1)
                       AND (is_deleted IS NULL OR is_deleted = false)
@@ -76,7 +77,7 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: '선택한 컨테이너에 사진이 없습니다.' }, { status: 404 });
         }
 
-        const uploadsDir = process.env.UPLOAD_DIR || path.join(process.cwd(), 'uploads');
+        const uploadsDir = path.resolve(process.env.UPLOAD_DIR || path.join(process.cwd(), 'uploads'));
         const totalPhotos = photos.length;
 
         const stream = new ReadableStream({
@@ -110,7 +111,60 @@ export async function POST(req: NextRequest) {
                     const sourceFilePath = path.resolve(uploadsDir, relativePath);
                     const filename = path.basename(relativePath);
 
-                    if (sourceFilePath.startsWith(uploadsDir) && fs.existsSync(sourceFilePath)) {
+                    let sourceBuffer: Buffer | null = null;
+                    const relPath = path.relative(uploadsDir, sourceFilePath);
+                    const isSafe = !relPath.startsWith('..') && !path.isAbsolute(relPath);
+
+                    if (isSafe && fs.existsSync(sourceFilePath)) {
+                        try {
+                            sourceBuffer = fs.readFileSync(sourceFilePath);
+                        } catch (e) {}
+                    } else {
+                        // Fetch from Google Drive if local file is missing
+                        try {
+                            let gdriveFileId = photo.gdrive_file_id;
+                            let gdriveUrl = photo.gdrive_url;
+
+                            if (!gdriveFileId) {
+                                const foundGDrive = await findGoogleDriveFileByName(filename);
+                                if (foundGDrive) {
+                                    gdriveFileId = foundGDrive.fileId;
+                                    gdriveUrl = foundGDrive.gdriveUrl;
+                                }
+                            }
+
+                            const fetchUrl = gdriveUrl || (gdriveFileId ? `https://lh3.googleusercontent.com/d/${gdriveFileId}` : null);
+                            if (fetchUrl) {
+                                try {
+                                    const res = await fetch(fetchUrl, { signal: AbortSignal.timeout(5000) });
+                                    if (res.ok) {
+                                        sourceBuffer = Buffer.from(await res.arrayBuffer());
+                                    }
+                                } catch (e) {}
+                            }
+
+                            if (!sourceBuffer && gdriveFileId) {
+                                try {
+                                    sourceBuffer = await downloadFromGoogleDrive(gdriveFileId);
+                                } catch (e) {}
+                            }
+
+                            if (sourceBuffer) {
+                                // Cache locally for future speed
+                                try {
+                                    const dir = path.dirname(sourceFilePath);
+                                    if (!fs.existsSync(dir)) {
+                                        fs.mkdirSync(dir, { recursive: true });
+                                    }
+                                    fs.writeFileSync(sourceFilePath, sourceBuffer);
+                                } catch (e) {}
+                            }
+                        } catch (gErr) {
+                            console.warn(`[Local Copy GDrive Fetch Error] ${filename}:`, gErr);
+                        }
+                    }
+
+                    if (sourceBuffer) {
                         const containerFolder = photo.cntr_no.replace(/[^a-zA-Z0-9]/g, '_').toUpperCase();
                         const destContainerDir = path.join(resolvedTargetDir, containerFolder);
                         
@@ -125,7 +179,7 @@ export async function POST(req: NextRequest) {
                         } else {
                             const tmpFilePath = `${destFilePath}.${Date.now()}_${Math.random().toString(36).substring(2, 7)}.tmp`;
                             try {
-                                fs.copyFileSync(sourceFilePath, tmpFilePath);
+                                fs.writeFileSync(tmpFilePath, sourceBuffer);
                                 fs.renameSync(tmpFilePath, destFilePath);
                                 copiedCount++;
                             } catch (copyErr) {

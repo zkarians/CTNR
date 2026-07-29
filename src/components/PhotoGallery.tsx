@@ -1498,6 +1498,18 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
 
     const handleDownload = async (photo: Photo, e?: React.MouseEvent) => {
         if (e) e.stopPropagation();
+        const cleanCntr = (photo.cntr_no || "CNTR").replace(/[^a-zA-Z0-9]/g, '_');
+        let dateStr = 'DATE';
+        let timeStr = 'TIME';
+        if (photo.uploaded_at) {
+            const dateObj = new Date(photo.uploaded_at);
+            if (!isNaN(dateObj.getTime())) {
+                dateStr = dateObj.toISOString().slice(0, 10).replace(/-/g, '');
+                timeStr = dateObj.toTimeString().slice(0, 8).replace(/:/g, '');
+            }
+        }
+        const downloadFilename = `${cleanCntr}_${dateStr}_${timeStr}.jpg`;
+
         try {
             const response = await fetch(`/api/photos/view?filename=${encodeURIComponent(photo.photo_path)}`);
             if (!response.ok) throw new Error("File not found");
@@ -1505,21 +1517,26 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            
-            // Format: CNTR_NO_DATE_TIME.jpg
-            const cleanCntr = (photo.cntr_no || "CNTR").replace(/[^a-zA-Z0-9]/g, '_');
-            const dateObj = new Date(photo.uploaded_at);
-            const dateStr = dateObj.toISOString().slice(0, 10).replace(/-/g, '');
-            const timeStr = dateObj.toTimeString().slice(0, 8).replace(/:/g, '');
-            a.download = `${cleanCntr}_${dateStr}_${timeStr}.jpg`;
+            a.download = downloadFilename;
             
             document.body.appendChild(a);
             a.click();
             a.remove();
             window.URL.revokeObjectURL(url);
         } catch (error) {
-            console.error('Download error:', error);
-            alert('사진 다운로드 중 오류가 발생했습니다.');
+            console.error('Download fetch error, falling back to direct download link:', error);
+            try {
+                const directUrl = `/api/photos/view?filename=${encodeURIComponent(photo.photo_path)}&download=1`;
+                const a = document.createElement('a');
+                a.href = directUrl;
+                a.download = downloadFilename;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+            } catch (fallbackErr) {
+                console.error('Fallback download failed:', fallbackErr);
+                alert('사진 다운로드 중 오류가 발생했습니다.');
+            }
         }
     };
 

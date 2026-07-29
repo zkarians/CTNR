@@ -293,6 +293,7 @@ export default function Home({ user }: { user: SessionUser }) {
     const [isAddManualOpen, setIsAddManualOpen] = useState(false);
     const [isCancelManageOpen, setIsCancelManageOpen] = useState(false);
     const [manualTeamName, setManualTeamName] = useState('1조(BNI)');
+    const [editingReportItem, setEditingReportItem] = useState<{ teamName: string; cntrIdx: number } | null>(null);
     const [manualInsertIndex, setManualInsertIndex] = useState<number | 'end'>('end');
     const [manualCntrNo, setManualCntrNo] = useState('');
     const [manualCategory, setManualCategory] = useState('');
@@ -424,6 +425,45 @@ export default function Home({ user }: { user: SessionUser }) {
         }
     };
 
+    const handlePasteExcel = (e: React.ClipboardEvent<HTMLDivElement>) => {
+        const text = e.clipboardData.getData('Text');
+        if (!text) return;
+
+        const rows = text.split(/\r?\n/).filter(row => row.trim() !== '');
+        const parsedProducts: { division: string, name: string, qty: number }[] = [];
+        
+        for (const row of rows) {
+            const cols = row.split('\t').map(c => c.trim());
+            
+            if (cols.length >= 3) {
+                const qty = parseInt(cols[2].replace(/,/g, ''), 10) || 0;
+                parsedProducts.push({
+                    division: cols[0] || 'DFZ',
+                    name: cols[1],
+                    qty
+                });
+            } else if (cols.length === 2) {
+                const qty = parseInt(cols[1].replace(/,/g, ''), 10) || 0;
+                parsedProducts.push({
+                    division: 'DFZ',
+                    name: cols[0],
+                    qty
+                });
+            }
+        }
+
+        if (parsedProducts.length > 0) {
+            e.preventDefault();
+            const isInitialEmpty = manualProducts.length === 1 && !manualProducts[0].name && !manualProducts[0].qty;
+            
+            if (isInitialEmpty) {
+                setManualProducts(parsedProducts);
+            } else {
+                setManualProducts([...manualProducts, ...parsedProducts]);
+            }
+        }
+    };
+
     const handleAddManualSubmit = () => {
         if (!manualCntrNo.trim()) {
             alert("컨테이너 번호를 입력해주세요.");
@@ -490,12 +530,28 @@ export default function Home({ user }: { user: SessionUser }) {
             }
 
             const existingCntrs = teamGroup.containers || [];
-            let insertIdx = existingCntrs.length;
-            if (manualInsertIndex !== 'end' && typeof manualInsertIndex === 'number') {
-                insertIdx = Math.min(Math.max(0, manualInsertIndex), existingCntrs.length);
+            
+            if (editingReportItem) {
+                if (isSameTeam(editingReportItem.teamName, manualTeamName)) {
+                    existingCntrs[editingReportItem.cntrIdx] = { ...existingCntrs[editingReportItem.cntrIdx], ...newRawContainer };
+                } else {
+                    const oldTeamGroup = targetDateGroup.uploaders.find((u: any) => isSameTeam(u.teamName, editingReportItem.teamName));
+                    if (oldTeamGroup && oldTeamGroup.containers) {
+                        oldTeamGroup.containers.splice(editingReportItem.cntrIdx, 1);
+                        oldTeamGroup.containers = calculateTeamTimeline<any>(oldTeamGroup.containers).map((item: any) => ({
+                            ...item,
+                            workTimeStr: `${item.durationMinutes}분 (${item.startTimeStr}~${item.endTimeStr}${item.hasBreak ? ' *휴식/식사포함*' : ''})`
+                        }));
+                    }
+                    existingCntrs.push(newRawContainer);
+                }
+            } else {
+                let insertIdx = existingCntrs.length;
+                if (manualInsertIndex !== 'end' && typeof manualInsertIndex === 'number') {
+                    insertIdx = Math.min(Math.max(0, manualInsertIndex), existingCntrs.length);
+                }
+                existingCntrs.splice(insertIdx, 0, newRawContainer);
             }
-
-            existingCntrs.splice(insertIdx, 0, newRawContainer);
 
             // Recalculate team timeline for all containers in this team!
             const recalculatedTimeline = calculateTeamTimeline<any>(existingCntrs).map(item => {
@@ -1164,6 +1220,14 @@ export default function Home({ user }: { user: SessionUser }) {
     };
 
     const handleOpenAddManual = () => {
+        setEditingReportItem(null);
+        setManualCntrNo('');
+        setManualCategory('');
+        setManualDuration('45');
+        setManualRemark('');
+        setManualProducts([{ division: 'DFZ', name: '', qty: 0 }]);
+        setIsManualCancelled(false);
+
         if (!isAdmin && !user.teamName) {
             alert("소속 조(팀)가 지정되지 않았습니다. 소속 조를 먼저 선택해 주세요.");
             return;
@@ -1174,6 +1238,62 @@ export default function Home({ user }: { user: SessionUser }) {
             setManualTeamName(matched);
         }
         setIsAddManualOpen(true);
+    };
+
+    const handleEditReportItem = (teamName: string, cntrIdx: number, cntr: any) => {
+        setEditingReportItem({ teamName, cntrIdx });
+        setManualTeamName(teamName);
+        setManualCntrNo(cntr.cntrNo || '');
+        
+        const adminComment = cntr.adminComment || '';
+        const isExcluded = adminComment.includes('[작업제외]');
+        const isCancelled = cntr.isCancelled || adminComment.includes('[취소]') || adminComment.includes('[작업취소]');
+        setIsManualCancelled(isCancelled);
+
+        let cleanCategory = adminComment.replace(/\[작업취소\]/g, '').replace(/\[작업제외\]/g, '').replace(/\[취소\]/g, '').trim();
+        setManualCategory(cleanCategory);
+
+        setManualDuration(String(cntr.durationMinutes || 45));
+        
+        let remark = cntr.lastRemark || '';
+        if (remark.startsWith('지연사유: ')) {
+            remark = remark.substring(6).trim();
+        }
+        setManualRemark(remark);
+
+        if (cntr.products && cntr.products.length > 0) {
+            setManualProducts(cntr.products.map((p: any) => ({
+                division: p.division || 'DFZ',
+                name: p.name || '',
+                qty: p.qty || 0
+            })));
+        } else {
+            setManualProducts([{ division: 'DFZ', name: '', qty: 0 }]);
+        }
+
+        setIsAddManualOpen(true);
+    };
+
+    const handleDeleteReportItem = (teamName: string, cntrIdx: number) => {
+        if (!window.confirm("정말 삭제하시겠습니까?\n(실제 데이터는 삭제되지 않으며 보고서에서만 제외됩니다.)")) return;
+
+        setReportData((prevData: any[]) => {
+            if (!prevData || prevData.length === 0) return prevData;
+            const nextData = JSON.parse(JSON.stringify(prevData));
+            const targetDateGroup = nextData[0];
+            const teamGroup = targetDateGroup.uploaders.find((u: any) => isSameTeam(u.teamName, teamName));
+            
+            if (teamGroup && teamGroup.containers) {
+                teamGroup.containers.splice(cntrIdx, 1);
+                teamGroup.containers = calculateTeamTimeline<any>(teamGroup.containers).map((item: any) => ({
+                    ...item,
+                    workTimeStr: `${item.durationMinutes}분 (${item.startTimeStr}~${item.endTimeStr}${item.hasBreak ? ' *휴식/식사포함*' : ''})`
+                }));
+            }
+            
+            setReportText(rebuildReportTextFromData(nextData));
+            return nextData;
+        });
     };
 
     useEffect(() => {
@@ -3268,12 +3388,12 @@ export default function Home({ user }: { user: SessionUser }) {
                                                                     <span className="text-xs font-bold text-slate-500">합계 {activeTeamCntrs.length}개</span>
                                                                 </div>
                                                                 <div className="space-y-3">
-                                                                    {upGroup.containers.map((cntr: any) => {
+                                                                    {upGroup.containers.map((cntr: any, cntrIdx: number) => {
                                                                         const totalQty = cntr.products.reduce((sum: number, p: any) => sum + p.qty, 0);
                                                                         const isExcluded = cntr.adminComment?.includes('[작업제외]');
                                                                         const isCancelled = !isExcluded && (cntr.isCancelled || cntr.adminComment?.includes('[취소]') || cntr.adminComment?.includes('[작업취소]'));
                                                                         return (
-                                                                            <div key={cntr.cntrNo} className="bg-slate-50 border border-slate-200 rounded-lg md:rounded-xl p-2.5 sm:p-3 hover:border-slate-300 transition-all space-y-1.5">
+                                                                            <div key={`${cntr.cntrNo}_${cntrIdx}`} className="bg-slate-50 border border-slate-200 rounded-lg md:rounded-xl p-2.5 sm:p-3 hover:border-slate-300 transition-all space-y-1.5">
                                                                                 <div className="flex items-center justify-between gap-1.5 mb-1.5">
                                                                                     <div className="flex items-center gap-1.5 min-w-0">
                                                                                         <span className={`text-sm font-black truncate uppercase ${getCarrierColor(cntr.transporter)}`}>{cntr.cntrNo}</span>
@@ -3288,6 +3408,24 @@ export default function Home({ user }: { user: SessionUser }) {
                                                                                         ) : null}
                                                                                     </div>
                                                                                     <div className="flex items-center gap-1.5 shrink-0">
+                                                                                        {!isExportingImage && (
+                                                                                            <>
+                                                                                                <button
+                                                                                                    onClick={() => handleEditReportItem(upGroup.teamName ?? upGroup.uploaderName, cntrIdx, cntr)}
+                                                                                                    className="p-1 rounded bg-slate-100 hover:bg-sky-100 text-slate-500 hover:text-sky-600 transition-colors cursor-pointer border border-transparent hover:border-sky-200"
+                                                                                                    title="이 항목 수정 (보고서 내용만)"
+                                                                                                >
+                                                                                                    <span className="text-[11px] font-black">✏️ 수정</span>
+                                                                                                </button>
+                                                                                                <button
+                                                                                                    onClick={() => handleDeleteReportItem(upGroup.teamName ?? upGroup.uploaderName, cntrIdx)}
+                                                                                                    className="p-1 rounded bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-600 transition-colors cursor-pointer border border-transparent hover:border-rose-200"
+                                                                                                    title="이 항목 삭제 (보고서 내용만)"
+                                                                                                >
+                                                                                                    <span className="text-[11px] font-black">🗑️ 삭제</span>
+                                                                                                </button>
+                                                                                            </>
+                                                                                        )}
                                                                                         {isAdmin && !isExportingImage && isCancelled && (
                                                                                             <button
                                                                                                 onClick={() => handleToggleCancelCntr(cntr.cntrNo)}
@@ -3414,11 +3552,11 @@ export default function Home({ user }: { user: SessionUser }) {
                                                     </span>
                                                 </div>
                                                 <div className="space-y-3">
-                                                    {dateGroup.uploaders.flatMap((upGroup: any) =>
-                                                        upGroup.containers.map((cntr: any) => {
+                                                    {dateGroup.uploaders.flatMap((upGroup: any, upIdx: number) =>
+                                                        upGroup.containers.map((cntr: any, cntrIdx: number) => {
                                                             const totalQty = cntr.products.reduce((sum: number, p: any) => sum + p.qty, 0);
                                                             return (
-                                                                <div key={cntr.cntrNo} className="bg-white border border-slate-200 rounded-lg md:rounded-xl p-2.5 sm:p-3.5 shadow-sm space-y-2">
+                                                                <div key={`${cntr.cntrNo}_${upIdx}_${cntrIdx}`} className="bg-white border border-slate-200 rounded-lg md:rounded-xl p-2.5 sm:p-3.5 shadow-sm space-y-2">
                                                                     <div className="flex items-center justify-between gap-2 flex-wrap">
                                                                         <span className={`text-sm font-black uppercase tracking-wide ${getCarrierColor(cntr.transporter)}`}>{cntr.cntrNo}</span>
                                                                         {cntr.startTimeStr && cntr.endTimeStr && (
@@ -3612,7 +3750,9 @@ export default function Home({ user }: { user: SessionUser }) {
                                         <div className="flex items-center justify-between pb-3 border-b border-slate-200">
                                             <div className="flex items-center gap-2">
                                                 <Plus className="w-5 h-5 text-sky-600" />
-                                                <h3 className="text-base font-black text-slate-900">보고서 전용 수동 항목 추가</h3>
+                                                <h3 className="text-base font-black text-slate-900">
+                                                    {editingReportItem ? '보고서 항목 수정' : '보고서 전용 수동 항목 추가'}
+                                                </h3>
                                             </div>
                                             <button onClick={() => setIsAddManualOpen(false)} className="p-1 text-slate-400 hover:text-slate-600 rounded-lg cursor-pointer">
                                                 <X className="w-5 h-5" />
@@ -3628,6 +3768,7 @@ export default function Home({ user }: { user: SessionUser }) {
                                                             key={t}
                                                             type="button"
                                                             onClick={() => { if (isAdmin || isSameTeam(t, user.teamName || '')) setManualTeamName(t); }}
+                                                            disabled={editingReportItem !== null}
                                                             className={`flex-1 py-1.5 rounded-xl font-black border transition-all cursor-pointer ${manualTeamName === t ? 'bg-sky-600 text-white border-sky-600 shadow-sm' : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed'}`}
                                                         >
                                                             {t}
@@ -3659,24 +3800,30 @@ export default function Home({ user }: { user: SessionUser }) {
                                                 </div>
                                             </div>
 
-                                            <div>
-                                                <label className="block font-black text-slate-700 mb-1">삽입 위치 (몇 번째 작업 뒤) *</label>
-                                                <select
-                                                    value={manualInsertIndex}
-                                                    onChange={e => setManualInsertIndex(e.target.value === 'end' ? 'end' : parseInt(e.target.value))}
-                                                    className="w-full px-3 py-1.5 border border-slate-300 rounded-xl font-bold focus:outline-none focus:border-sky-500 bg-slate-50 focus:bg-white text-slate-900 cursor-pointer"
-                                                >
-                                                    <option value={0}>1번째 (맨 앞에 삽입)</option>
-                                                    {currentTeamContainers.map((cntr: any, idx: number) => (
-                                                        <option key={cntr.cntrNo + '_' + idx} value={idx + 1}>
-                                                            {idx + 1}번 ({cntr.cntrNo}) 작업 뒤 {idx === currentTeamContainers.length - 1 ? '(맨 뒤)' : ''}
+                                            {!editingReportItem && (
+                                                <div>
+                                                    <label className="block font-black text-slate-700 mb-1">삽입 위치 (몇 번째 작업 뒤) *</label>
+                                                    <select
+                                                        value={manualInsertIndex}
+                                                        onChange={e => setManualInsertIndex(e.target.value === 'end' ? 'end' : parseInt(e.target.value))}
+                                                        className="w-full px-3 py-1.5 border border-slate-300 rounded-xl font-bold focus:outline-none focus:border-sky-500 bg-slate-50 focus:bg-white text-slate-900 cursor-pointer"
+                                                    >
+                                                        <option value="end">
+                                                            {currentTeamContainers.length === 0 ? '맨 처음 작업으로 삽입' : '맨 마지막 작업으로 삽입 (기본)'}
                                                         </option>
-                                                    ))}
-                                                    {currentTeamContainers.length === 0 && (
-                                                        <option value="end">맨 처음 작업으로 삽입</option>
-                                                    )}
-                                                </select>
-                                            </div>
+                                                        
+                                                        {currentTeamContainers.length > 0 && (
+                                                            <option value={0}>1번째 (맨 앞에 삽입)</option>
+                                                        )}
+                                                        
+                                                        {currentTeamContainers.map((cntr: any, idx: number) => (
+                                                            <option key={cntr.cntrNo + '_' + idx} value={idx + 1}>
+                                                                {idx + 1}번 ({cntr.cntrNo}) 작업 뒤
+                                                            </option>
+                                                        ))}
+                                                    </select>
+                                                </div>
+                                            )}
 
                                             <div>
                                                 <label className="block font-black text-slate-700 mb-1">작업 소요시간 (분) *</label>
@@ -3723,8 +3870,15 @@ export default function Home({ user }: { user: SessionUser }) {
                                                         <Plus className="w-3 h-3" /> 모델 추가
                                                     </button>
                                                 </div>
+                                                <div className="mb-2 px-2 py-1.5 bg-emerald-50 border border-emerald-100 rounded-lg text-[11px] text-emerald-700 font-bold flex items-start gap-1.5">
+                                                    <span className="text-emerald-500">💡</span>
+                                                    <p>엑셀 표를 복사(Ctrl+C)하여 <strong>이 아래 영역 아무데나 클릭 후 붙여넣기(Ctrl+V)</strong> 하시면 한 번에 모두 입력됩니다.</p>
+                                                </div>
 
-                                                <div className="space-y-2 max-h-40 overflow-y-auto p-1.5 border border-slate-200 rounded-xl bg-slate-50">
+                                                <div 
+                                                    className="space-y-2 max-h-40 overflow-y-auto p-1.5 border border-slate-200 rounded-xl bg-slate-50 transition-colors focus-within:border-sky-300 focus-within:ring-2 focus-within:ring-sky-100" 
+                                                    onPaste={handlePasteExcel}
+                                                >
                                                     {manualProducts.map((p, idx) => (
                                                         <div key={idx} className="flex items-center gap-1.5 bg-white p-1.5 rounded-lg border border-slate-200 shadow-sm">
                                                             <input
@@ -3789,7 +3943,7 @@ export default function Home({ user }: { user: SessionUser }) {
                                                 onClick={handleAddManualSubmit}
                                                 className="flex-1 py-2 bg-sky-600 hover:bg-sky-500 text-white font-black rounded-xl shadow-md cursor-pointer"
                                             >
-                                                보고서에 추가
+                                                {editingReportItem ? '수정 내용 저장' : '보고서에 추가'}
                                             </button>
                                         </div>
                                     </div>
@@ -3862,14 +4016,14 @@ export default function Home({ user }: { user: SessionUser }) {
                                                             </div>
 
                                                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                                                {teamGroup.containers.map((cntr: any) => {
+                                                                {teamGroup.containers.map((cntr: any, cntrIdx: number) => {
                                                                     const isExcluded = cntr.adminComment?.includes('[작업제외]');
                                                                     const isCancelled = !isExcluded && (cntr.isCancelled || cntr.adminComment?.includes('[취소]') || cntr.adminComment?.includes('[작업취소]'));
                                                                     const isSelected = isCancelled || isExcluded;
 
                                                                     return (
                                                                         <div
-                                                                            key={cntr.cntrNo}
+                                                                            key={`${cntr.cntrNo}_${cntrIdx}`}
                                                                             className={`flex items-center justify-between p-2.5 rounded-xl border transition-all ${
                                                                                 isExcluded
                                                                                     ? 'bg-amber-50 border-amber-200 text-amber-900 shadow-sm'
