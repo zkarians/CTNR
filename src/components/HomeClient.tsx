@@ -26,7 +26,7 @@ import {
     Product, PackingResult, ContainerType, CONTAINER_DATA, Job, JobFilters, DbConfig, UserAccount, Team
 } from '@/lib/types';
 import { packContainer } from '@/lib/packer';
-import { fetchJobs, fetchProductsByJob, searchProducts, getDbConfig, updateDbConfig, updatePassword, fetchAllUsers, createUserAccount, updateUserAccount, deleteUserAccount, deleteMultipleUserAccounts, generateWorkReport, saveDailyWorkReport, getSavedDailyWorkReport, exportDatabaseDump, restoreDatabaseDump, getAutoSyncConfig, updateAutoSyncConfig, triggerManualBackupAndSync, fetchTeams, createTeam, updateTeam, deleteTeam, fetchTeamWorkProgress, TeamWorkProgress, updateContainerWorkDuration, updateContainerAdminComment, resetTeamWorkProgress } from '@/lib/actions';
+import { fetchJobs, fetchProductsByJob, searchProducts, getDbConfig, updateDbConfig, updatePassword, fetchAllUsers, createUserAccount, updateUserAccount, deleteUserAccount, deleteMultipleUserAccounts, generateWorkReport, saveDailyWorkReport, getSavedDailyWorkReport, exportDatabaseDump, restoreDatabaseDump, getAutoSyncConfig, updateAutoSyncConfig, triggerManualBackupAndSync, fetchTeams, createTeam, updateTeam, deleteTeam, fetchTeamWorkProgress, TeamWorkProgress, updateContainerWorkDuration, updateContainerAdminComment, resetTeamWorkProgress, getAutoGdriveSyncConfig, updateAutoGdriveSyncConfig } from '@/lib/actions';
 import { SessionUser } from '@/lib/auth';
 import { calculateTeamTimeline } from '@/lib/timeline';
 
@@ -1007,6 +1007,7 @@ export default function Home({ user }: { user: SessionUser }) {
     };
 
     const [isAutoSyncEnabled, setIsAutoSyncEnabled] = useState<boolean>(true);
+    const [isAutoGDriveSyncEnabled, setIsAutoGDriveSyncEnabled] = useState<boolean>(true);
     const [isTriggeringSync, setIsTriggeringSync] = useState<boolean>(false);
 
     useEffect(() => {
@@ -1014,6 +1015,11 @@ export default function Home({ user }: { user: SessionUser }) {
             getAutoSyncConfig().then(res => {
                 if (res.success) {
                     setIsAutoSyncEnabled(res.enabled);
+                }
+            });
+            getAutoGdriveSyncConfig().then(res => {
+                if (res.success) {
+                    setIsAutoGDriveSyncEnabled(res.enabled);
                 }
             });
         }
@@ -1033,6 +1039,26 @@ export default function Home({ user }: { user: SessionUser }) {
         } catch (e) {
             setIsAutoSyncEnabled(!nextVal);
             alert("자동 동기화 설정 중 오류가 발생했습니다.");
+        }
+    };
+
+    const handleToggleAutoGDriveSync = async () => {
+        const nextVal = !isAutoGDriveSyncEnabled;
+        if (!window.confirm(nextVal ? "[낮 12:30 미백업 사진 GDrive 자동 백업 및 용량 정리] 기능을 켭니다.\\n계속하시겠습니까?" : "[낮 12:30 미백업 사진 GDrive 자동 백업 및 용량 정리] 기능을 끕니다.\\n계속하시겠습니까?")) {
+            return;
+        }
+        setIsAutoGDriveSyncEnabled(nextVal);
+        try {
+            const res = await updateAutoGdriveSyncConfig(nextVal);
+            if (res.success) {
+                alert(res.message);
+            } else {
+                setIsAutoGDriveSyncEnabled(!nextVal);
+                alert(res.error || "GDrive 자동 백업 설정 변경에 실패했습니다.");
+            }
+        } catch (e) {
+            setIsAutoGDriveSyncEnabled(!nextVal);
+            alert("GDrive 자동 백업 설정 중 오류가 발생했습니다.");
         }
     };
 
@@ -2506,6 +2532,33 @@ export default function Home({ user }: { user: SessionUser }) {
                                                         />
                                                     </button>
                                                 </div>
+
+                                                <div className="flex items-center justify-between bg-black/40 p-3.5 rounded-2xl border border-white/10 mt-2">
+                                                    <div>
+                                                        <div className="text-xs font-black text-white flex items-center gap-1.5">
+                                                            <Upload className="w-4 h-4 text-emerald-400" />
+                                                            <span>매일 12:30 미백업 사진 GDrive 자동 백업 & 용량 정리</span>
+                                                        </div>
+                                                        <p className="text-[10px] text-slate-400 font-bold mt-0.5">
+                                                            (정시에 미백업 사진들을 안전하게 업로드한 뒤 원본 삭제)
+                                                        </p>
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        onClick={handleToggleAutoGDriveSync}
+                                                        className={`w-12 h-6 rounded-full p-1 transition-colors duration-200 ease-in-out cursor-pointer ${
+                                                            isAutoGDriveSyncEnabled ? 'bg-emerald-500' : 'bg-slate-700'
+                                                        }`}
+                                                        title="오후 12:30 GDrive 자동 백업 ON / OFF 토글"
+                                                    >
+                                                        <div
+                                                            className={`w-4 h-4 rounded-full bg-white shadow-md transform transition-transform duration-200 ease-in-out ${
+                                                                isAutoGDriveSyncEnabled ? 'translate-x-6' : 'translate-x-0'
+                                                            }`}
+                                                        />
+                                                    </button>
+                                                </div>
+
 
                                                 <button
                                                     type="button"

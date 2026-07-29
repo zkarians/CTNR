@@ -2,6 +2,7 @@ import { Pool } from 'pg';
 import * as fs from 'fs';
 import * as path from 'path';
 import { getPool } from './db';
+import { uploadToGoogleDrive, findGoogleDriveFileByName } from './gdrive';
 
 const localPool = getPool();
 const remotePool = new Pool({
@@ -15,6 +16,7 @@ const remotePool = new Pool({
 
 let isSchedulerRunning = false;
 let lastAutoSyncDate = '';
+let lastAutoGdriveSyncDate = '';
 
 export async function performBackupAndRemoteSync(): Promise<{ success: boolean; message?: string; report?: any; error?: string }> {
     console.log("==========================================");
@@ -260,6 +262,85 @@ export function initRemoteSyncScheduler() {
             const minutes = kstDate.getUTCMinutes();
             const dateStr = kstDate.toISOString().split('T')[0];
 
+            // 12:30 KST - GDrive Auto Backup
+            if (hours === 12 && minutes === 30 && lastAutoGdriveSyncDate !== dateStr) {
+                const client = await localPool.connect();
+                try {
+                    const res = await client.query("SELECT value FROM db_config WHERE key = 'auto_gdrive_sync_enabled'");
+                    const enabled = res.rows.length > 0 && res.rows[0].value === 'true';
+
+                    if (enabled) {
+                        lastAutoGdriveSyncDate = dateStr;
+                        console.log(`⏰ [12:30 KST 정시 백업] 미백업 사진 GDrive 자동 백업 및 용량 정리 시작 (${dateStr})`);
+                        
+                        const pRes = await client.query(`SELECT id, photo_path, cntr_no, gdrive_file_id FROM container_photos WHERE gdrive_file_id IS NULL AND is_deleted IS NOT TRUE`);
+                        const targetPhotos = pRes.rows;
+                        
+                        if (targetPhotos.length > 0) {
+                            const uploadsDir = process.env.UPLOAD_DIR || path.join(process.cwd(), 'uploads');
+                            let uploadedCount = 0;
+                            let cleanedCount = 0;
+                            let freedBytes = 0;
+                            
+                            for (const photo of targetPhotos) {
+                                const localPath = path.resolve(uploadsDir, photo.photo_path);
+                                const filename = path.basename(photo.photo_path);
+                                let fileId = photo.gdrive_file_id;
+                                let gdriveUrl = null;
+
+                                if (!fileId && !fs.existsSync(localPath)) {
+                                    const foundGDrive = await findGoogleDriveFileByName(filename);
+                                    if (foundGDrive) {
+                                        fileId = foundGDrive.fileId;
+                                        gdriveUrl = foundGDrive.gdriveUrl;
+                                        await client.query(`UPDATE container_photos SET gdrive_file_id = $1, gdrive_url = $2 WHERE id = $3`, [fileId, gdriveUrl, photo.id]);
+                                    }
+                                }
+
+                                if (!fileId && fs.existsSync(localPath)) {
+                                    try {
+                                        let gRes: any = null;
+                                        for (let attempt = 1; attempt <= 3; attempt++) {
+                                            try {
+                                                gRes = await uploadToGoogleDrive(localPath, filename);
+                                                break;
+                                            } catch (retryErr: any) {
+                                                if (attempt === 3) throw retryErr;
+                                                await new Promise(r => setTimeout(r, 1000));
+                                            }
+                                        }
+                                        fileId = gRes.fileId;
+                                        gdriveUrl = gRes.gdriveUrl;
+                                        
+                                        await client.query(`UPDATE container_photos SET gdrive_file_id = $1, gdrive_url = $2 WHERE id = $3`, [fileId, gdriveUrl, photo.id]);
+                                        uploadedCount++;
+                                    } catch (err: any) {
+                                        console.error(`[GDrive AutoSync Error] ${filename}:`, err?.message);
+                                    }
+                                }
+
+                                if (fileId && fs.existsSync(localPath)) {
+                                    try {
+                                        const stat = fs.statSync(localPath);
+                                        freedBytes += stat.size;
+                                        fs.unlinkSync(localPath);
+                                        cleanedCount++;
+                                    } catch (err) {}
+                                }
+                            }
+                            console.log(`✅ [12:30 KST GDrive 백업 완료] 신규 백업: ${uploadedCount}장 / 삭제: ${cleanedCount}장 / 용량 확보: ${(freedBytes / (1024*1024)).toFixed(1)}MB`);
+                        } else {
+                            console.log(`✅ [12:30 KST GDrive 백업] 미백업 사진이 없습니다.`);
+                        }
+                    }
+                } catch (e: any) {
+                    console.error("GDrive 자동 백업 스케줄러 오류:", e?.message);
+                } finally {
+                    client.release();
+                }
+            }
+
+            // 13:00 KST - Remote DB Sync
             if (hours === 13 && minutes === 0 && lastAutoSyncDate !== dateStr) {
                 const client = await localPool.connect();
                 try {

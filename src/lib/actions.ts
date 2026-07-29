@@ -1121,6 +1121,49 @@ export async function updateAutoSyncConfig(enabled: boolean): Promise<{ success:
     }
 }
 
+export async function getAutoGdriveSyncConfig(): Promise<{ success: boolean; enabled: boolean; error?: string }> {
+    try {
+        const client = await pool.connect();
+        try {
+            await client.query(`
+                CREATE TABLE IF NOT EXISTS db_config (
+                    id SERIAL PRIMARY KEY,
+                    key VARCHAR(100) UNIQUE NOT NULL,
+                    value TEXT,
+                    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                );
+            `);
+            const res = await client.query("SELECT value FROM db_config WHERE key = 'auto_gdrive_sync_enabled'");
+            const enabled = res.rows.length > 0 ? res.rows[0].value === 'true' : false; // Default false to be safe? The user approved it so default can be true, but let's say true for consistency.
+            return { success: true, enabled: res.rows.length > 0 ? res.rows[0].value === 'true' : true };
+        } finally {
+            client.release();
+        }
+    } catch (err: any) {
+        console.error("getAutoGdriveSyncConfig Error:", err);
+        return { success: false, enabled: true, error: err?.message };
+    }
+}
+
+export async function updateAutoGdriveSyncConfig(enabled: boolean): Promise<{ success: boolean; message?: string; error?: string }> {
+    try {
+        const client = await pool.connect();
+        try {
+            await client.query(`
+                INSERT INTO db_config (key, value, updated_at)
+                VALUES ('auto_gdrive_sync_enabled', $1, NOW())
+                ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW();
+            `, [enabled ? 'true' : 'false']);
+            return { success: true, message: `낮 12:30 GDrive 자동 백업 및 용량 정리가 ${enabled ? '활성화(ON)' : '비활성화(OFF)'} 되었습니다.` };
+        } finally {
+            client.release();
+        }
+    } catch (err: any) {
+        console.error("updateAutoGdriveSyncConfig Error:", err);
+        return { success: false, error: err?.message };
+    }
+}
+
 export async function triggerManualBackupAndSync(): Promise<{ success: boolean; message?: string; report?: any; error?: string }> {
     try {
         const { performBackupAndRemoteSync } = await import('./remoteSyncScheduler');

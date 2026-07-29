@@ -1,0 +1,1947 @@
+import { ContainerDimensions, Product, PackedItem, PackingResult } from "../types";
+
+/**
+ * V6.10 - Floating Item Fix
+ * - Phase 2 headroom fill now iterates in both X and Y directions (was X-only), fixing
+ *   incorrect support checks that caused products to float above their actual support zone.
+ * - Gravity Drop: tightened "below us" threshold from 1mm to 0.5mm and added 0.5mm inset
+ *   to X/Y overlap checks for more accurate settling.
+ * - V4.19: Stability Filter Exemption, V6.00: Post-swap optimizer
+ */
+
+function isSmallProduct(p: Product): boolean {
+    // V4.21: Increase threshold from 150 to 300 so flat items (e.g. h=267) act as toppers (Phase 2) instead of consuming floor space
+    return Math.min(Number(p.width), Number(p.length), Number(p.height)) <= 300;
+}
+
+function isLowHeightProduct(p: Product, orientedH?: number): boolean {
+    const h = orientedH !== undefined ? orientedH : Number(p.height);
+    return h <= 270;
+}
+
+function getStackedCount(
+    x: number,
+    y: number,
+    w: number,
+    l: number,
+    placedItems: PackedItem[]
+): number {
+    let count = 0;
+    for (const item of placedItems) {
+        if (!isLowHeightProduct(item.product, item.h)) continue;
+        const xOverlap = Math.max(x, item.x) < Math.min(x + w, item.x + item.w) - 0.5;
+        const yOverlap = Math.max(y, item.y) < Math.min(y + l, item.y + item.l) - 0.5;
+        if (xOverlap && yOverlap) {
+            count++;
+        }
+    }
+    return count;
+}
+
+function getStackedCountInTemp(
+    x: number,
+    yRel: number,
+    w: number,
+    l: number,
+    tempItems: any[]
+): number {
+    let count = 0;
+    for (const item of tempItems) {
+        if (!isLowHeightProduct(item.product, item.h)) continue;
+        const xOverlap = Math.max(x, item.x) < Math.min(x + w, item.x + item.w) - 0.5;
+        const yOverlap = Math.max(yRel, item.yRel) < Math.min(yRel + l, item.yRel + item.l) - 0.5;
+        if (xOverlap && yOverlap) {
+            count++;
+        }
+    }
+    return count;
+}
+
+function getMinTopZOfWall(wall: any, placedItems: PackedItem[]): number {
+    let minZ = Infinity;
+    const step = 50;
+    const maxW = wall.maxW || 2352;
+    for (let x = 25; x < maxW; x += step) {
+        let maxZAtX = 0;
+        for (const item of placedItems) {
+            const xOverlap = x >= item.x && x < item.x + item.w;
+            const yOverlap = (wall.y + wall.depth / 2) >= item.y && (wall.y + wall.depth / 2) < item.y + item.l;
+            if (xOverlap && yOverlap) {
+                maxZAtX = Math.max(maxZAtX, item.z + item.h);
+            }
+        }
+        minZ = Math.min(minZ, maxZAtX);
+    }
+    return minZ === Infinity ? 0 : minZ;
+}
+
+function getTopZAt(
+    x: number,
+    y: number,
+    w: number,
+    l: number,
+    placedItems: PackedItem[]
+): number {
+    let maxZ = 0;
+    const xMax = x + w;
+    const yMax = y + l;
+    for (let i = 0; i < placedItems.length; i++) {
+        const item = placedItems[i];
+        if (item.x >= xMax - 0.5 || item.x + item.w <= x + 0.5) continue;
+        if (item.y >= yMax - 0.5 || item.y + item.l <= y + 0.5) continue;
+        
+        const itemTop = item.z + item.h;
+        if (itemTop > maxZ) {
+            maxZ = itemTop;
+        }
+    }
+    return maxZ;
+}
+
+function hasSupportAtZ(
+    x: number,
+    y: number,
+    w: number,
+    l: number,
+    z: number,
+    placedItems: PackedItem[],
+    threshold: number = 0.75
+): boolean {
+    if (z === 0) return true; // 바닥은 항상 지탱됨
+    
+    const targetArea = w * l;
+    let supportArea = 0;
+    
+    const xMax = x + w;
+    const yMax = y + l;
+    
+    for (let i = 0; i < placedItems.length; i++) {
+        const item = placedItems[i];
+        const itemTop = item.z + item.h;
+        if (Math.abs(itemTop - z) > 5) continue;
+        
+        if (item.x >= xMax || item.x + item.w <= x) continue;
+        if (item.y >= yMax || item.y + item.l <= y) continue;
+        
+        const xOverlap = Math.min(xMax, item.x + item.w) - Math.max(x, item.x);
+        const yOverlap = Math.min(yMax, item.y + item.l) - Math.max(y, item.y);
+        
+        supportArea += xOverlap * yOverlap;
+    }
+    
+    // 지탱해 주는 하단 면적의 총합이 상자 밑면 면적의 지정된 비율 이상을 차지해야 적재 가능
+    return (supportArea / targetArea) >= threshold;
+}
+
+function hasSupportAtZInTemp(
+    x: number,
+    yRel: number,
+    w: number,
+    l: number,
+    z: number,
+    tempItems: any[]
+): boolean {
+    if (z === 0) return true; // 바닥은 지탱 검사 불요
+    
+    const targetArea = w * l;
+    let supportArea = 0;
+    
+    for (const item of tempItems) {
+        const itemTop = item.z + item.h;
+        // z축 방향으로 바로 아래에 맞닿아 있는지 확인 (5mm 내외의 오차 허용)
+        if (Math.abs(itemTop - z) <= 5) {
+            // X축 방향으로 겹치는 길이 계산
+            const xOverlap = Math.max(0, Math.min(x + w, item.x + item.w) - Math.max(x, item.x));
+            // YRel축 방향으로 겹치는 길이 계산
+            const yOverlap = Math.max(0, Math.min(yRel + l, item.yRel + item.l) - Math.max(yRel, item.yRel));
+            
+            supportArea += xOverlap * yOverlap;
+        }
+    }
+    
+    // 지탱 비율 75% 이상 확보 검증
+    return (supportArea / targetArea) >= 0.75;
+}
+
+function hasValidBaseForLowProduct(
+    x: number,
+    y: number,
+    w: number,
+    l: number,
+    placedItems: PackedItem[],
+    curZ: number
+): boolean {
+    const queue: { x: number; y: number; w: number; l: number; z: number }[] = [
+        { x, y, w, l, z: curZ }
+    ];
+    const visited = new Set<string>();
+
+    while (queue.length > 0) {
+        const curr = queue.shift()!;
+        if (curr.z === 0) return true;
+
+        for (const item of placedItems) {
+            const xOverlap = Math.max(curr.x, item.x) < Math.min(curr.x + curr.w, item.x + item.w) - 0.5;
+            const yOverlap = Math.max(curr.y, item.y) < Math.min(curr.y + curr.l, item.y + item.l) - 0.5;
+            if (xOverlap && yOverlap) {
+                const isDirectBase = Math.abs((item.z + item.h) - curr.z) <= 5;
+                if (isDirectBase) {
+                    if (item.h >= 500) return true;
+                    if (item.z === 0) return true;
+                    const key = `${item.x},${item.y},${item.z}`;
+                    if (!visited.has(key)) {
+                        visited.add(key);
+                        queue.push({ x: item.x, y: item.y, w: item.w, l: item.l, z: item.z });
+                    }
+                }
+            }
+        }
+    }
+    return false;
+}
+
+function isValidHeightStack(
+    x: number,
+    y: number,
+    w: number,
+    l: number,
+    placedItems: PackedItem[],
+    curZ: number,
+    topperH: number
+): boolean {
+    for (const item of placedItems) {
+        const xOverlap = Math.max(x, item.x) < Math.min(x + w, item.x + item.w) - 0.5;
+        const yOverlap = Math.max(y, item.y) < Math.min(y + l, item.y + item.l) - 0.5;
+        if (xOverlap && yOverlap) {
+            const isDirectBase = Math.abs((item.z + item.h) - curZ) <= 5;
+            if (isDirectBase) {
+                if (item.h <= 500) {
+                    if (topperH > item.h + 50) {
+                        return false;
+                    }
+                }
+            }
+        }
+    }
+    return true;
+}
+
+function hasItemsOnTop(item: PackedItem, allItems: PackedItem[]): boolean {
+    const topZ = item.z + item.h;
+    for (const other of allItems) {
+        if (other.z >= topZ - 5) {
+            const xOverlap = Math.max(item.x, other.x) < Math.min(item.x + item.w, other.x + other.w) - 0.5;
+            const yOverlap = Math.max(item.y, other.y) < Math.min(item.y + item.l, other.y + other.l) - 0.5;
+            if (xOverlap && yOverlap) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+/**
+ * V4.14: Check if placing a product with bottom face (orientedW × orientedL) is stable.
+ * If the smallest face ≤ 1/4 of the largest face, and the bottom IS the smallest → REJECT.
+ */
+function isStableBottom(p: Product, orientedW: number, orientedL: number): boolean {
+    const w = Number(p.width), l = Number(p.length), h = Number(p.height);
+    const faceWL = w * l;  // top/bottom when upright
+    const faceWH = w * h;  // side face
+    const faceLH = l * h;  // front/back face
+    const minFace = Math.min(faceWL, faceWH, faceLH);
+    const maxFace = Math.max(faceWL, faceWH, faceLH);
+
+    // V4.19: Exempt large appliances like tall refrigerators (h > 1500mm)
+    if (h > 1500) return true;
+
+    // Rule only triggers if the smallest face is dramatically smaller (V4.19: 1/5 ratio)
+    if (minFace > maxFace / 5) return true; // No restriction
+
+    // Check if the current bottom face (orientedW × orientedL) equals the smallest face
+    const bottomArea = orientedW * orientedL;
+    // Allow some tolerance (within 1%)
+    if (Math.abs(bottomArea - minFace) < minFace * 0.01) return false; // Unstable!
+    return true;
+}
+
+/**
+ * V4.24: Evaluate the value of a generated wall block. 
+ * Combines packed volume density (volume / depth) and width utilization.
+ */
+function evaluateWallScore(wallItems: any[], containerWidth: number, isMixedWidthSpecialJob?: boolean): number {
+    if (!wallItems || wallItems.length === 0) return 0;
+    
+    let vol = 0;
+    let maxW = 0;
+    let maxD = 0;
+    for (const it of wallItems) {
+        vol += (it.w * it.l * it.h);
+        const lEdge = (it.yRel || 0) + it.l;
+        if (lEdge > maxD) maxD = lEdge;
+        const wEdge = it.x + it.w;
+        if (wEdge > maxW) maxW = wEdge;
+    }
+    if (maxD <= 0) return 0;
+    
+    const widthRatio = containerWidth > 0 ? maxW / containerWidth : 0;
+    if (isMixedWidthSpecialJob) {
+        // V4.31: Favor high width-utilization walls using cubic power
+        return (vol / maxD) * (1 + Math.pow(widthRatio, 3) * 5.0);
+    }
+    // V4.30: Increase width utilization bonus to favor 3-column refrigerator walls (775mm wide)
+    return (vol / maxD) * (1 + widthRatio * 2.5);
+}
+
+export function packContainer(
+    containerInput: ContainerDimensions,
+    productsInput: Product[],
+    numPasses: number = 100,
+    force: boolean = false
+): PackingResult {
+    const container = {
+        id: containerInput.id, name: containerInput.name,
+        width: Number(containerInput.width), length: Number(containerInput.length), height: Number(containerInput.height)
+    };
+    const aggMap = new Map<string, Product>();
+    const invalidProducts: Product[] = []; // V5.03: Track 0-dimension products to return as unpacked
+
+    for (const p of productsInput) {
+        const qty = Number(p.quantity);
+        if (qty <= 0) continue;
+
+        // V5.03: Filter out products with 0 or negative dimensions
+        if (Number(p.width) <= 0 || Number(p.length) <= 0 || Number(p.height) <= 0) {
+            invalidProducts.push({ ...p, width: Number(p.width), length: Number(p.length), height: Number(p.height), quantity: qty });
+            continue;
+        }
+
+        const ex = aggMap.get(p.id);
+        if (ex) ex.quantity += qty;
+        else aggMap.set(p.id, { ...p, width: Number(p.width), length: Number(p.length), height: Number(p.height), quantity: qty });
+    }
+    const products = Array.from(aggMap.values());
+    if (container.width <= 0) return { container: { ...container, id: '40hc' }, items: [], efficiency: 0, unpacked: [...products, ...invalidProducts] };
+
+    const totalQty = products.reduce((acc, p) => acc + p.quantity, 0);
+
+    // V6.15: Detect 750mm/800mm mixed width special scenario to conditionally enable optimized packing rules
+    const qty750 = products
+        .filter(p => p.width >= 740 && p.width <= 760)
+        .reduce((sum, p) => sum + p.quantity, 0);
+    const qty800 = products
+        .filter(p => p.width >= 790 && p.width <= 810)
+        .reduce((sum, p) => sum + p.quantity, 0);
+    const isMixedWidthSpecialJob = qty750 > 0 && qty800 > 0 && (qty750 / qty800 >= 1.5) && (qty750 / qty800 <= 2.5);
+
+    // V6.13: Detect 700~760 + 790~850 mixed scenario where (B + A*2) > (A*3) and fits container width
+    // e.g. DLEX8900B(800) + WDP6B(755)*2 = 2310 > WDP6B(755)*3 = 2265, and 2310 <= 2352
+    let shouldForceMixedWidth = false;
+    {
+        const prodA = products.find(p => Number(p.width) >= 700 && Number(p.width) <= 760);
+        const prodB = products.find(p => Number(p.width) >= 790 && Number(p.width) <= 850);
+        if (prodA && prodB) {
+            const wA = Number(prodA.width);
+            const wB = Number(prodB.width);
+            const combinedW = wB + wA * 2;
+            const tripleAW = wA * 3;
+            if (combinedW > tripleAW && combinedW <= container.width) {
+                shouldForceMixedWidth = true;
+            }
+        }
+    }
+
+    // Separate normal and small products
+    const normalProducts = products.filter(p => !isSmallProduct(p));
+    const smallProducts = products.filter(p => isSmallProduct(p));
+
+    const sortedNormal = [...normalProducts].sort((a, b) => {
+        if (b.height !== a.height) return b.height - a.height;
+        return (b.width * b.length) - (a.width * a.length);
+    });
+    const sortedSmall = [...smallProducts].sort((a, b) => (b.width * b.length * b.height) - (a.width * a.length * a.height));
+
+    let bestRes: PackingResult | null = null;
+    // V6.13: If mixed condition exists, allow extra passes for the force-mixed phase
+    const passes = Math.max(numPasses, shouldForceMixedWidth ? 50 : 30);
+
+    for (let pIdx = 0; pIdx < passes; pIdx++) {
+        // V6.13: 2-Pass strategy — first half uses standard logic, second half forces mixed-width
+        // only when unpacked still exist and the dimensional condition is met
+        let currentMixedFlag = isMixedWidthSpecialJob;
+        let forceTallDepthOnly = false;
+        if (shouldForceMixedWidth && pIdx >= 25 && bestRes && bestRes.unpacked.filter(p => p.id !== 'NONASSET.ITEM').length > 0) {
+            currentMixedFlag = true;
+            forceTallDepthOnly = true; // V6.13: Force tall-product-depth walls to prevent pure-flat walls from outscoring mixed walls
+        }
+
+        let res = doTwoPhasePacking(container, sortedNormal, sortedSmall, products, pIdx, currentMixedFlag, forceTallDepthOnly);
+        
+        // V5.03: Append invalid 0-dimension products to the unpacked list so user sees them as failed
+        if (invalidProducts.length > 0) {
+            res.unpacked.push(...invalidProducts);
+        }
+
+        // V6.00: Apply post-swap optimizer to resolve suboptimal greedy gap choices
+        if (res.unpacked.length > 0) {
+            res = optimizePackResultWithSwaps(container, res);
+        }
+
+        // V6.12: Run Y-compaction on the final optimized result
+        compactItemsAlongY(res.items, container);
+        const vol = res.items.reduce((s, i) => s + (i.w * i.l * i.h), 0);
+        res.efficiency = (vol / (container.width * container.length * container.height)) * 100;
+
+        if (!bestRes || res.items.length > bestRes.items.length) {
+            bestRes = res;
+        }
+        if (bestRes.items.length === totalQty) break;
+    }
+
+    return bestRes!;
+}
+
+function doTwoPhasePacking(container: any, normalProducts: Product[], smallProducts: Product[], allProducts: Product[], pIdx: number, isMixedWidthSpecialJob: boolean, forceTallDepthOnly: boolean = false): PackingResult {
+    const unpacked = new Map<string, number>();
+    allProducts.forEach(p => unpacked.set(p.id, p.quantity));
+    const placed: PackedItem[] = [];
+
+    // ---- PHASE 1: Pack normal items only (no small items in base) ----
+    const normalUnpacked = new Map<string, number>();
+    normalProducts.forEach(p => normalUnpacked.set(p.id, p.quantity));
+
+    const hasSmall = allProducts.some(isSmallProduct);
+    const runNormal = [...normalProducts].sort((a, b) => {
+        // V6.17: 1350mm 이상의 대형 제품은 무작위 탐색 시에도 항상 최우선 정렬하여 안쪽(y=0)부터 적재되도록 강제
+        const aTall = a.height >= 1350;
+        const bTall = b.height >= 1350;
+        if (aTall && !bTall) return -1;
+        if (!aTall && bTall) return 1;
+
+        if (b.height !== a.height) {
+            return b.height - a.height;
+        }
+        if (pIdx > 0) return Math.random() - 0.5;
+        return (b.width * b.height) - (a.width * a.height);
+    });
+    let currentY = 0;
+
+    // Track walls for Phase 2 (small items on top)
+    const walls: { y: number, depth: number, items: PackedItem[] }[] = [];
+
+    while (currentY < container.length) {
+        const rem = runNormal.filter(p => normalUnpacked.get(p.id)! > 0);
+        if (rem.length === 0) break;
+
+        const depthCandidates: number[] = [];
+        if (isMixedWidthSpecialJob) {
+            if (forceTallDepthOnly) {
+                // V6.13: Restrict depth candidates to tall product only (e.g. DLEX8900B h=1148)
+                // so pure flat-product walls cannot outscore mixed walls during forced passes.
+                // When tall product is exhausted, fall back to all remaining products.
+                const tallProd = rem.find(p => Number(p.height) >= 1000);
+                if (tallProd) {
+                    depthCandidates.push(Number(tallProd.length));
+                    if (tallProd.allow_rotate) {
+                        depthCandidates.push(Number(tallProd.width), Number(tallProd.height));
+                    } else {
+                        depthCandidates.push(Number(tallProd.height));
+                    }
+                } else {
+                    // Tall product exhausted — fall back to all remaining
+                    for (const rp of rem) {
+                        depthCandidates.push(Number(rp.length));
+                        if (rp.allow_rotate) {
+                            depthCandidates.push(Number(rp.width), Number(rp.height));
+                        } else {
+                            depthCandidates.push(Number(rp.height));
+                        }
+                    }
+                }
+            } else {
+                for (const rp of rem) {
+                    depthCandidates.push(rp.length);
+                    if (rp.allow_rotate) {
+                        depthCandidates.push(rp.width, rp.height);
+                    } else {
+                        depthCandidates.push(rp.height);
+                    }
+                }
+            }
+        } else {
+            const p1 = rem[0];
+            depthCandidates.push(...(p1.allow_rotate ? [p1.length, p1.width, p1.height] : [p1.length, p1.height]));
+            const smallRem = allProducts.filter(p => (unpacked.get(p.id) || 0) > 0 && isSmallProduct(p));
+            for (const sp of smallRem) {
+                depthCandidates.push(sp.length, sp.width);
+            }
+        }
+
+        let depths = Array.from(new Set(depthCandidates))
+            .filter(d => d > 0 && d <= (container.length - currentY) + 0.5);
+        if (!isMixedWidthSpecialJob) {
+            depths.sort((a, b) => b - a);
+        }
+
+        let bestWItems: any[] = [];
+        let bestActualDepth = 0;
+        let bestWallScore = -Infinity;
+
+        for (const limitD of depths) {
+            // V4.26: Pass global unpacked and allProducts so blockPackShelf can scavenge small items for side gaps
+            const tempU = new Map(unpacked);
+            const wallItems = blockPackShelf(container.width, container.height, limitD, allProducts, tempU, false, isMixedWidthSpecialJob);
+
+            let score = evaluateWallScore(wallItems, container.width, isMixedWidthSpecialJob);
+            if (isMixedWidthSpecialJob && pIdx > 0) {
+                score *= (0.9 + Math.random() * 0.2); // ±10% random noise to explore other wall options in random trials
+            }
+            if (score > bestWallScore) {
+                bestWallScore = score;
+                bestWItems = wallItems;
+                bestActualDepth = wallItems.length > 0 ? Math.max(...wallItems.map((it: any) => (it.yRel || 0) + it.l)) : 0;
+            }
+        }
+
+        if (bestWItems.length === 0) {
+            currentY += 10;
+            if (currentY > container.length) break;
+            continue;
+        }
+
+        const wallPlaced: PackedItem[] = [];
+        const sortedWItems = [...bestWItems].sort((a, b) => a.z - b.z);
+        for (const wi of sortedWItems) {
+            let targetY = currentY + (wi.yRel || 0);
+            const targetX = wi.x;
+            const targetZ = wi.z;
+
+            // 2층 이상에 적재된 품목(topper)인 경우 Y축 앞방향으로 밀착(Sliding) 처리
+            if (targetZ > 0) {
+                const targetXMax = targetX + wi.w;
+                const targetZMax = targetZ + wi.h;
+                
+                // 1. Overlap 후보군 필터링 (X축 및 Z축 모두 겹쳐야 함)
+                const overlapCandidates = [];
+                // 2. getTopZAt/hasSupportAtZ 후보군 필터링 (X축이 겹쳐야 함)
+                const xOverlapCandidates = [];
+                
+                for (let i = 0; i < placed.length; i++) {
+                    const other = placed[i];
+                    const xOverlap = Math.max(targetX, other.x) < Math.min(targetXMax, other.x + other.w) - 0.5;
+                    if (xOverlap) {
+                        xOverlapCandidates.push(other);
+                        const zOverlap = Math.max(targetZ, other.z) < Math.min(targetZMax, other.z + other.h) - 0.5;
+                        if (zOverlap) {
+                            overlapCandidates.push(other);
+                        }
+                    }
+                }
+
+                let bestY = targetY;
+                for (let candidateY = targetY - 1; candidateY >= 0; candidateY--) {
+                    // 1. 다른 상자와의 물리적 충돌(Overlap) 검사 - 충돌 시 루프 완전 종료 (Hard Stop)
+                    let overlap = false;
+                    for (let i = 0; i < overlapCandidates.length; i++) {
+                        const other = overlapCandidates[i];
+                        const yOverlap = Math.max(candidateY, other.y) < Math.min(candidateY + wi.l, other.y + other.l) - 0.5;
+                        if (yOverlap) {
+                            overlap = true;
+                            break;
+                        }
+                    }
+                    if (overlap) {
+                        break; // 충돌 발생 시에는 더 이상 앞으로 전진 불가
+                    }
+
+                    // 2. 해당 후보 위치에서 안정적인 지탱이 가능한지 검사 (최종 안착 가능 여부) - 슬라이딩 시에는 100% 지탱만 허용하여 계단식 돌출 적재 방지
+                    const candidateZ = getTopZAt(targetX, candidateY, wi.w, wi.l, xOverlapCandidates);
+                    const isHeightMatch = candidateZ === targetZ;
+                    const isSupported = hasSupportAtZ(targetX, candidateY, wi.w, wi.l, targetZ, xOverlapCandidates, 0.99);
+
+                    if (isHeightMatch && isSupported) {
+                        bestY = candidateY; // 지탱 가능하고 단차가 맞다면 이 위치를 최선으로 저장
+                    }
+                }
+                targetY = bestY;
+            }
+
+            const pi = { ...wi, y: targetY, product: { ...wi.product, quantity: 1 } };
+            placed.push(pi);
+            wallPlaced.push(pi);
+            unpacked.set(wi.product.id, unpacked.get(wi.product.id)! - 1);
+            // Only deduct from Phase 1 target map if it was a normal product
+            if (!isSmallProduct(wi.product)) {
+                normalUnpacked.set(wi.product.id, normalUnpacked.get(wi.product.id)! - 1);
+            }
+        }
+        walls.push({ y: currentY, depth: bestActualDepth, items: wallPlaced });
+        currentY += bestActualDepth;
+    }
+
+    const allRemainingProducts = allProducts.filter(p => (unpacked.get(p.id) || 0) > 0);
+    const runPhase2 = [...allRemainingProducts].sort((a, b) => {
+        if (b.height !== a.height) return b.height - a.height;
+        return (b.width * b.length) - (a.width * a.length);
+    });
+
+    for (const wall of walls) {
+        let wallMaxZ = 0;
+        let wallMaxW = 0;
+        let wallBaseL = wall.depth;
+        let isTopLay = false;
+        for (const item of wall.items) {
+            // V4.28: Ignore small products for base height. Side-gap towers must not block headroom detection.
+            if (isSmallProduct(item.product)) continue;
+            const topZ = item.z + item.h;
+            if (topZ > wallMaxZ) {
+                wallMaxZ = topZ;
+                isTopLay = (item.orientation === 'lay');
+            } else if (topZ === wallMaxZ && item.orientation === 'lay') {
+                isTopLay = true;
+            }
+            const rightEdge = item.x + item.w;
+            if (rightEdge > wallMaxW) wallMaxW = rightEdge;
+        }
+
+        let curZ = getMinTopZOfWall(wall, placed);
+        let filled = true;
+        let safetyCounter = 0;
+        while (filled && curZ < container.height && safetyCounter++ < 200) {
+            filled = false;
+            let bestRowScore = -Infinity;
+            let bestRowItems: any[] = [];
+            let bestRowH = 0;
+
+            for (const sp of runPhase2) {
+                const avail = unpacked.get(sp.id) || 0;
+                if (avail <= 0) continue;
+
+                const p2Orients: { w: number; l: number; h: number; type: 'std' | 'rot' | 'lay' }[] = [
+                    { w: sp.width, l: sp.length, h: sp.height, type: 'std' }
+                ];
+                if (sp.allow_rotate && sp.width !== sp.length) {
+                    p2Orients.push({ w: sp.length, l: sp.width, h: sp.height, type: 'rot' });
+                }
+                if (sp.height > sp.width || sp.height > sp.length) {
+                    p2Orients.push({ w: sp.width, l: sp.height, h: sp.length, type: 'lay' });
+                    if (sp.allow_rotate && sp.width !== sp.length) {
+                        p2Orients.push({ w: sp.length, l: sp.height, h: sp.width, type: 'lay' });
+                    }
+                }
+
+                for (const to of p2Orients) {
+                    const isLayOrient = (to.type === 'lay');
+                    const maxAvailL = isLayOrient ? (container.length - wall.y) : wallBaseL;
+                    if (to.h > (container.height - curZ) + 0.5 || to.l > maxAvailL || to.w > wallMaxW + 100) continue;
+
+                    // 눕힘 박스 위 눕힘 중복 적재(Z축) 엄격 금지 규칙
+                    if (isLayOrient) {
+                        const hasUnderLay = wall.items.some(it => it.orientation === 'lay');
+                        if (hasUnderLay) continue;
+                    }
+
+                    const baseMaxH = wall.items.reduce((max: number, it: any) => Math.max(max, isSmallProduct(it.product) ? 0 : it.h), 0);
+                    if (baseMaxH < 500 && to.h >= 670) continue;
+
+                    const isTopperLow = isLowHeightProduct(sp, to.h);
+                    if (isTopperLow && baseMaxH < 500) continue;
+
+                    const suppW = Math.min(to.w, wallMaxW);
+                    const suppL = Math.min(to.l, maxAvailL);
+                    if (suppW * suppL < to.w * to.l * 0.66) continue;
+
+                    const fitCountW = Math.floor((wallMaxW + 100) / to.w);
+                    const fitCountL = Math.floor((maxAvailL + 100) / to.l);
+                    if (fitCountW === 0 || fitCountL === 0) continue;
+                    const fitCount = fitCountW * fitCountL;
+                    const rowCount = Math.min(fitCount, avail);
+
+                    const rowItems: any[] = [];
+                    let placedCount = 0;
+                    outerLoop: for (let li = 0; li < fitCountL; li++) {
+                        for (let ri = 0; ri < fitCountW; ri++) {
+                            if (placedCount >= rowCount) break outerLoop;
+                            const targetX = ri * to.w;
+                            let targetY = wall.y + (li * to.l);
+
+                            // 컨테이너 경계 초과 검사
+                            if (targetX + to.w > container.width + 0.5 || targetY + to.l > container.length + 0.5) {
+                                continue;
+                            }
+
+                            const targetXMax = targetX + to.w;
+                            // 1. getTopZAt/hasSupportAtZ 후보군 필터링 (X축이 겹쳐야 함)
+                            const xOverlapCandidates = [];
+                            for (let i = 0; i < placed.length; i++) {
+                                const other = placed[i];
+                                if (Math.max(targetX, other.x) < Math.min(targetXMax, other.x + other.w) - 0.5) {
+                                    xOverlapCandidates.push(other);
+                                }
+                            }
+
+                            const targetZ = getTopZAt(targetX, targetY, to.w, to.l, xOverlapCandidates);
+                            const targetZMax = targetZ + to.h;
+
+                            // 2. Overlap 후보군 필터링 (X축이 겹치고 Z축도 겹쳐야 함)
+                            const overlapCandidates = [];
+                            for (let i = 0; i < xOverlapCandidates.length; i++) {
+                                const other = xOverlapCandidates[i];
+                                if (Math.max(targetZ, other.z) < Math.min(targetZMax, other.z + other.h) - 0.5) {
+                                    overlapCandidates.push(other);
+                                }
+                            }
+
+                            // Y축 슬라이딩 탐색 (앞쪽으로 바짝 당겨 배치)
+                            let slidY = targetY;
+                            for (let candidateY = targetY - 1; candidateY >= 0; candidateY--) {
+                                const candidateZ = getTopZAt(targetX, candidateY, to.w, to.l, xOverlapCandidates);
+                                if (candidateZ !== targetZ) {
+                                    break; // 높이가 다르면 단차가 발생하므로 슬라이딩 불가
+                                }
+                                // 슬라이딩 시에는 100% 지탱만 허용하여 계단식 돌출 적재 방지
+                                if (!hasSupportAtZ(targetX, candidateY, to.w, to.l, targetZ, xOverlapCandidates, 0.99)) {
+                                    break; // 지탱 공간이 확보되지 않으면 슬라이딩 불가
+                                }
+                                let overlap = false;
+                                const checkList = [...placed, ...rowItems];
+                                for (let i = 0; i < checkList.length; i++) {
+                                    const other = checkList[i];
+                                    const xOverlap = Math.max(targetX, other.x) < Math.min(targetX + to.w, other.x + other.w) - 0.5;
+                                    const yOverlap = Math.max(candidateY, other.y) < Math.min(candidateY + to.l, other.y + other.l) - 0.5;
+                                    const zOverlap = Math.max(targetZ, other.z) < Math.min(targetZ + to.h, other.z + other.h) - 0.5;
+                                    if (xOverlap && yOverlap && zOverlap) {
+                                        overlap = true;
+                                        break;
+                                    }
+                                }
+                                if (overlap) {
+                                    break; // 다른 상자와 충돌 시 슬라이딩 불가
+                                }
+                                slidY = candidateY;
+                            }
+                            targetY = slidY;
+                            if (targetZ + to.h > container.height + 0.5) {
+                                continue;
+                            }
+                        
+                            // 1. 공중 부양 방지 지탱면 검사
+                            if (!hasSupportAtZ(targetX, targetY, to.w, to.l, targetZ, placed)) {
+                                continue;
+                            }
+
+                            // 추가: 3D 오버랩(겹침) 검사
+                            let overlap = false;
+                            for (const other of placed) {
+                                const xOverlap = Math.max(targetX, other.x) < Math.min(targetX + to.w, other.x + other.w) - 0.5;
+                                const yOverlap = Math.max(targetY, other.y) < Math.min(targetY + to.l, other.y + other.l) - 0.5;
+                                const zOverlap = Math.max(targetZ, other.z) < Math.min(targetZ + to.h, other.z + other.h) - 0.5;
+                                if (xOverlap && yOverlap && zOverlap) {
+                                    overlap = true;
+                                    break;
+                                }
+                            }
+                            if (overlap) continue;
+                        
+                            // 2. 10단 누적 제한 체크 (모든 제품에 적용)
+                            const stacked = getStackedCount(targetX, targetY, to.w, to.l, placed);
+                            if (stacked >= 10) {
+                                continue;
+                            }
+
+                            // 3. 아래 제품의 높이가 500mm 이하일 때, 새로 쌓으려는 제품의 높이가 기존 제품 높이 + 50mm를 초과하면 적재 제한
+                            if (targetZ > 0 && !isValidHeightStack(targetX, targetY, to.w, to.l, placed, targetZ, to.h)) {
+                                continue;
+                            }
+
+                            if (isTopperLow) {
+                                // 4. 베이스 높이 500 이상 체크 (바로 아래 베이스 기준)
+                                if (!hasValidBaseForLowProduct(targetX, targetY, to.w, to.l, placed, targetZ)) {
+                                    continue;
+                                }
+                            }
+                            rowItems.push({ product: sp, x: targetX, y: targetY, z: targetZ, w: to.w, l: to.l, h: to.h, orientation: to.type });
+                            placedCount++;
+                        }
+                    }
+
+                    // V4.17: Score by PHYSICAL CAPACITY (fitCount), not actual placed count
+                    const potentialW = fitCountW * to.w;
+                    const potentialL = fitCountL * to.l;
+                    const potentialUtil = (potentialW * potentialL) / (wallMaxW * wallBaseL);
+                    const rowVol = rowCount * to.w * to.l * to.h;
+                    
+                    let penalty = 0;
+                    if (to.h > baseMaxH) {
+                        penalty = 5_000_000; // 역순 적재 패널티
+                    }
+                    // V6.16: baseMaxH가 1350mm 이상인 경우, 10단 이상 적재 가능한 제품(isLowHeightProduct)에 가중치 부여
+                    let bonus = 0;
+                    if (baseMaxH >= 1350) {
+                        if (isLowHeightProduct(sp, to.h)) {
+                            bonus = 100_000_000_000;
+                        }
+                    }
+                    const rowScore = fitCount * 1_000_000 + rowVol * potentialUtil - penalty + bonus;
+
+                    if (rowScore > bestRowScore) {
+                        bestRowScore = rowScore;
+                        bestRowItems = rowItems;
+                        bestRowH = to.h;
+                    }
+                }
+            }
+
+            if (bestRowItems.length > 0) {
+                for (const ri of bestRowItems) {
+                    const pi = { ...ri, product: { ...ri.product, quantity: 1 } };
+                    placed.push(pi);
+                    wall.items.push(pi);
+                    unpacked.set(ri.product.id, unpacked.get(ri.product.id)! - 1);
+                }
+                curZ = getMinTopZOfWall(wall, placed);
+                // V5.04: If the stacked item is laid down, stop filling on top of it.
+                filled = bestRowItems[0].orientation !== 'lay';
+            }
+        }
+    }
+
+    // ---- PHASE 3: Remaining NORMAL products on the floor (no small) ----
+    const remainingNormal = allProducts.filter(p => (unpacked.get(p.id) || 0) > 0 && !isSmallProduct(p))
+        .map(p => ({ ...p, quantity: unpacked.get(p.id)! }));
+
+    if (remainingNormal.length > 0) {
+        const floorUnpacked = new Map<string, number>();
+        remainingNormal.forEach(p => floorUnpacked.set(p.id, p.quantity));
+        const runFloor = [...remainingNormal].sort((a, b) => {
+            if (hasSmall) {
+                const aIsBig = Number(a.height) >= 500;
+                const bIsBig = Number(b.height) >= 500;
+                if (aIsBig && !bIsBig) return -1;
+                if (!aIsBig && bIsBig) return 1;
+            }
+            if (pIdx > 0) return Math.random() - 0.5;
+            return (b.width * b.height) - (a.width * a.height);
+        });
+
+        while (currentY < container.length) {
+            const rem = runFloor.filter(p => floorUnpacked.get(p.id)! > 0);
+            if (rem.length === 0) break;
+
+            const p1 = rem[0];
+            const depthCandidates = p1.allow_rotate 
+                ? [p1.length, p1.width, p1.height] 
+                : [p1.length, p1.height];
+            
+            // V4.27 Depth Expansion (Phase 3)
+            const smallRem = allProducts.filter(p => (unpacked.get(p.id) || 0) > 0 && isSmallProduct(p));
+            for (const sp of smallRem) {
+                depthCandidates.push(sp.length, sp.width);
+            }
+
+            const depths = Array.from(new Set(depthCandidates)).filter(d => d > 0 && d <= (container.length - currentY) + 0.5).sort((a, b) => b - a);
+
+            let bestWItems: any[] = [];
+            let bestActualDepth = 0;
+            let bestWallScore = -Infinity;
+
+            for (const limitD of depths) {
+                // V4.26 Scavenge side gaps in Phase 3 as well
+                const tempU = new Map(unpacked);
+                const wallItems = blockPackShelf(container.width, container.height, limitD, allProducts, tempU, false, isMixedWidthSpecialJob);
+
+                let score = evaluateWallScore(wallItems, container.width, isMixedWidthSpecialJob);
+                if (pIdx > 0) {
+                    score *= (0.9 + Math.random() * 0.2);
+                }
+                if (score > bestWallScore) {
+                    bestWallScore = score;
+                    bestWItems = wallItems;
+                    bestActualDepth = wallItems.length > 0 ? Math.max(...wallItems.map((it: any) => (it.yRel || 0) + it.l)) : 0;
+                }
+            }
+
+            if (bestWItems.length === 0) {
+                currentY += 10;
+                if (currentY > container.length) break;
+                continue;
+            }
+
+            const phase3Wall: PackedItem[] = [];
+            for (const wi of bestWItems) {
+                const pi = { ...wi, y: currentY + (wi.yRel || 0), product: { ...wi.product, quantity: 1 } };
+                placed.push(pi);
+                phase3Wall.push(pi);
+                unpacked.set(wi.product.id, unpacked.get(wi.product.id)! - 1);
+                if (!isSmallProduct(wi.product)) {
+                    floorUnpacked.set(wi.product.id, floorUnpacked.get(wi.product.id)! - 1);
+                }
+            }
+            walls.push({ y: currentY, depth: bestActualDepth, items: phase3Wall });
+            currentY += bestActualDepth;
+        }
+    }
+
+    // ---- PRE-PHASE 4: Merge continuous flat tops into Macro Walls ----
+    // V4.25: Instead of isolated walls, merge walls that are contiguous and share identical top profile geometry.
+    interface MacroWall {
+        y: number;
+        depth: number;
+        maxZ: number;
+        maxW: number;
+        isTopLay?: boolean;
+    }
+    const macroWalls: MacroWall[] = [];
+    
+    for (const wall of walls) {
+        let wallMaxZ = 0;
+        let wallMaxW = 0;
+        let isTopLay = false;
+        for (const item of wall.items) {
+            const topZ = item.z + item.h;
+            if (topZ > wallMaxZ) {
+                wallMaxZ = topZ;
+                isTopLay = (item.orientation === 'lay');
+            } else if (topZ === wallMaxZ && item.orientation === 'lay') {
+                isTopLay = true;
+            }
+            const rightEdge = item.x + item.w;
+            if (rightEdge > wallMaxW) wallMaxW = rightEdge;
+        }
+        for (const pi of placed) {
+            if (pi.y >= wall.y && pi.y < wall.y + wall.depth) {
+                const topZ = pi.z + pi.h;
+                if (topZ > wallMaxZ) {
+                    wallMaxZ = topZ;
+                    isTopLay = (pi.orientation === 'lay');
+                } else if (topZ === wallMaxZ && pi.orientation === 'lay') {
+                    isTopLay = true;
+                }
+            }
+        }
+        
+        if (macroWalls.length > 0) {
+            const last = macroWalls[macroWalls.length - 1];
+            // If they sequentially touch and have identical Z/W capacity boundaries, merge them.
+            if (Math.abs((last.y + last.depth) - wall.y) < 1 && Math.abs(last.maxZ - wallMaxZ) < 1 && Math.abs(last.maxW - wallMaxW) < 1 && last.isTopLay === isTopLay) {
+                last.depth += wall.depth;
+                continue;
+            }
+        }
+        macroWalls.push({ y: wall.y, depth: wall.depth, maxZ: wallMaxZ, maxW: wallMaxW, isTopLay });
+    }
+    // ---- PHASE 4: Stack remaining SMALL products on top of ALL macro walls ----
+    const remainingSmall = allProducts.filter(p => (unpacked.get(p.id) || 0) > 0 && isSmallProduct(p));
+    const runPhase4 = pIdx > 0 ? [...remainingSmall].sort(() => Math.random() - 0.5) : remainingSmall;
+
+    for (const wall of macroWalls) {
+        let wallMaxZ = wall.maxZ;
+        let wallMaxW = wall.maxW;
+        let wallBaseL = wall.depth;
+
+        let curZ = getMinTopZOfWall(wall, placed);
+        let filled = !wall.isTopLay; // V5.02: Block filling if top item is laid down
+        let safetyCounter = 0;
+        while (filled && curZ < container.height && safetyCounter++ < 200) {
+            filled = false;
+            let bestRowScore = -Infinity;
+            let bestRowItems: any[] = [];
+            let bestRowH = 0;
+
+            for (const sp of runPhase4) {
+                const avail = unpacked.get(sp.id) || 0;
+                if (avail <= 0) continue;
+                const orients = getOrients(sp);
+                for (const to of orients) {
+                    if (to.h > (container.height - curZ) + 0.5 || to.l > wallBaseL + 100 || to.w > wallMaxW + 100) continue;
+                    const suppW = Math.min(to.w, wallMaxW);
+                    const suppL = Math.min(to.l, wallBaseL);
+                    if (suppW * suppL < to.w * to.l * 0.66) continue;
+                    
+                    // V4.25: Fill in 2D space (Width x Depth) instead of a single 1D strip.
+                    const fitCountW = Math.floor((wallMaxW + 100) / to.w);
+                    const fitCountL = Math.floor((wallBaseL + 100) / to.l);
+                    if (fitCountW === 0 || fitCountL === 0) continue;
+                    
+                    const countLimit = Math.min(fitCountW * fitCountL, avail);
+                    const rowItems: any[] = [];
+                    let placedCount = 0;
+                    
+                    for (let l_idx = 0; l_idx < fitCountL; l_idx++) {
+                        for (let w_idx = 0; w_idx < fitCountW; w_idx++) {
+                            if (placedCount >= countLimit) break;
+                            
+                            const targetX = w_idx * to.w;
+                            const targetY = wall.y + (l_idx * to.l);
+
+                            // 컨테이너 경계 초과 검사
+                            if (targetX + to.w > container.width + 0.5 || targetY + to.l > container.length + 0.5) {
+                                continue;
+                            }
+
+                            const targetZ = getTopZAt(targetX, targetY, to.w, to.l, placed);
+                            if (targetZ + to.h > container.height + 0.5) {
+                                continue;
+                            }
+                            
+                            // 1. 공중 부양 방지 지탱면 검사
+                            if (!hasSupportAtZ(targetX, targetY, to.w, to.l, targetZ, placed)) {
+                                continue;
+                            }
+
+                            // 추가: 3D 오버랩(겹침) 검사
+                            let overlap = false;
+                            for (const other of placed) {
+                                const xOverlap = Math.max(targetX, other.x) < Math.min(targetX + to.w, other.x + other.w) - 0.5;
+                                const yOverlap = Math.max(targetY, other.y) < Math.min(targetY + to.l, other.y + other.l) - 0.5;
+                                const zOverlap = Math.max(targetZ, other.z) < Math.min(targetZ + to.h, other.z + other.h) - 0.5;
+                                if (xOverlap && yOverlap && zOverlap) {
+                                    overlap = true;
+                                    break;
+                                }
+                            }
+                            if (overlap) continue;
+                            
+                            const isTopperLow = isLowHeightProduct(sp, to.h);
+                            
+                            // 2. 10단 누적 제한 체크 (모든 제품에 적용)
+                            const stacked = getStackedCount(targetX, targetY, to.w, to.l, placed);
+                            if (stacked >= 10) {
+                                continue;
+                            }
+
+                            // 3. 아래 제품의 높이가 500mm 이하일 때, 새로 쌓으려는 제품의 높이가 기존 제품 높이 + 50mm를 초과하면 적재 제한
+                            if (targetZ > 0 && !isValidHeightStack(targetX, targetY, to.w, to.l, placed, targetZ, to.h)) {
+                                continue;
+                            }
+
+                            if (isTopperLow) {
+                                // 4. 베이스 높이 500 이상 체크 (바로 아래 베이스 기준)
+                                if (!hasValidBaseForLowProduct(targetX, targetY, to.w, to.l, placed, targetZ)) {
+                                    continue;
+                                }
+                            }
+                            
+                            rowItems.push({ 
+                                product: sp, 
+                                x: targetX, 
+                                y: targetY, 
+                                z: targetZ, 
+                                w: to.w, l: to.l, h: to.h, 
+                                orientation: to.type 
+                            });
+                            placedCount++;
+                        }
+                    }
+                    
+                    // Strongly prioritize volume to ensure we pick rotations/products that fill the most raw capacity
+                    const rowVol = placedCount * to.w * to.l * to.h;
+                    const rowScore = placedCount * 1_000_000 + rowVol;
+                    
+                    if (rowScore > bestRowScore) {
+                        bestRowScore = rowScore;
+                        bestRowItems = rowItems;
+                        bestRowH = to.h;
+                    }
+                }
+            }
+            if (bestRowItems.length > 0) {
+                for (const ri of bestRowItems) {
+                    placed.push({ ...ri, product: { ...ri.product, quantity: 1 } });
+                    unpacked.set(ri.product.id, unpacked.get(ri.product.id)! - 1);
+                }
+                curZ = getMinTopZOfWall(wall, placed);
+                // V5.04: If the stacked item is laid down, stop filling on top of it.
+                filled = bestRowItems[0].orientation !== 'lay';
+            }
+        }
+    }
+
+    // ---- PHASE 5: ONLY if all normal products packed, allow small on floor ----
+    const normalStillUnpacked = allProducts.filter(p => !isSmallProduct(p) && (unpacked.get(p.id) || 0) > 0);
+    const smallStillUnpacked = allProducts.filter(p => isSmallProduct(p) && (unpacked.get(p.id) || 0) > 0)
+        .map(p => ({ ...p, quantity: unpacked.get(p.id)! }));
+
+    if (normalStillUnpacked.length === 0 && smallStillUnpacked.length > 0) {
+        const floorUnpacked = new Map<string, number>();
+        smallStillUnpacked.forEach(p => floorUnpacked.set(p.id, p.quantity));
+        const runSmallFloor = pIdx > 0 ? [...smallStillUnpacked].sort(() => Math.random() - 0.5) : smallStillUnpacked;
+
+        while (currentY < container.length) {
+            const rem = runSmallFloor.filter(p => floorUnpacked.get(p.id)! > 0);
+            if (rem.length === 0) break;
+
+            const p1 = rem[0];
+            const depthCandidates = p1.allow_rotate 
+                ? [p1.length, p1.width, p1.height] 
+                : [p1.length, p1.height];
+            const depths = Array.from(new Set(depthCandidates)).filter(d => d > 0 && d <= (container.length - currentY) + 0.5).sort((a, b) => b - a);
+
+            let bestWItems: any[] = [];
+            let bestActualDepth = 0;
+            let bestWallScore = -Infinity;
+
+            for (const limitD of depths) {
+                const tempU = new Map(floorUnpacked);
+                const wallItems = blockPackShelf(container.width, container.height, limitD, runSmallFloor, tempU, true, isMixedWidthSpecialJob);
+                
+                const score = evaluateWallScore(wallItems, container.width, isMixedWidthSpecialJob);
+                if (score > bestWallScore) {
+                    bestWallScore = score;
+                    bestWItems = wallItems;
+                    bestActualDepth = wallItems.length > 0 ? Math.max(...wallItems.map((it: any) => (it.yRel || 0) + it.l)) : 0;
+                }
+            }
+
+            if (bestWItems.length === 0) {
+                currentY += 10;
+                if (currentY > container.length) break;
+                continue;
+            }
+
+            for (const wi of bestWItems) {
+                placed.push({ ...wi, y: currentY + (wi.yRel || 0), product: { ...wi.product, quantity: 1 } });
+                floorUnpacked.set(wi.product.id, floorUnpacked.get(wi.product.id)! - 1);
+                unpacked.set(wi.product.id, unpacked.get(wi.product.id)! - 1);
+            }
+            currentY += bestActualDepth;
+        }
+    }
+
+    // ---- GRAVITY DROP: Fix floating items ----
+    // Iteratively drop each item to rest on the highest support below it.
+    let gravityChanged = true;
+    let gravityIter = 0;
+    while (gravityChanged && gravityIter < 20) {
+        gravityChanged = false;
+        gravityIter++;
+        // Sort by Z ascending each iteration so lower items settle first
+        placed.sort((a, b) => a.z - b.z);
+        for (let i = 0; i < placed.length; i++) {
+            const item = placed[i];
+            if (item.z === 0) continue; // already on floor
+
+            // Find the highest surface directly below this item
+            let supportZ = 0; // floor
+            for (let j = 0; j < placed.length; j++) {
+                if (j === i) continue;
+                const other = placed[j];
+                // Must be below our item (its top <= our current bottom)
+                const otherTop = other.z + other.h;
+                if (otherTop > item.z + 0.5) continue; // not below us (use 0.5mm tolerance)
+
+                // Check X-axis overlap
+                const xOverlap = other.x < item.x + item.w - 0.5 && other.x + other.w > item.x + 0.5;
+                // Check Y-axis overlap
+                const yOverlap = other.y < item.y + item.l - 0.5 && other.y + other.l > item.y + 0.5;
+                if (xOverlap && yOverlap) {
+                    if (otherTop > supportZ) {
+                        supportZ = otherTop;
+                    }
+                }
+            }
+            if (Math.abs(item.z - supportZ) > 1) {
+                item.z = supportZ;
+                gravityChanged = true;
+            }
+        }
+    }
+
+    // V6.11: Y-Axis Gravity Compaction — Wall 간 Gap 제거 후처리
+    compactItemsAlongY(placed, container);
+
+    const unpackedList = allProducts.map(p => ({ ...p, quantity: unpacked.get(p.id)! })).filter(p => p.quantity > 0);
+    const vol = placed.reduce((s, i) => s + (i.w * i.l * i.h), 0);
+    return { container: { ...container, id: '40hc' }, items: placed, efficiency: (vol / (container.width * container.length * container.height)) * 100, unpacked: unpackedList };
+}
+
+const orientsCache = new Map<string, any[]>();
+
+function getOrients(p: Product): any[] {
+    const key = `${p.id}_${p.width}_${p.length}_${p.height}_${p.allow_rotate}_${p.allow_lay_down}`;
+    const cached = orientsCache.get(key);
+    if (cached) return cached;
+
+    // V5.01: Safety Shutoff. Prevent infinite loops caused by zero-dimension items (curZ += 0 loops).
+    if (p.width < 1 || p.length < 1 || p.height < 1) return [];
+
+    const all: any[] = [];
+    all.push({ w: p.width, l: p.length, h: p.height, type: 'std' });
+    if (p.allow_rotate) {
+        all.push({ w: p.length, l: p.width, h: p.height, type: 'rot' });
+    }
+    if (p.allow_lay_down) {
+        all.push({ w: p.height, l: p.length, h: p.width, type: 'lay' });
+        all.push({ w: p.width, l: p.height, h: p.length, type: 'lay' });
+        all.push({ w: p.height, l: p.width, h: p.length, type: 'lay' });
+        all.push({ w: p.length, l: p.height, h: p.width, type: 'lay' });
+    }
+    // V4.14: Filter out unstable bottom faces
+    const filtered = all.filter(o => isStableBottom(p, o.w, o.l));
+
+    // V4.19: Fallback - if everything was filtered out, allow the standard orientation
+    let result = filtered;
+    if (filtered.length === 0 && all.length > 0) {
+        result = [all[0]];
+    }
+    orientsCache.set(key, result);
+    return result;
+}
+
+function blockPackShelf(W: number, H: number, D: number, allProducts: Product[], unpacked: Map<string, number>, allowSmall: boolean, isMixedWidthSpecialJob: boolean): any[] {
+    const wallItems: any[] = [];
+    let currentX = 0;
+
+    while (currentX < W) {
+        const rem = allProducts.filter(p => unpacked.get(p.id)! > 0);
+        if (rem.length === 0) break;
+
+        let bestBlockScore = -Infinity;
+        let bestBlockW = 0;
+        let bestBlockItems: any[] = [];
+
+        // V4.26 Side Gap Scavenging
+        // Pass 0: Try to fit normal products.
+        // Pass 1: Also try scavenging to see if small items provide a better local fit.
+        for (const passIdx of [0, 1]) {
+            // Phase 4/5 (allowSmall=true) already considers everyone, so Pass 1 is redundant.
+            if (passIdx === 1 && allowSmall) break;
+
+            for (const p of rem) {
+                const isSmall = isSmallProduct(p);
+                if (passIdx === 0 && !allowSmall && isSmall) continue;
+                if (passIdx === 1 && !isSmall) continue;
+
+                const orientsList = [];
+                orientsList.push({ w: p.width, l: p.length, h: p.height, type: 'std' });
+                if (p.allow_rotate) {
+                    orientsList.push({ w: p.length, l: p.width, h: p.height, type: 'rot' });
+                }
+                if (p.allow_lay_down) {
+                    orientsList.push({ w: p.height, l: p.length, h: p.width, type: 'lay' });
+                    orientsList.push({ w: p.width, l: p.height, h: p.length, type: 'lay' });
+                    orientsList.push({ w: p.height, l: p.width, h: p.length, type: 'lay' });
+                    orientsList.push({ w: p.length, l: p.height, h: p.width, type: 'lay' });
+                }
+
+                const orients = orientsList.filter(o => o.w <= (W - currentX) + 0.5 && o.l <= D + 0.5 && o.h <= H + 0.5 && isStableBottom(p, o.w, o.l));
+
+                for (const o of orients) {
+                    for (let bW = 1; bW <= Math.min(5, unpacked.get(p.id)!); bW++) {
+                        for (let bL = 1; bL <= 5; bL++) {
+                            const totalW = o.w * bW;
+                            const totalL = o.l * bL;
+                            if (totalW > (W - currentX) + 0.5) break;
+                            if (totalL > D + 0.5) break;
+
+                            // V5.05: If orientation is 'lay', limit height count to 1 to prevent stacking laid down items
+                            const maxHCount = o.type === 'lay' ? 1 : Math.floor((H + 0.5) / o.h);
+                            let limitHCount = Math.min(maxHCount, Math.floor(unpacked.get(p.id)! / (bW * bL)));
+                            if (isLowHeightProduct(p, o.h)) {
+                                limitHCount = Math.min(limitHCount, 10);
+                            }
+                            if (limitHCount === 0) continue;
+
+                            for (let hCount = 1; hCount <= limitHCount; hCount++) {
+                                let tempItems: any[] = [];
+                                for (let bwIdx = 0; bwIdx < bW; bwIdx++) {
+                                    for (let blIdx = 0; blIdx < bL; blIdx++) {
+                                        for (let phIdx = 0; phIdx < hCount; phIdx++) {
+                                            tempItems.push({ product: p, x: currentX + (bwIdx * o.w), yRel: blIdx * o.l, z: phIdx * o.h, w: o.w, l: o.l, h: o.h, orientation: o.type });
+                                        }
+                                    }
+                                }
+
+                                // 3D overlap check between tempItems (current base) and wallItems (previous blocks)
+                                let baseOverlap = false;
+                                for (const item of tempItems) {
+                                    for (const other of wallItems) {
+                                        const xOverlap = Math.max(item.x, other.x) < Math.min(item.x + item.w, other.x + other.w) - 0.5;
+                                        const yOverlap = Math.max(item.yRel, other.yRel || 0) < Math.min(item.yRel + item.l, (other.yRel || 0) + other.l) - 0.5;
+                                        const zOverlap = Math.max(item.z, other.z) < Math.min(item.z + item.h, other.z + other.h) - 0.5;
+                                        if (xOverlap && yOverlap && zOverlap) {
+                                            baseOverlap = true;
+                                            break;
+                                        }
+                                    }
+                                    if (baseOverlap) break;
+                                }
+                                if (baseOverlap) {
+                                    continue;
+                                }
+
+                                let curZ = hCount * o.h;
+                                let tempU_Col = new Map(unpacked);
+                                tempU_Col.set(p.id, tempU_Col.get(p.id)! - (hCount * bW * bL));
+
+                                const baseHeight = hCount * o.h;
+                                const remainingBaseQty = unpacked.get(p.id) || 0;
+                                const hasLargeUnpackedTopper = allProducts.some(topP => {
+                                    if (!isLowHeightProduct(topP, topP.height)) return false;
+                                    const avail = tempU_Col.get(topP.id) || 0;
+                                    if (avail < 10) return false;
+                                    const headroom = H - baseHeight;
+                                    return headroom >= Number(topP.height) * 10;
+                                }) && (remainingBaseQty <= 15);
+
+                                const effectiveAllowSmall = allowSmall || (passIdx === 1);
+
+                            // ROW-BASED TOPPING (V4.12)
+                            // V5.02: No stacking on top of laid down (lay) items
+                            let zPossible = o.type !== 'lay';
+                            while (curZ < H && zPossible) {
+                                zPossible = false;
+                                let bestRowScore = -Infinity;
+                                let bestRowItems: any[] = [];
+                                let bestRowH = 0;
+
+                                for (const topP of allProducts) {
+                                    const allowedSmallTopper = effectiveAllowSmall || (o.h >= 500);
+                                    if (!allowedSmallTopper && isSmallProduct(topP)) continue;
+                                    const avail = tempU_Col.get(topP.id) || 0;
+                                    if (avail <= 0) continue;
+
+                                    const actualOrients = getOrients(topP);
+
+                                    for (const to of actualOrients) {
+                                        if (to.w < 1 || to.l > totalL + 100 || to.w > totalW + 300 || to.h > (H - curZ) + 0.5) continue;
+
+                                        // If we have a large unpacked flat topper, do not block headroom by stacking large items
+                                        if (to.h >= 500 && hasLargeUnpackedTopper) {
+                                            continue;
+                                        }
+
+                                         // 아래 제품의 높이(o.h)가 500mm 이하인 경우, 위에 적재할 토퍼의 높이(to.h)가 아래 제품 높이 + 50mm를 초과하면 적재 금지
+                                         if (o.h <= 500) {
+                                             if (to.h > o.h + 50) {
+                                                 continue;
+                                             }
+                                         }
+
+                                        const suppW = Math.min(to.w, totalW);
+                                        const suppL = Math.min(to.l, totalL);
+                                        if (suppW * suppL < (to.w * to.l * 0.66)) continue;
+
+                                        // V5.00 Identical Product Row Sharing & Identity Sorting
+                                        const identicalProducts = [{ p: topP, qty: avail }];
+                                        let combinedAvail = avail;
+
+                                        for (const otherP of allProducts) {
+                                            if (otherP.id === topP.id) continue;
+                                            const otherAvail = tempU_Col.get(otherP.id) || 0;
+                                            if (otherAvail <= 0) continue;
+                                            
+                                            // Check if otherP can match the exact dimensions of 'to'
+                                            const oo = getOrients(otherP).find(x => Math.abs(x.w - to.w) < 0.5 && Math.abs(x.l - to.l) < 0.5 && Math.abs(x.h - to.h) < 0.5);
+                                            if (oo) {
+                                                identicalProducts.push({ p: otherP, qty: otherAvail });
+                                                combinedAvail += otherAvail;
+                                            }
+                                        }
+
+                                        // IDEA 2: Sort to prioritize identical models (topP.id === p.id or otherP.id === p.id)
+                                        identicalProducts.sort((a, b) => {
+                                            const aIsBase = a.p.id === p.id;
+                                            const bIsBase = b.p.id === p.id;
+                                            if (aIsBase && !bIsBase) return -1;
+                                            if (!aIsBase && bIsBase) return 1;
+                                            return 0;
+                                        });
+
+                                         const isLastBlock = (W - currentX - totalW) <= 50;
+                                         const topperWLimit = (isMixedWidthSpecialJob && !isLastBlock) ? 0 : 300;
+                                         const maxAllowedW = Math.min(totalW + topperWLimit, W - currentX);
+                                         
+                                         // V5.06: 눕힌 제품(lay)은 Z축 적재가 불가한 대신, 
+                                         // 축이 변경되어 XY축 방향으로 제약 없이 확장이 가능하도록 허용합니다.
+                                         const actualMaxW = to.type === 'lay' ? (W - currentX) : maxAllowedW;
+                                         const fitCountW = Math.floor(actualMaxW / to.w);
+                                         
+                                         // 깊이(Y축)도 동일하게 베이스 블록(totalL)의 제약을 풀고 남은 공간(D) 끝까지 허용합니다.
+                                         const actualMaxL = to.type === 'lay' ? D : Math.min(totalL + 100, D);
+                                         const fitCountL = Math.floor(actualMaxL / to.l);
+                                         
+                                         const fitCount = fitCountW * fitCountL;
+                                        if (fitCount === 0) continue;
+                                        const rowCount = Math.min(fitCount, combinedAvail);
+
+                                        const rowItems: any[] = [];
+                                        let placedCount = 0;
+                                        let currentIdx = 0;
+                                        let qtyUsed = 0;
+                                        for (let riL = 0; riL < fitCountL && placedCount < rowCount; riL++) {
+                                            for (let riW = 0; riW < fitCountW && placedCount < rowCount; riW++) {
+                                                const currentItem = identicalProducts[currentIdx];
+                                                
+                                                const targetX = currentX + (riW * to.w);
+                                                const targetYRel = riL * to.l;
+
+                                                // 컨테이너 경계 초과 검사
+                                                if (targetX + to.w > W + 0.5 || targetYRel + to.l > D + 0.5) {
+                                                    continue;
+                                                }
+                                                
+                                                // 1. 공중 부양 방지 지탱면 검사
+                                                if (!hasSupportAtZInTemp(targetX, targetYRel, to.w, to.l, curZ, tempItems)) {
+                                                    continue;
+                                                }
+
+
+                                                // 2. 이 격자 위치에 이 토퍼를 배치할 때 누적 단수가 10단을 넘는지 검사 (모든 제품에 적용)
+                                                const stacked = getStackedCountInTemp(targetX, targetYRel, to.w, to.l, tempItems);
+                                                if (stacked >= 10) {
+                                                    continue; // 10단 초과하므로 이 셀에는 배치하지 않고 건너뜀
+                                                }
+                                                
+                                                 // 3. 기존 wallItems와 겹치는지 검사
+                                                 let overlap = false;
+                                                 for (const other of wallItems) {
+                                                     const xOverlap = Math.max(targetX, other.x) < Math.min(targetX + to.w, other.x + other.w) - 0.5;
+                                                     const yOverlap = Math.max(targetYRel, other.yRel || 0) < Math.min(targetYRel + to.l, (other.yRel || 0) + other.l) - 0.5;
+                                                     const zOverlap = Math.max(curZ, other.z) < Math.min(curZ + to.h, other.z + other.h) - 0.5;
+                                                     if (xOverlap && yOverlap && zOverlap) {
+                                                         overlap = true;
+                                                         break;
+                                                     }
+                                                 }
+                                                 if (overlap) {
+                                                     continue;
+                                                 }
+
+                                                 rowItems.push({ product: currentItem.p, x: currentX + (riW * to.w), yRel: riL * to.l, z: curZ, w: to.w, l: to.l, h: to.h, orientation: to.type });
+                                                placedCount++;
+                                                qtyUsed++;
+                                                if (qtyUsed >= currentItem.qty) {
+                                                    currentIdx++;
+                                                    qtyUsed = 0;
+                                                }
+                                            }
+                                        }
+
+                                        // V4.17: Score by PHYSICAL CAPACITY (fitCount), not actual placed count
+                                        const potentialW = fitCountW * to.w;
+                                        const potentialL = fitCountL * to.l;
+                                        const potentialUtil = (potentialW * potentialL) / (totalW * totalL);
+                                        const rowVol = rowCount * to.w * to.l * to.h;
+                                        let penalty = 0;
+                                        if (to.h > o.h) {
+                                            penalty = 5_000_000; // 큰 제품이 작은 제품 위에 올라가는 것에 대한 패널티
+                                        }
+                                        // V6.16: o.h가 1350mm 이상인 경우, 10단 이상 적재 가능한 제품(isLowHeightProduct)에 가중치 부여
+                                        let bonus = 0;
+                                        if (curZ >= 1350) {
+                                            if (isLowHeightProduct(topP, to.h)) {
+                                                bonus = 100_000_000_000;
+                                            }
+                                        }
+                                        const rowScore = fitCount * 1_000_000 + rowVol * potentialUtil - penalty + bonus;
+
+                                        if (rowScore > bestRowScore) {
+                                            bestRowScore = rowScore;
+                                            bestRowItems = rowItems;
+                                            bestRowH = to.h;
+                                        }
+                                    }
+                                }
+
+                                if (bestRowItems.length > 0) {
+                                    tempItems.push(...bestRowItems);
+                                    for (const ri of bestRowItems) {
+                                        tempU_Col.set(ri.product.id, tempU_Col.get(ri.product.id)! - 1);
+                                    }
+                                    curZ += bestRowH;
+                                    // V5.04: If the stacked item is laid down, stop filling on top of it.
+                                    zPossible = bestRowItems[0].orientation !== 'lay';
+                                }
+                            }
+
+                            const vol = tempItems.reduce((s: number, it: any) => s + (it.w * it.l * it.h), 0);
+
+                            // V4.18: Look-ahead - estimate how many more items fit in remaining width
+                            const remainW = W - currentX - totalW;
+                            let lookAheadVol = 0;
+                            let lookAheadW = 0;
+                            if (remainW > 50) {
+                                // 현재 블록의 상단(Z > 0) 제품이 우측으로 삐져나온 최대 X 좌표(Overhang) 확인
+                                let topperMaxX = 0;
+                                for (const it of tempItems) {
+                                    if (it.z > 0) {
+                                        topperMaxX = Math.max(topperMaxX, it.x + it.w);
+                                    }
+                                }
+                                const baseMaxX = currentX + totalW;
+                                const baseHeight = tempItems.reduce((max: number, it: any) => it.z === 0 ? Math.max(max, it.h) : max, 0);
+
+                                for (const rp of rem) {
+                                    const rpAvail = tempU_Col.get(rp.id) || 0;
+                                    if (rpAvail <= 0) continue;
+                                    const rpOrients = getOrients(rp).filter(ro => ro.w <= remainW + 0.5 && ro.l <= D + 0.5 && ro.h <= H + 0.5);
+                                    for (const ro of rpOrients) {
+                                        const bwFit = Math.floor((remainW + 0.5) / ro.w);
+                                        const lFit = Math.floor(((isMixedWidthSpecialJob ? D : totalL) + 0.5) / ro.l);
+                                        
+                                        // 각 열(Column) 단위로 상단 오버행 침범 여부에 따른 높이 단수(hcFit) 계산
+                                        let colHcFitSum = 0;
+                                        for (let colIdx = 0; colIdx < bwFit; colIdx++) {
+                                            const colStartX = baseMaxX + colIdx * ro.w;
+                                            const colEndX = colStartX + ro.w;
+                                            
+                                            // 이 열이 상단 오버행(baseMaxX ~ topperMaxX) 영역과 X축 상에서 겹치는지 체크
+                                            const isOverlappedWithOverhang = topperMaxX > baseMaxX && Math.max(colStartX, baseMaxX) < Math.min(colEndX, topperMaxX) - 0.5;
+                                            
+                                            if (isOverlappedWithOverhang) {
+                                                // 겹친다면 이 열의 상단 적재 가능 높이는 하단 베이스 높이(baseHeight)로 제한됨
+                                                colHcFitSum += Math.floor((baseHeight + 0.5) / ro.h);
+                                            } else {
+                                                // 겹치지 않는다면 컨테이너 전체 높이(H)까지 적재 가능
+                                                colHcFitSum += Math.floor((H + 0.5) / ro.h);
+                                            }
+                                        }
+
+                                        const countFit = Math.min(colHcFitSum * lFit, rpAvail);
+                                        const fitVol = countFit * ro.w * ro.l * ro.h;
+                                         if (fitVol > lookAheadVol) {
+                                             lookAheadVol = fitVol;
+                                             lookAheadW = bwFit * ro.w;
+                                         }
+                                    }
+                                }
+                            }
+                            const currentRemainW = W - currentX;
+                            const widthFillBonus = remainW < 50 ? (totalW / currentRemainW) * 100000 : 0;
+                            const volBonus = vol * 0.0000001;
+                            const widthFillRatio = (totalW + lookAheadW) / currentRemainW;
+                            
+                            // V5.02: Penalize 'lay' orientations that leave too much headroom to force them to the top
+                            let layPenalty = 1.0;
+                            if (o.type === 'lay') {
+                                const wastedH = H - curZ;
+                                // If wasted height is more than 20% of container, penalize heavily
+                                if (wastedH > H * 0.2) layPenalty = 0.001; 
+                                else layPenalty = 0.8; // Small penalty even if near top
+                            }
+
+                            let score = (((vol + lookAheadVol + widthFillBonus) / totalL + totalL + volBonus) * (1 + widthFillRatio * 1.5)) * layPenalty;
+
+                            // V6.12: Add height utilization bonus to encourage vertical stacking
+                            const heightUtil = (o.h * hCount) / H;
+                            score *= (1 + heightUtil * 1.6);
+
+                            if (o.h >= 500 && hCount === 1 && hasLargeUnpackedTopper) {
+                                score *= 2.0; // Give a 100% score bonus to promote 1-high base
+                            }
+
+                            if (o.h * 2 > H) {
+                                score *= 2.5;
+                            }
+
+                            
+    // ONLY print for the first container run (when currentX is 0)
+    if (currentX === 0) {
+        console.log("EVAL wall: o.type=", o.type, "bW=", bW, "bL=", bL, "hCount=", hCount, "items=", tempItems.length, "score=", score);
+    }
+    if (score > bestBlockScore) {
+                                    bestBlockScore = score;
+                                    bestBlockItems = tempItems;
+                                    bestBlockW = totalW;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if (bestBlockItems.length === 0) break;
+        wallItems.push(...bestBlockItems);
+        for (const bi of bestBlockItems) {
+            unpacked.set(bi.product.id, unpacked.get(bi.product.id)! - 1);
+        }
+        currentX += bestBlockW;
+    }
+    return wallItems;
+}
+
+/**
+ * V6.00 Post-Swap Optimizer
+ * Try to resolve suboptimal greedy block packing by swapping an unpacked product with a packed product,
+ * then trying to place the displaced product in any remaining empty space.
+ */
+/**
+ * V6.12 - Y-Axis Stack Group Compaction (후처리)
+ * 적재 완료 후 모든 아이템을 Y=0 방향으로 최대한 밀착시켜 Wall 간 Gap을 제거합니다.
+ * 이때 개별 제품이 아닌, 위아래로 쌓여 있는 스택 그룹(Stack Group)을 하나의 단위로 묶어서
+ * 함께 밀착 처리함으로써 2층 제품이 1층 제품 뒤로 밀려 공중부양되거나, 서로 다른 층간 충돌로 인해
+ * 전체 스택이 가로막혀 갭이 생기는 현상을 해결합니다.
+ */
+function compactItemsAlongY(items: PackedItem[], container: { length: number }): void {
+    const grouped = new Set<PackedItem>();
+    const groups: PackedItem[][] = [];
+
+    // Z 좌표가 낮은 베이스 상자부터 처리하기 위해 정렬
+    const sortedForGrouping = [...items].sort((a, b) => a.z - b.z);
+
+    for (const item of sortedForGrouping) {
+        if (grouped.has(item)) continue;
+
+        // 새로운 스택 그룹 구성
+        const group: PackedItem[] = [item];
+        grouped.add(item);
+
+        // 해당 스택 그룹의 위에 직접/간접적으로 쌓여 있는 모든 제품(dependents)을 재귀적으로 그룹에 추가
+        let added = true;
+        while (added) {
+            added = false;
+            for (const other of items) {
+                if (grouped.has(other)) continue;
+
+                // 그룹 내 어떤 멤버 바로 위에(Z축 방향 밀착) 겹치는 형태인지 검사
+                for (const member of group) {
+                    const memberTop = member.z + member.h;
+                    if (Math.abs(other.z - memberTop) <= 5) {
+                        const xOverlap = Math.max(member.x, other.x) < Math.min(member.x + member.w, other.x + other.w) - 0.5;
+                        const yOverlap = Math.max(member.y, other.y) < Math.min(member.y + member.l, other.y + other.l) - 0.5;
+                        if (xOverlap && yOverlap) {
+                            group.push(other);
+                            grouped.add(other);
+                            added = true;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        groups.push(group);
+    }
+
+    // 그룹들을 앞쪽 Y 좌표 기준으로 오름차순 정렬하여 앞에서부터 순서대로 당김
+    groups.sort((gA, gB) => {
+        const minY_A = Math.min(...gA.map(it => it.y));
+        const minY_B = Math.min(...gB.map(it => it.y));
+        return minY_A - minY_B;
+    });
+
+    // 그룹 단위의 Y 이동 적합성 검사
+    function canShiftGroup(group: PackedItem[], dy: number): boolean {
+        const groupSet = new Set(group);
+        const others = items.filter(it => !groupSet.has(it));
+
+        for (const item of group) {
+            const candidateY = item.y + dy;
+            if (candidateY < 0) return false;
+
+            // 1. 그룹 외부 상자들과의 Overlap 검사
+            for (const other of others) {
+                const xOverlap = Math.max(item.x, other.x) < Math.min(item.x + item.w, other.x + other.w) - 0.5;
+                if (!xOverlap) continue;
+                const zOverlap = Math.max(item.z, other.z) < Math.min(item.z + item.h, other.z + other.h) - 0.5;
+                if (!zOverlap) continue;
+                const yOverlap = Math.max(candidateY, other.y) < Math.min(candidateY + item.l, other.y + other.l) - 0.5;
+                if (yOverlap) return false;
+            }
+
+            // 2. 지탱면 적재 비율 검증 (Z > 0 인 품목들 대상)
+            if (item.z > 0) {
+                const targetZ = item.z;
+                const targetArea = item.w * item.l;
+                let supportArea = 0;
+                const xMax = item.x + item.w;
+                const yMax = candidateY + item.l;
+
+                for (const other of items) {
+                    const otherTop = other.z + other.h;
+                    if (Math.abs(otherTop - targetZ) > 5) continue;
+
+                    // 만약 지탱해 주는 아래 상자도 이 그룹에 포함되어 있다면 같이 Shift된 Y 기준으로 평가
+                    const otherY = groupSet.has(other) ? other.y + dy : other.y;
+
+                    if (other.x >= xMax || other.x + other.w <= item.x) continue;
+                    if (otherY >= yMax || otherY + other.l <= candidateY) continue;
+
+                    const xOverlap = Math.min(xMax, other.x + other.w) - Math.max(item.x, other.x);
+                    const yOverlap = Math.min(yMax, otherY + other.l) - Math.max(candidateY, otherY);
+                    supportArea += xOverlap * yOverlap;
+                }
+
+                if (supportArea / targetArea < 0.75) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    // 각 그룹을 Y=0 방향으로 가능한 최대한 밀착 이동
+    for (const group of groups) {
+        let bestDy = 0;
+        const minGroupY = Math.min(...group.map(it => it.y));
+
+        for (let dy = -1; dy >= -minGroupY; dy--) {
+            if (canShiftGroup(group, dy)) {
+                bestDy = dy;
+            } else {
+                break;
+            }
+        }
+
+        if (bestDy < 0) {
+            for (const item of group) {
+                item.y += bestDy;
+            }
+        }
+    }
+}
+
+function optimizePackResultWithSwaps(container: ContainerDimensions, result: PackingResult): PackingResult {
+    let items = result.items.map(it => ({ ...it }));
+    let unpacked = result.unpacked.map(p => ({ ...p }));
+
+    let improved = true;
+    let iteration = 0;
+    while (improved && iteration < 10) {
+        improved = false;
+        iteration++;
+
+        // Try to pack any unpacked item by swapping
+        for (let uIdx = 0; uIdx < unpacked.length; uIdx++) {
+            const uProd = unpacked[uIdx];
+            if (uProd.quantity <= 0) continue;
+
+            // Try swapping with each packed item
+            for (let pIdx = 0; pIdx < items.length; pIdx++) {
+                const pItem = items[pIdx];
+                if (pItem.product.id === uProd.id) continue;
+
+                // 추가: 위에 다른 상자가 쌓여있는 경우 스왑 대상에서 제외 (공중부양 및 적재 붕괴 방지)
+                if (hasItemsOnTop(pItem, items)) continue;
+
+                // 추가: 스몰 제품이 존재할 때, 바닥(z=0)에 깔린 500mm 이상 대형 베이스는 스왑 제외
+                const hasSmall = items.some(it => isLowHeightProduct(it.product, it.h));
+                if (hasSmall && pItem.z === 0 && Number(pItem.product.height) >= 500) {
+                    continue;
+                }
+
+                // 추가: 스몰 상자가 바닥(z=0)에 깔린 기존 상자를 밀어내는 스왑을 원천 차단
+                if (isLowHeightProduct(uProd) && pItem.z === 0) {
+                    continue;
+                }
+
+                // 1. Can we place uProd at pItem's position?
+                const uOrients = getOrients(uProd);
+                let validOrient = null;
+                for (const o of uOrients) {
+                    if (pItem.x + o.w > container.width ||
+                        pItem.y + o.l > container.length ||
+                        pItem.z + o.h > container.height) {
+                        continue;
+                    }
+
+                    let overlap = false;
+                    for (let k = 0; k < items.length; k++) {
+                        if (k === pIdx) continue;
+                        const other = items[k];
+                        const xOverlap = Math.max(pItem.x, other.x) < Math.min(pItem.x + o.w, other.x + other.w);
+                        const yOverlap = Math.max(pItem.y, other.y) < Math.min(pItem.y + o.l, other.y + other.l);
+                        const zOverlap = Math.max(pItem.z, other.z) < Math.min(pItem.z + o.h, other.z + other.h);
+                        if (xOverlap && yOverlap && zOverlap) {
+                            overlap = true;
+                            break;
+                        }
+                    }
+                    if (overlap) continue;
+
+                    // 1. 공중 부양 방지 지탱면 검사
+                    const otherItems = items.filter((_, idx) => idx !== pIdx);
+                    if (!hasSupportAtZ(pItem.x, pItem.y, o.w, o.l, pItem.z, otherItems)) {
+                        continue;
+                    }
+
+                    // 2. 10단 누적 제한 체크 (모든 제품에 적용)
+                    const stacked = getStackedCount(pItem.x, pItem.y, o.w, o.l, otherItems);
+                    if (stacked + 1 > 10) continue;
+
+                    // 3. 아래 제품의 높이가 500mm 이하일 때, 새로 쌓으려는 제품의 높이가 기존 제품 높이 + 50mm를 초과하면 적재 제한
+                    if (pItem.z > 0 && !isValidHeightStack(pItem.x, pItem.y, o.w, o.l, otherItems, pItem.z, o.h)) {
+                        continue;
+                    }
+
+                    // 제약조건 검사: 270mm 이하인 낮은 제품인 경우
+                    const isTopperLow = isLowHeightProduct(uProd, o.h);
+                    if (isTopperLow) {
+                        // 4. 베이스 높이 500 이상 체크 (바로 아래 베이스 기준)
+                        if (!hasValidBaseForLowProduct(pItem.x, pItem.y, o.w, o.l, otherItems, pItem.z)) {
+                            continue;
+                        }
+                    }
+
+                    if (pItem.z > 0) {
+                        let supportArea = 0;
+                        const itemArea = o.w * o.l;
+                        for (let k = 0; k < items.length; k++) {
+                            if (k === pIdx) continue;
+                            const other = items[k];
+                            const otherTop = other.z + other.h;
+                            if (Math.abs(otherTop - pItem.z) <= 5) {
+                                const xOverlap = Math.max(0, Math.min(pItem.x + o.w, other.x + other.w) - Math.max(pItem.x, other.x));
+                                const yOverlap = Math.max(0, Math.min(pItem.y + o.l, other.y + other.l) - Math.max(pItem.y, other.y));
+                                supportArea += xOverlap * yOverlap;
+                            }
+                        }
+                        if (supportArea / itemArea < 0.66) continue;
+                    }
+
+                    validOrient = o;
+                    break;
+                }
+
+                if (!validOrient) continue;
+
+                // 2. Temporarily swap uProd into pItem's position
+                const displacedProduct = pItem.product;
+                const tempItems = items.filter((_, idx) => idx !== pIdx);
+                const swappedItem: PackedItem = {
+                    product: { ...uProd, quantity: 1 },
+                    x: pItem.x,
+                    y: pItem.y,
+                    z: pItem.z,
+                    w: validOrient.w,
+                    l: validOrient.l,
+                    h: validOrient.h,
+                    orientation: validOrient.type
+                };
+                tempItems.push(swappedItem);
+
+                // 3. Try to place the displaced product in any remaining space
+                const displacedOrients = getOrients(displacedProduct);
+                let placementFound = false;
+                let newPlacement: PackedItem | null = null;
+
+                const xCandidates = Array.from(new Set([0, ...tempItems.map(it => it.x), ...tempItems.map(it => it.x + it.w)]))
+                    .filter(x => x >= 0 && x < container.width);
+                const yCandidates = Array.from(new Set([0, ...tempItems.map(it => it.y), ...tempItems.map(it => it.y + it.l)]))
+                    .filter(y => y >= 0 && y < container.length);
+                const zCandidates = Array.from(new Set([0, ...tempItems.map(it => it.z + it.h)]))
+                    .filter(z => z >= 0 && z < container.height);
+
+                yCandidates.sort((a, b) => a - b);
+                zCandidates.sort((a, b) => a - b);
+                xCandidates.sort((a, b) => a - b);
+
+                for (const z of zCandidates) {
+                    for (const y of yCandidates) {
+                        for (const x of xCandidates) {
+                            for (const o of displacedOrients) {
+                                if (x + o.w > container.width ||
+                                    y + o.l > container.length ||
+                                    z + o.h > container.height) {
+                                    continue;
+                                }
+
+                                let overlap = false;
+                                for (const other of tempItems) {
+                                    const xOverlap = Math.max(x, other.x) < Math.min(x + o.w, other.x + other.w);
+                                    const yOverlap = Math.max(y, other.y) < Math.min(y + o.l, other.y + other.l);
+                                    const zOverlap = Math.max(z, other.z) < Math.min(z + o.h, other.z + other.h);
+                                    if (xOverlap && yOverlap && zOverlap) {
+                                        overlap = true;
+                                        break;
+                                    }
+                                }
+                                if (overlap) continue;
+
+                                // 1. 공중 부양 방지 지탱면 검사
+                                if (!hasSupportAtZ(x, y, o.w, o.l, z, tempItems)) {
+                                    continue;
+                                }
+
+                                // 2. 10단 누적 제한 체크 (모든 제품에 적용)
+                                const stacked = getStackedCount(x, y, o.w, o.l, tempItems);
+                                if (stacked + 1 > 10) continue;
+
+                                // 3. 아래 제품의 높이가 500mm 이하일 때, 새로 쌓으려는 제품의 높이가 기존 제품 높이 + 50mm를 초과하면 적재 제한
+                                if (z > 0 && !isValidHeightStack(x, y, o.w, o.l, tempItems, z, o.h)) {
+                                    continue;
+                                }
+
+                                const isDisplacedLow = isLowHeightProduct(displacedProduct, o.h);
+                                if (isDisplacedLow) {
+                                    // 4. 베이스 높이 500 이상 체크 (바로 아래 베이스 기준)
+                                    if (!hasValidBaseForLowProduct(x, y, o.w, o.l, tempItems, z)) {
+                                        continue;
+                                    }
+                                }
+
+                                if (z > 0) {
+                                    let supportArea = 0;
+                                    const itemArea = o.w * o.l;
+                                    for (const other of tempItems) {
+                                        const otherTop = other.z + other.h;
+                                        if (Math.abs(otherTop - z) <= 5) {
+                                            const xOverlap = Math.max(0, Math.min(x + o.w, other.x + other.w) - Math.max(x, other.x));
+                                            const yOverlap = Math.max(0, Math.min(y + o.l, other.y + other.l) - Math.max(y, other.y));
+                                            supportArea += xOverlap * yOverlap;
+                                        }
+                                    }
+                                    if (supportArea / itemArea < 0.66) continue;
+                                }
+
+                                newPlacement = {
+                                    product: { ...displacedProduct, quantity: 1 },
+                                    x, y, z,
+                                    w: o.w, l: o.l, h: o.h,
+                                    orientation: o.type
+                                };
+                                placementFound = true;
+                                break;
+                            }
+                            if (placementFound) break;
+                        }
+                        if (placementFound) break;
+                    }
+                    if (placementFound) break;
+                }
+
+                if (placementFound && newPlacement) {
+                    const testItems = [...tempItems, newPlacement];
+                    let testOverlap = false;
+                    for (let ti = 0; ti < testItems.length; ti++) {
+                        for (let tj = ti + 1; tj < testItems.length; tj++) {
+                            const itemA = testItems[ti];
+                            const itemB = testItems[tj];
+                            const xOverlap = Math.max(itemA.x, itemB.x) < Math.min(itemA.x + itemA.w, itemB.x + itemB.w) - 0.5;
+                            const yOverlap = Math.max(itemA.y, itemB.y) < Math.min(itemA.y + itemA.l, itemB.y + itemB.l) - 0.5;
+                            const zOverlap = Math.max(itemA.z, itemB.z) < Math.min(itemA.z + itemA.h, itemB.z + itemB.h) - 0.5;
+                            if (xOverlap && yOverlap && zOverlap) {
+                                testOverlap = true;
+                                break;
+                            }
+                        }
+                        if (testOverlap) break;
+                    }
+
+                    if (testOverlap) {
+                        continue;
+                    }
+
+                    items = tempItems;
+                    items.push(newPlacement);
+                    uProd.quantity--;
+                    improved = true;
+                    break;
+                }
+            }
+            if (improved) break;
+        }
+    }
+
+    const finalUnpacked = unpacked.filter(p => p.quantity > 0);
+    const vol = items.reduce((s, i) => s + (i.w * i.l * i.h), 0);
+    const efficiency = (vol / (container.width * container.length * container.height)) * 100;
+
+    return {
+        container,
+        items,
+        efficiency,
+        unpacked: finalUnpacked
+    };
+}
