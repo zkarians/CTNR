@@ -75,6 +75,8 @@ export interface Job {
     uploaders?: string[];
     work_duration_minutes?: number;
     remark?: string;
+    model_count?: number;
+    total_qty?: number;
 }
 
 export interface JobFilters {

@@ -147,6 +147,8 @@ export async function getJobsFromDB(filters?: JobFilters): Promise<Job[]> {
                         r.cntr_no,
                         r.transporter,
                         r.cntr_type,
+                        r.model_count,
+                        r.total_qty,
                         (SELECT COUNT(*)::integer FROM container_photos p WHERE p.job_id = j.id AND (r.cntr_no IS NULL OR p.cntr_no = r.cntr_no) AND (p.is_deleted IS NOT TRUE)) as photo_count,
                         (SELECT COUNT(*)::integer FROM container_photos p WHERE p.job_id = j.id AND (r.cntr_no IS NULL OR p.cntr_no = r.cntr_no) AND (p.is_deleted IS NOT TRUE) AND (p.is_completed IS NOT TRUE)) as active_photo_count,
                         (SELECT COUNT(*)::integer FROM container_photos p WHERE p.job_id = j.id AND (r.cntr_no IS NULL OR p.cntr_no = r.cntr_no) AND (p.is_deleted IS NOT TRUE) AND p.photo_type = 'seal') as seal_photo_count,
@@ -159,7 +161,13 @@ export async function getJobsFromDB(filters?: JobFilters): Promise<Job[]> {
                         (SELECT p.work_duration_minutes FROM container_photos p WHERE p.job_id = j.id AND (r.cntr_no IS NULL OR p.cntr_no = r.cntr_no) AND (p.is_deleted IS NOT TRUE) ORDER BY p.id DESC LIMIT 1) as work_duration_minutes,
                         (SELECT p.remark FROM container_photos p WHERE p.job_id = j.id AND (r.cntr_no IS NULL OR p.cntr_no = r.cntr_no) AND (p.is_deleted IS NOT TRUE) AND p.remark IS NOT NULL AND p.remark != '' ORDER BY p.id DESC LIMIT 1) as last_remark
                     FROM container_jobs j
-                    LEFT JOIN container_results r ON r.job_id = j.id
+                    LEFT JOIN (
+                        SELECT job_id, cntr_no, MAX(transporter) as transporter, MAX(cntr_type) as cntr_type,
+                               COUNT(DISTINCT prod_name)::integer as model_count,
+                               SUM(qty_plan)::integer as total_qty
+                        FROM container_results
+                        GROUP BY job_id, cntr_no
+                    ) r ON r.job_id = j.id
                     ${whereSql}
                     ORDER BY COALESCE(r.cntr_no, j.id::text), j.job_name, j.saved_at DESC, j.id DESC
                 ) sub
@@ -181,6 +189,8 @@ export async function getJobsFromDB(filters?: JobFilters): Promise<Job[]> {
                 uploaders: Array.isArray(row.uploaders) ? row.uploaders.filter(Boolean) : [],
                 work_duration_minutes: row.work_duration_minutes ? Number(row.work_duration_minutes) : undefined,
                 remark: row.last_remark || undefined,
+                model_count: row.model_count ? Number(row.model_count) : undefined,
+                total_qty: row.total_qty ? Number(row.total_qty) : undefined,
                 work_date: (() => {
                     const savedAt = row.saved_at ? new Date(row.saved_at) : null;
                     if (savedAt && !isNaN(savedAt.getTime())) {

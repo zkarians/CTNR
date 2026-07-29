@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <bool name="enableNotification">true</bool>
+    <bool name="enableSiteSettingsShortcut">true</bool>
+    <color name="backgroundColor">#030712</color>
+    <color name="colorPrimary">#030712</color>
+    <color name="colorPrimaryDark">#000000</color>
+    <color name="navigationColor">#030712</color>
+    <color name="navigationColorDark">#030712</color>
+    <color name="navigationDividerColor">#000000</color>
+    <color name="navigationDividerColorDark">#000000</color>
+    <color name="shortcut_background">#F5F5F5</color>
+    <integer name="splashScreenFadeOutDuration">300</integer>
+    <string name="appName" translatable="false">CTNR Optimizer</string>
+    <string name="assetStatements">
+    [{
+        \"relation\": [\"delegate_permission/common.handle_all_urls\"],
+        \"target\": {
+            \"namespace\": \"web\",
+            \"site\": \"https://ungdong.iptime.org\"
+        }
+    }]
+    
+  </string>
+    <string name="fallbackType" translatable="false">webview</string>
+    <string name="generatorApp" translatable="false">bubblewrap-cli</string>
+    <string name="hostName" translatable="false">ungdong.iptime.org</string>
+    <string name="launchUrl" translatable="false">https://ungdong.iptime.org/</string>
+    <string name="launcherName" translatable="false">CTNR Optimizer</string>
+    <string name="orientation" translatable="false">portrait</string>
+    <string name="providerAuthority" translatable="false">org.iptime.ungdong.twa.fileprovider</string>
+    <string name="webManifestUrl" translatable="false">http://ungdong.iptime.org:4000/manifest.json</string>
+</resources>
