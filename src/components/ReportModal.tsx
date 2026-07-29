@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { FileText, X, ChevronLeft, ChevronRight, RotateCw, Loader2, Folder, Ban, Plus, Calendar, AlertCircle, Camera, UploadCloud, Save, Check, Copy, Download } from 'lucide-react';
 import { getCarrierColor } from '@/lib/utils/colorUtils';
 import { getWorkDateString } from '@/lib/utils/dateUtils';
+import { generateJobType } from '@/lib/utils/jobType';
 
 interface ReportModalProps {
     isReportOpen: boolean;
@@ -441,7 +442,10 @@ export default function ReportModal({
                                                                         </div>
                                                                         <div className="text-xs text-slate-700 font-bold mb-2 flex items-center flex-wrap gap-1">
                                                                             <span>{cntr.products.length}모델, {totalQty.toLocaleString()}개</span>
-                                                                            {cntr.adminComment ? (
+                                                                            {(() => {
+                                                                                const autoJobType = generateJobType(cntr.products || []);
+                                                                                const displayComment = cntr.adminComment || autoJobType;
+                                                                                return displayComment ? (
                                                                                 <span className="text-rose-600 font-black ml-1 inline-flex items-center">
                                                                                     (&nbsp;
                                                                                     {editingCommentCntr === cntr.cntrNo ? (
@@ -463,13 +467,13 @@ export default function ReportModal({
                                                                                             onClick={() => {
                                                                                                 if (isAdmin) {
                                                                                                     setEditingCommentCntr(cntr.cntrNo);
-                                                                                                    setCommentInput(cntr.adminComment || '');
+                                                                                                    setCommentInput(cntr.adminComment || autoJobType);
                                                                                                 }
                                                                                             }}
                                                                                             className={`text-slate-900 font-bold ${isAdmin ? 'cursor-pointer hover:underline' : ''}`}
                                                                                             title={isAdmin ? "관리자 코멘트 수정 (클릭)" : undefined}
                                                                                         >
-                                                                                            {cntr.adminComment}
+                                                                                            {displayComment}
                                                                                         </span>
                                                                                     )}
                                                                                     &nbsp;)
@@ -497,7 +501,7 @@ export default function ReportModal({
                                                                                     <button
                                                                                         onClick={() => {
                                                                                             setEditingCommentCntr(cntr.cntrNo);
-                                                                                            setCommentInput('');
+                                                                                            setCommentInput(autoJobType);
                                                                                         }}
                                                                                         className="ml-1 px-1.5 py-0.5 text-[11px] font-black text-rose-600 hover:text-white bg-rose-50 border border-rose-200 hover:bg-rose-600 rounded transition-all cursor-pointer inline-flex items-center justify-center leading-none"
                                                                                         title="코멘트 추가"
@@ -505,7 +509,8 @@ export default function ReportModal({
                                                                                         +
                                                                                     </button>
                                                                                 )
-                                                                            ) : null}
+                                                                            ) : null;
+                                                                            })()}
                                                                         </div>
                                                                         {cntr.remark && cntr.remark.trim() && (
                                                                             <div className="text-xs text-amber-900 font-bold bg-amber-50/90 border border-amber-200/80 px-3 py-2 rounded-xl mb-2 flex items-start gap-1.5 leading-relaxed shadow-sm">

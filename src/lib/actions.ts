@@ -10,6 +10,7 @@ import {
 } from "./db";
 import { Product, Job, JobFilters, DbConfig, Team } from "./types";
 import { calculateTeamTimeline } from "./timeline";
+import { generateJobType } from "./utils/jobType";
 import {
     updatePassword as updatePass,
     getAllUsers as fetchAllUsers,
@@ -360,9 +361,11 @@ export async function generateWorkReport(filters: JobFilters): Promise<{ success
                     COALESCE(MIN(p.uploaded_at), MAX(j.saved_at)) as first_uploaded_at,
                     MAX(p.remark) as remark,
                     MAX(r.transporter) as transporter,
-                    MAX(cc.admin_comment) as admin_comment
+                    MAX(cc.admin_comment) as admin_comment,
+                    MAX(mp.height) as height
                 FROM container_results r
                 JOIN container_jobs j ON r.job_id = j.id
+                LEFT JOIN product_master_sync mp ON r.prod_name = mp.prod_name
                 LEFT JOIN (
                     SELECT 
                         job_id, 
@@ -402,7 +405,7 @@ export async function generateWorkReport(filters: JobFilters): Promise<{ success
                 remark: string;
                 transporter: string;
                 adminComment: string;
-                products: { name: string; qty: number; division: string }[] 
+                products: { name: string; qty: number; division: string; height?: number }[] 
             }>>>();
 
             for (const row of rows) {
@@ -414,6 +417,7 @@ export async function generateWorkReport(filters: JobFilters): Promise<{ success
                 const division = row.division || '일반';
                 const prodName = row.prod_name;
                 const qty = Math.round(Number(row.qty)) || 0;
+                const height = Number(row.height) || 0;
                 const isCompleted = !!row.is_completed;
                 const workTime = row.work_time ? new Date(row.work_time) : new Date();
                 const durationMinutes = Number(row.duration_minutes) || 45;
@@ -440,7 +444,7 @@ export async function generateWorkReport(filters: JobFilters): Promise<{ success
                 if (remark && !cntrData.remark) cntrData.remark = remark;
                 if (transporter && !cntrData.transporter) cntrData.transporter = transporter;
                 if (adminComment && !cntrData.adminComment) cntrData.adminComment = adminComment;
-                cntrData.products.push({ name: prodName, qty, division });
+                cntrData.products.push({ name: prodName, qty, division, height });
             }
 
             if (dateMap.size === 0) {
@@ -483,7 +487,9 @@ export async function generateWorkReport(filters: JobFilters): Promise<{ success
                         const modelCount = cntrData.products.length;
                         const totalQty = cntrData.products.reduce((sum, p) => sum + p.qty, 0);
                         const breakNote = cntrData.hasBreak ? ' *휴식/식사포함*' : '';
-                        const adminCommentNote = cntrData.adminComment ? ` (${cntrData.adminComment})` : '';
+                        const autoJobType = generateJobType(cntrData.products);
+                        const displayComment = cntrData.adminComment || autoJobType;
+                        const adminCommentNote = displayComment ? ` (${displayComment})` : '';
                         upLines.push(`${cntrData.cntrNo} (${modelCount}모델, ${totalQty.toLocaleString()}개${adminCommentNote}) [${cntrData.durationMinutes}분: ${cntrData.startTimeStr}~${cntrData.endTimeStr}${breakNote}]`);
                         if (cntrData.remark && cntrData.remark.trim()) {
                             upLines.push(`- 💬 지연사유: ${cntrData.remark.trim()}`);
