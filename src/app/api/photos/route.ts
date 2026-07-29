@@ -288,6 +288,7 @@ export async function GET(req: NextRequest) {
                 p.team_id,
                 p.work_duration_minutes,
                 p.is_completed,
+                p.photo_type,
                 p.completed_at, p.gdrive_file_id, p.gdrive_url,
                 t.name as team_name,
                 COALESCE(NULLIF(u.name, ''), NULLIF(u.username, ''), NULLIF(p.uploader_name, ''), '퇴사자') as uploader_name, 

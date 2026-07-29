@@ -5,7 +5,7 @@ import {
     X, Calendar, User, Download, Search, Image as ImageIcon, 
     ChevronLeft, ChevronRight, ChevronDown, Loader2, ArrowLeft, Trash2, Folder,
     ExternalLink, RotateCw, RotateCcw, Grid, LayoutGrid, Check, Undo,
-    RefreshCw, SkipForward, Upload
+    RefreshCw, SkipForward, Upload, Camera
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { fetchTeams } from '@/lib/actions';
@@ -29,6 +29,7 @@ interface Photo {
     gdrive_file_id?: string;
     gdrive_url?: string;
     is_completed?: boolean;
+    photo_type?: string;
 }
 
 interface PhotoGalleryProps {
@@ -700,6 +701,9 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
                             return null;
                         }
                     })()}
+                    {folder.photos.length > 0 && !folder.photos.some(p => p.photo_type === 'seal') && (
+                        <Camera className="w-3.5 h-3.5 text-rose-500 animate-pulse shrink-0 mr-1" title="씰 사진이 업로드되지 않았습니다." />
+                    )}
                     <span className={`text-[10px] font-extrabold px-1.5 py-0.5 rounded-lg shrink-0 ${
                         isTrashView 
                             ? 'bg-purple-500/10 text-purple-400' 
@@ -1683,7 +1687,10 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
                                         )}
                                     </div>
                                     {selectedContainerFolder !== null && (
-                                        <button onClick={() => setSelectedContainerFolder(null)}
+                                        <button onClick={() => {
+                                            setSelectedContainerFolder(null);
+                                            loadPhotos();
+                                        }}
                                             className="flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-100 border border-slate-200 hover:bg-slate-200 text-slate-700 font-black text-xs transition-all cursor-pointer h-[38px]"
                                             title="이전 폴더 목록으로 뒤로가기">
                                             <ArrowLeft className="w-3.5 h-3.5" />
@@ -1760,7 +1767,10 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
                         {/* Mobile Navigation Bar: Back & Close */}
                         <div className="flex items-center gap-1.5 mt-0.5">
                             {selectedContainerFolder !== null && (
-                                <button onClick={() => setSelectedContainerFolder(null)}
+                                <button onClick={() => {
+                                    setSelectedContainerFolder(null);
+                                    loadPhotos();
+                                }}
                                     className="flex-1 flex items-center justify-center gap-1 py-1 px-2 rounded-lg bg-slate-100 border border-slate-300 hover:bg-slate-200 text-slate-800 transition-all cursor-pointer text-[11px] font-black shadow-2xs h-7.5">
                                     <ArrowLeft className="w-3 h-3" /> 뒤로가기
                                 </button>
