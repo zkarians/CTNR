@@ -5,7 +5,7 @@ import {
     X, Calendar, User, Download, Search, Image as ImageIcon, 
     ChevronLeft, ChevronRight, ChevronDown, Loader2, ArrowLeft, Trash2, Folder,
     ExternalLink, RotateCw, RotateCcw, Grid, LayoutGrid, Check, Undo,
-    RefreshCw, SkipForward, Upload, Camera
+    RefreshCw, SkipForward, Upload, Camera, FileText
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { fetchTeams } from '@/lib/actions';
@@ -37,6 +37,7 @@ interface PhotoGalleryProps {
     onClose: () => void;
     user: SessionUser;
     initialSearchCntrNo?: string;
+    onOpenReport?: () => void;
 }
 
 
@@ -67,7 +68,7 @@ function getLocalDateString(d: Date): string {
     return `${year}-${month}-${day}`;
 }
 
-export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrNo }: PhotoGalleryProps) {
+export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrNo, onOpenReport }: PhotoGalleryProps) {
     const isAdmin = user && (user.role.toUpperCase() === 'ADMIN' || user.role.toUpperCase() === 'MANAGER');
 
     const [photos, setPhotos] = useState<Photo[]>([]);
@@ -114,6 +115,42 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
     const [isMoveModalOpen, setIsMoveModalOpen] = useState(false);
     const [targetMoveCntrNo, setTargetMoveCntrNo] = useState('');
     const [isMoving, setIsMoving] = useState(false);
+
+    type ActionType = 'LOCAL_COPY' | 'ZIP_DOWNLOAD' | 'GDRIVE_BACKUP';
+    const [warningModalInfo, setWarningModalInfo] = useState<{ isOpen: boolean, action: ActionType | null, missingCntrs: string[] }>({ isOpen: false, action: null, missingCntrs: [] });
+
+    const checkMissingSealPhotos = () => {
+        if (selectedFolders.length === 0) return [];
+        const foldersToProcess = folders.filter(f => selectedFolders.includes(f.cntrNo + '|' + f.workDateStr));
+        const missing = foldersToProcess.filter(f => f.photos.length > 0 && !f.photos.some(p => p.photo_type === 'seal'));
+        return Array.from(new Set(missing.map(f => f.cntrNo)));
+    };
+
+    const handleActionWithCheck = (action: ActionType, e?: React.MouseEvent) => {
+        if (e) e.preventDefault();
+        
+        if (selectedFolders.length === 0 && selectedPhotoIds.length === 0) {
+            alert("작업할 컨테이너 폴더를 하나 이상 선택해 주세요.\n(폴더 카드의 체크박스를 선택하거나 날짜 타이틀 옆의 '전체 선택'을 체크해 주세요)");
+            return;
+        }
+
+        const missingCntrs = checkMissingSealPhotos();
+        if (missingCntrs.length > 0) {
+            setWarningModalInfo({ isOpen: true, action, missingCntrs });
+        } else {
+            executeAction(action);
+        }
+    };
+
+    const executeAction = (action: ActionType) => {
+        if (action === 'LOCAL_COPY') {
+            setIsLocalCopyOpen(true);
+        } else if (action === 'ZIP_DOWNLOAD') {
+            handleDownloadSelectedFoldersZip();
+        } else if (action === 'GDRIVE_BACKUP') {
+            handleUploadToGDriveAndCleanLocal();
+        }
+    };
 
     const handleExecuteMovePhotos = async () => {
         const targetCntrNo = targetMoveCntrNo.trim().toUpperCase();
@@ -779,6 +816,62 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
                     </div>
                 </div>
             </div>
+            {/* Warning Modal */}
+            <AnimatePresence>
+                {warningModalInfo.isOpen && (
+                    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
+                        <motion.div 
+                            initial={{ opacity: 0, scale: 0.95 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            exit={{ opacity: 0, scale: 0.95 }}
+                            className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden border border-slate-200 flex flex-col"
+                        >
+                            <div className="flex items-center gap-3 p-4 border-b border-slate-100 bg-rose-50/50 shrink-0">
+                                <div className="p-2 bg-rose-100 text-rose-600 rounded-lg shrink-0">
+                                    <AlertCircle className="w-6 h-6" />
+                                </div>
+                                <div>
+                                    <h2 className="text-lg font-black text-slate-800">씰(Seal) 사진 누락 경고</h2>
+                                    <p className="text-xs font-bold text-rose-500">주의: 일부 컨테이너에 씰 사진이 없습니다.</p>
+                                </div>
+                            </div>
+                            
+                            <div className="p-5 flex-1 overflow-y-auto max-h-[50vh]">
+                                <div className="text-sm font-bold text-slate-700 mb-2">누락된 컨테이너 목록:</div>
+                                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex flex-wrap gap-1.5 mb-4 max-h-32 overflow-y-auto">
+                                    {warningModalInfo.missingCntrs.map((cntr, idx) => (
+                                        <span key={idx} className="px-2 py-1 bg-white border border-rose-200 text-rose-600 font-black text-xs rounded-md shadow-sm">
+                                            {cntr}
+                                        </span>
+                                    ))}
+                                </div>
+                                <p className="text-sm text-slate-600 leading-relaxed font-bold">
+                                    위 컨테이너들의 씰(Seal) 사진이 업로드되지 않았습니다.<br/>
+                                    그래도 이대로 계속 진행하시겠습니까?
+                                </p>
+                            </div>
+
+                            <div className="p-4 border-t border-slate-100 bg-slate-50 flex gap-2 justify-end shrink-0">
+                                <button 
+                                    onClick={() => setWarningModalInfo({ isOpen: false, action: null, missingCntrs: [] })}
+                                    className="px-4 py-2 rounded-xl text-slate-600 hover:bg-slate-200 font-bold text-sm transition-colors cursor-pointer"
+                                >
+                                    취소
+                                </button>
+                                <button 
+                                    onClick={() => {
+                                        if (warningModalInfo.action) executeAction(warningModalInfo.action);
+                                        setWarningModalInfo({ isOpen: false, action: null, missingCntrs: [] });
+                                    }}
+                                    className="px-5 py-2 rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-black text-sm shadow-md shadow-rose-500/20 transition-all flex items-center gap-1.5 cursor-pointer"
+                                >
+                                    <Check className="w-4 h-4" /> 계속 진행
+                                </button>
+                            </div>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
         </div>
     );
 
@@ -1618,14 +1711,26 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
                             </p>
                         </div>
                     </div>
-                    <button 
-                        onClick={onClose}
-                        className="flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-rose-500/10 hover:bg-rose-500 text-rose-600 hover:text-white border border-rose-500/30 font-black text-xs transition-all cursor-pointer shadow-2xs shrink-0"
-                        title="사진 보관함 창 닫기"
-                    >
-                        <X className="w-4 h-4" />
-                        <span>닫기</span>
-                    </button>
+                    <div className="flex items-center gap-2 shrink-0">
+                        {onOpenReport && (
+                            <button 
+                                onClick={onOpenReport}
+                                className="flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-blue-500/10 hover:bg-blue-500 text-blue-700 hover:text-white border border-blue-500/30 font-black text-xs transition-all cursor-pointer shadow-2xs"
+                                title="보고서 보기"
+                            >
+                                <FileText className="w-4 h-4" />
+                                <span>보고서 보기</span>
+                            </button>
+                        )}
+                        <button 
+                            onClick={onClose}
+                            className="flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-rose-500/10 hover:bg-rose-500 text-rose-600 hover:text-white border border-rose-500/30 font-black text-xs transition-all cursor-pointer shadow-2xs"
+                            title="사진 보관함 창 닫기"
+                        >
+                            <X className="w-4 h-4" />
+                            <span>닫기</span>
+                        </button>
+                    </div>
                 </header>
 
                 {/* Filter Panel - Mobile-first redesign */}
@@ -1700,7 +1805,7 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
                                     <button onClick={onClose}
                                         className="flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-rose-500/10 hover:bg-rose-500 text-rose-600 hover:text-white border border-rose-500/30 font-black text-xs transition-all cursor-pointer h-[38px] shadow-2xs"
                                         title="사진 보관함 창 닫기">
-                                        <X className="w-3.5 h-3.5" />
+                                            <X className="w-3.5 h-3.5" />
                                         <span>닫기</span>
                                     </button>
                                 </div>
@@ -1708,7 +1813,7 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
                             {isAdmin && (
-                                <button onClick={() => handleUploadToGDriveAndCleanLocal()}
+                                <button onClick={() => handleActionWithCheck('GDRIVE_BACKUP')}
                                     className="flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-sky-600 border border-sky-500 hover:bg-sky-500 text-white font-black text-xs transition-all shadow-lg shadow-sky-600/20 cursor-pointer shrink-0"
                                     title="선택한 폴더 또는 완료된 사진들을 구글드라이브에 백업하고 로컬 PC 용량을 정리합니다.">
                                     <Upload className="w-3.5 h-3.5" /> GDrive 백업 & 용량정리
@@ -1748,7 +1853,7 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
                         {/* Row 3: Action buttons (GDrive backup visible ONLY to isAdmin) */}
                         <div className="flex items-center gap-1.5 mt-0.5">
                             {isAdmin && (
-                                <button onClick={() => handleUploadToGDriveAndCleanLocal()}
+                                <button onClick={() => handleActionWithCheck('GDRIVE_BACKUP')}
                                     className="flex-1 flex items-center justify-center gap-1 py-1 px-2 rounded-lg bg-sky-600 border border-sky-500 hover:bg-sky-500 text-white font-black text-[11px] transition-all shadow-xs cursor-pointer h-7.5">
                                     <Upload className="w-3 h-3" /> ☁️ GDrive 백업
                                 </button>
@@ -1859,12 +1964,12 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
                                                             className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-black text-xs transition-all cursor-pointer">
                                                             <RotateCw className="w-3.5 h-3.5" /> 선택 복구 ({selectedFolders.length})
                                                         </button>
-                                                        <button onClick={handleUploadToGDriveAndCleanLocal}
+                                                        <button onClick={() => handleActionWithCheck('GDRIVE_BACKUP')}
                                                             className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 border border-sky-400 text-white font-black text-xs transition-all cursor-pointer shadow-md shadow-sky-500/20"
                                                             title="선택한 폴더의 사진을 구글 드라이브로 백업하고 로컬 용량을 정리합니다.">
                                                             <Upload className="w-3.5 h-3.5" /> ☁️ GDrive 백업 ({selectedFolders.length})
                                                         </button>
-                                                        <button onClick={() => setIsLocalCopyOpen(true)}
+                                                        <button onClick={() => handleActionWithCheck('LOCAL_COPY')}
                                                             className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 border border-emerald-600 text-white font-black text-xs transition-all cursor-pointer">
                                                             <Folder className="w-3.5 h-3.5" /> 로컬 복사
                                                         </button>
@@ -1899,16 +2004,16 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
                                                             <Trash2 className="w-3.5 h-3.5" /> 삭제 ({selectedFolders.length})
                                                         </button>
                                                     )}
-                                                    <button onClick={handleUploadToGDriveAndCleanLocal}
+                                                    <button onClick={() => handleActionWithCheck('GDRIVE_BACKUP')}
                                                         className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 border border-sky-400 text-white font-black text-xs transition-all cursor-pointer shadow-md shadow-sky-500/20"
                                                         title="선택한 폴더의 사진을 구글 드라이브로 백업하고 로컬 용량을 정리합니다.">
                                                         <Upload className="w-3.5 h-3.5" /> ☁️ GDrive 백업 ({selectedFolders.length})
                                                     </button>
-                                                    <button onClick={() => setIsLocalCopyOpen(true)}
+                                                    <button onClick={() => handleActionWithCheck('LOCAL_COPY')}
                                                         className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 border border-emerald-600 text-white font-black text-xs transition-all cursor-pointer">
                                                         <Folder className="w-3.5 h-3.5" /> 로컬 복사
                                                     </button>
-                                                    <button onClick={handleDownloadSelectedFoldersZip}
+                                                    <button onClick={() => handleActionWithCheck('ZIP_DOWNLOAD')}
                                                         className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-sky-500 hover:bg-sky-400 border border-sky-600 text-white font-black text-xs transition-all cursor-pointer">
                                                         <Download className="w-3.5 h-3.5" /> ZIP 다운로드
                                                     </button>

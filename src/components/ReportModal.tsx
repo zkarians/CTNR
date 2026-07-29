@@ -1,9 +1,10 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { FileText, X, ChevronLeft, ChevronRight, RotateCw, Loader2, Folder, Ban, Plus, Calendar, AlertCircle, Camera, UploadCloud, Save, Check, Copy, Download } from 'lucide-react';
+import { FileText, X, ChevronLeft, ChevronRight, RotateCw, Loader2, Folder, Ban, Plus, Calendar, AlertCircle, Camera, UploadCloud, Save, Check, Copy, Download, BarChart3 } from 'lucide-react';
 import { getCarrierColor } from '@/lib/utils/colorUtils';
 import { getWorkDateString } from '@/lib/utils/dateUtils';
 import { generateJobType } from '@/lib/utils/jobType';
+import TeamSummaryModal from './TeamSummaryModal';
 
 interface ReportModalProps {
     isReportOpen: boolean;
@@ -45,6 +46,7 @@ interface ReportModalProps {
     reportText: string;
     savedReportInfo: { isSaved: boolean; savedAt?: string; savedBy?: string };
     isImageCopied: boolean;
+    onOpenGallery?: () => void;
 }
 
 export default function ReportModal({
@@ -54,8 +56,10 @@ export default function ReportModal({
     isReportGenerating, isExportingImage, handleEditReportItem, handleDeleteReportItem,
     handleToggleCancelCntr, editingCommentCntr, setEditingCommentCntr, commentInput, setCommentInput,
     handleSaveComment, reportCaptureRef, handleSaveReport, handleCopyReport, handleCopyReportImage,
-    handleDownloadReportImage, isSavingReport, imageCopyModalUrl, setImageCopyModalUrl, isCopied, reportText, savedReportInfo, isImageCopied
+    handleDownloadReportImage, isSavingReport, imageCopyModalUrl, setImageCopyModalUrl, isCopied, reportText, savedReportInfo, isImageCopied, onOpenGallery
 }: ReportModalProps) {
+    const [isSummaryOpen, setIsSummaryOpen] = React.useState(false);
+
     if (!isReportOpen) return null;
 
     const workerContainers = (!isAdmin && reportData) ? reportData.flatMap((dateGroup: any) =>
@@ -106,12 +110,30 @@ export default function ReportModal({
                                 <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Work Completion Official Report</p>
                             </div>
                         </div>
-                        <button 
-                            onClick={() => setIsReportOpen(false)}
-                            className="p-2 hover:bg-slate-100 rounded-full text-slate-400 hover:text-slate-700 transition-all cursor-pointer shrink-0"
-                        >
-                            <X className="w-5 h-5" />
-                        </button>
+                        <div className="flex items-center gap-1">
+                            <button 
+                                onClick={() => setIsSummaryOpen(true)}
+                                className="p-2 hover:bg-indigo-50 text-indigo-500 hover:text-indigo-700 rounded-full transition-all cursor-pointer shrink-0"
+                                title="조별 작업수량 요약"
+                            >
+                                <BarChart3 className="w-5 h-5" />
+                            </button>
+                            {onOpenGallery && (
+                                <button 
+                                    onClick={onOpenGallery}
+                                    className="p-2 hover:bg-blue-50 text-blue-500 hover:text-blue-700 rounded-full transition-all cursor-pointer shrink-0"
+                                    title="사진보관함 보기"
+                                >
+                                    <Camera className="w-5 h-5" />
+                                </button>
+                            )}
+                            <button 
+                                onClick={() => setIsReportOpen(false)}
+                                className="p-2 hover:bg-slate-100 rounded-full text-slate-400 hover:text-slate-700 transition-all cursor-pointer shrink-0"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
                     </div>
 
                     <div className="mb-1.5 bg-slate-100 border border-slate-200 rounded-xl p-1.5 md:p-2.5 text-slate-900 shrink-0">
@@ -742,6 +764,11 @@ export default function ReportModal({
                         </div>
                     )}
                 </motion.div>
+                <TeamSummaryModal 
+                    isOpen={isSummaryOpen} 
+                    onClose={() => setIsSummaryOpen(false)} 
+                    reportData={reportData || []} 
+                />
             </div>
         </AnimatePresence>
     );

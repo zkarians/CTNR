@@ -13,6 +13,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { toPng } from 'html-to-image';
 import ContainerViewer from '@/components/ContainerViewer';
 import LogoutButton from '@/components/LogoutButton';
+import FullscreenButton from '@/components/FullscreenButton';
 import PhotoGallery from '@/components/PhotoGallery';
 import CancelManageModal from '@/components/CancelManageModal';
 import AddManualModal from '@/components/AddManualModal';
@@ -785,6 +786,16 @@ export default function Home({ user }: { user: SessionUser }) {
         } finally {
             setIsReportGenerating(false);
         }
+    };
+
+    const handleOpenReportFromGallery = () => {
+        setIsGalleryOpen(false);
+        handleGenerateReport();
+    };
+
+    const handleOpenGalleryFromReport = () => {
+        setIsReportOpen(false);
+        setIsGalleryOpen(true);
     };
 
     const handleGenerateReport = async () => {
@@ -3098,6 +3109,7 @@ export default function Home({ user }: { user: SessionUser }) {
                 isCopied={isCopied}
                 reportText={reportText}
                 savedReportInfo={savedReportInfo}
+                onOpenGallery={handleOpenGalleryFromReport}
                 isImageCopied={isImageCopied}
             />
                             {/* Manual Entry Modal Popover */}
@@ -3140,7 +3152,7 @@ export default function Home({ user }: { user: SessionUser }) {
                             />
             
 
-            <PhotoGallery user={user} isOpen={isGalleryOpen} initialSearchCntrNo={gallerySearchCntrNo} onClose={() => { setIsGalleryOpen(false); setGallerySearchCntrNo(''); refreshJobs(); loadTeamProgress(); }} />
+            <PhotoGallery user={user} isOpen={isGalleryOpen} initialSearchCntrNo={gallerySearchCntrNo} onClose={() => { setIsGalleryOpen(false); setGallerySearchCntrNo(''); refreshJobs(); loadTeamProgress(); }} onOpenReport={handleOpenReportFromGallery} />
         </div>
     );
 }
