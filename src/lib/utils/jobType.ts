@@ -90,5 +90,14 @@ export function generateJobType(products: { name: string; qty: number; division:
         finalType = '다모델 ' + finalType;
     }
 
+    // 일렉오븐 조건: ZZZ 제외 모든 제품이 CVZ(오븐)이고, 높이가 630이상 670이하이며, 총 수량이 180개 이상인 경우
+    const isElecOvenContainer = totalValidQty >= 180 && products.length > 0 && products.filter(p => p.division !== 'ZZZ').every(p => {
+        return p.division === 'CVZ' && p.height !== undefined && p.height >= 630 && p.height <= 670;
+    });
+
+    if (isElecOvenContainer) {
+        finalType = isMultiModel ? '다모델 일렉오븐' : '일렉오븐';
+    }
+
     return finalType;
 }
