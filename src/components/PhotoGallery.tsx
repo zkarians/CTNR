@@ -671,11 +671,16 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
     }, [activePhotoIdx, photos, folderPhotos]);
 
 
-    const renderFolderItem = (folder: typeof folders[0]) => (
+    const renderFolderItem = (folder: typeof folders[0]) => {
+        const hasUnsynced = isCompletedView && folder.photos.length > 0 && folder.photos.some(p => !p.gdrive_file_id);
+        
+        return (
         <div
             key={folder.cntrNo + '_' + folder.workDateStr}
             onClick={() => setSelectedContainerFolder(folder.cntrNo + '|' + folder.workDateStr)}
-            className="group relative flex flex-col bg-white border border-slate-200 rounded-2xl p-3.5 cursor-pointer shadow-2xs hover:shadow-md hover:border-sky-400 transition-all duration-300 hover:-translate-y-0.5 hover:scale-[1.01] select-none text-slate-800"
+            className={`group relative flex flex-col bg-white border rounded-2xl p-3.5 cursor-pointer shadow-2xs hover:shadow-md transition-all duration-300 hover:-translate-y-0.5 hover:scale-[1.01] select-none text-slate-800 ${
+                hasUnsynced ? 'border-rose-500 border-[2px] shadow-rose-500/10' : 'border-slate-200 hover:border-sky-400'
+            }`}
         >
             {/* Top row: Checkbox, Folder icon, Title/Carrier, Count Badge */}
             <div className="flex items-center justify-between gap-2">
@@ -874,6 +879,7 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
             </AnimatePresence>
         </div>
     );
+    };
 
     // Filters
     const [startDate, setStartDate] = useState('');
@@ -2373,7 +2379,11 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
                                                 setActivePhotoIdx(globalIdx);
                                             }
                                         }}
-                                        className="group relative flex flex-col bg-[#11111a] border border-white/5 rounded-2xl overflow-hidden cursor-pointer shadow-lg hover:shadow-xl hover:border-white/10 transition-all duration-300 hover:-translate-y-[3px] hover:scale-[1.02]"
+                                        className={`group relative flex flex-col bg-[#11111a] border rounded-2xl overflow-hidden cursor-pointer shadow-lg hover:shadow-xl transition-all duration-300 hover:-translate-y-[3px] hover:scale-[1.02] ${
+                                            isCompletedView && !photo.gdrive_file_id
+                                                ? 'border-rose-500 border-[2px] shadow-rose-500/20'
+                                                : 'border-white/5 hover:border-white/10'
+                                        }`}
                                     >
                                         {/* Aspect Ratio container for Image */}
                                         <div className={

@@ -78,7 +78,7 @@ export function generateJobType(products: { name: string; qty: number; division:
     
     // Define a stable order just in case, but joining them as they appear is also fine.
     // The problem statement didn't specify order so we just concatenate.
-    if (sortedTypes.length === 1 && sortedTypes[0] === '냉장고' && uniqueModels.size <= 2 && totalValidQty >= 48 && totalValidQty <= 51) {
+    if (sortedTypes.length === 1 && sortedTypes[0] === '냉장고' && uniqueModels.size <= 3 && totalValidQty >= 48 && totalValidQty <= 51) {
         finalType = '횡적';
     } else if (sortedTypes.length >= 2) {
         finalType = sortedTypes.join('') + '혼적';
