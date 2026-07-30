@@ -75,6 +75,27 @@ export default function ReportModal({
         ? `${workerHours}시간 ${workerMins > 0 ? `${workerMins}분` : ''}` 
         : `${workerMins}분`;
 
+    let maxNumTeams = 1;
+    if (reportData && Array.isArray(reportData)) {
+        let max = 1;
+        reportData.forEach((dateGroup: any) => {
+            if (dateGroup.uploaders && Array.isArray(dateGroup.uploaders)) {
+                if (dateGroup.uploaders.length > max) {
+                    max = dateGroup.uploaders.length;
+                }
+            }
+        });
+        maxNumTeams = Math.min(Math.max(max, 1), 4);
+    }
+
+    const modalWidthStyle = maxNumTeams === 1 
+        ? 'md:max-w-3xl' 
+        : maxNumTeams === 2 
+        ? 'md:max-w-5xl' 
+        : maxNumTeams === 3 
+        ? 'md:max-w-7xl' 
+        : 'md:max-w-[96vw]';
+
     return (
         <AnimatePresence>
             <div className="fixed inset-0 z-[100] flex items-center justify-center p-1 sm:p-4">
@@ -89,7 +110,7 @@ export default function ReportModal({
                     initial={{ scale: 0.95, opacity: 0, y: 20 }} 
                     animate={{ scale: 1, opacity: 1, y: 0 }} 
                     exit={{ scale: 0.95, opacity: 0, y: 20 }}
-                    className="relative w-full max-w-[99vw] md:max-w-[96vw] bg-white border border-slate-300 rounded-[1.2rem] sm:rounded-[1.5rem] md:rounded-[2rem] shadow-2xl overflow-hidden p-2 pb-2.5 sm:p-4 md:p-5 z-10 h-[96dvh] max-h-[97dvh] md:h-[96vh] md:max-h-[98vh] flex flex-col text-slate-900"
+                    className={`relative w-full max-w-[99vw] ${modalWidthStyle} transition-all duration-500 bg-white border border-slate-300 rounded-[1.2rem] sm:rounded-[1.5rem] md:rounded-[2rem] shadow-2xl overflow-hidden p-1 pb-1.5 sm:p-2 md:p-3 z-10 h-[96dvh] max-h-[97dvh] md:h-[96vh] md:max-h-[98vh] flex flex-col text-slate-900`}
                 >
                     <div className="flex items-start justify-between pb-2 mb-1.5 border-b border-slate-200 shrink-0 gap-2">
                         <div className="flex items-start gap-3 min-w-0">
@@ -366,7 +387,7 @@ export default function ReportModal({
                                         : 'md:grid-cols-4';
 
                                     return (
-                                        <div key={dateGroup.dateStr} className="bg-slate-50 border border-slate-200 rounded-xl md:rounded-3xl p-2.5 sm:p-4 md:p-6 shadow-sm">
+                                        <div key={dateGroup.dateStr} className="bg-slate-50 border border-slate-200 rounded-xl md:rounded-2xl p-1.5 sm:p-2 md:p-3 shadow-sm">
                                             <div className="flex items-center justify-between border-b border-slate-200 pb-3 mb-5 flex-wrap gap-2">
                                                 <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
                                                     <Calendar className="w-4 h-4 text-sky-600 animate-pulse" />
@@ -416,7 +437,7 @@ export default function ReportModal({
                                                                     <div key={`${cntr.cntrNo}_${cntrIdx}`} className="bg-slate-50 border border-slate-200 rounded-lg md:rounded-xl p-2.5 sm:p-3 hover:border-slate-300 transition-all space-y-1.5">
                                                                         <div className="flex items-center justify-between gap-1.5 mb-1.5">
                                                                             <div className="flex items-center gap-1.5 min-w-0">
-                                                                                <span className={`text-sm font-black truncate uppercase ${getCarrierColor(cntr.transporter)}`}>{cntr.cntrNo}</span>
+                                                                                <span className={`text-sm font-black shrink-0 uppercase ${getCarrierColor(cntr.transporter)}`}>{cntr.cntrNo}</span>
                                                                                 {isExcluded ? (
                                                                                     <span className="px-1.5 py-0.5 rounded-md bg-amber-500/10 border border-amber-500/30 text-amber-700 font-extrabold text-[11px] shrink-0">
                                                                                         [작업제외]
@@ -427,22 +448,22 @@ export default function ReportModal({
                                                                                     </span>
                                                                                 ) : null}
                                                                             </div>
-                                                                            <div className="flex items-center gap-1.5 shrink-0">
+                                                                            <div className="flex items-center gap-0.5 shrink-0">
                                                                                 {!isExportingImage && (
                                                                                     <>
                                                                                         <button
                                                                                             onClick={() => handleEditReportItem(upGroup.teamName ?? upGroup.uploaderName, cntrIdx, cntr)}
-                                                                                            className="p-1 rounded bg-slate-100 hover:bg-sky-100 text-slate-500 hover:text-sky-600 transition-colors cursor-pointer border border-transparent hover:border-sky-200"
+                                                                                            className="p-0.5 rounded bg-slate-100 hover:bg-sky-100 text-slate-500 hover:text-sky-600 transition-colors cursor-pointer border border-transparent hover:border-sky-200"
                                                                                             title="이 항목 수정 (보고서 내용만)"
                                                                                         >
-                                                                                            <span className="text-[11px] font-black">✏️ 수정</span>
+                                                                                            <span className="text-[12px] font-black">✏️</span>
                                                                                         </button>
                                                                                         <button
                                                                                             onClick={() => handleDeleteReportItem(upGroup.teamName ?? upGroup.uploaderName, cntrIdx)}
-                                                                                            className="p-1 rounded bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-600 transition-colors cursor-pointer border border-transparent hover:border-rose-200"
+                                                                                            className="p-0.5 rounded bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-600 transition-colors cursor-pointer border border-transparent hover:border-rose-200"
                                                                                             title="이 항목 삭제 (보고서 내용만)"
                                                                                         >
-                                                                                            <span className="text-[11px] font-black">🗑️ 삭제</span>
+                                                                                            <span className="text-[12px] font-black">🗑️</span>
                                                                                         </button>
                                                                                     </>
                                                                                 )}
@@ -456,7 +477,7 @@ export default function ReportModal({
                                                                                     </button>
                                                                                 )}
                                                                                 {cntr.startTimeStr && cntr.endTimeStr && (
-                                                                                    <span className="text-sky-900 font-bold text-xs bg-sky-100 px-1.5 py-0.5 rounded border border-sky-200 shrink-0">
+                                                                                    <span className="text-sky-900 font-bold text-[11px] bg-sky-100 px-1.5 py-0.5 rounded border border-sky-200 shrink-0">
                                                                                         {cntr.durationMinutes || 45}분 ({cntr.startTimeStr}~{cntr.endTimeStr})
                                                                                     </span>
                                                                                 )}

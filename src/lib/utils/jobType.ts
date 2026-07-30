@@ -95,8 +95,15 @@ export function generateJobType(products: { name: string; qty: number; division:
         return p.division === 'CVZ' && p.height !== undefined && p.height >= 630 && p.height <= 670;
     });
 
+    // 레이다운식기 조건: ZZZ 제외 모든 제품이 CDZ(식기)이고, 높이가 900이상이며, 총 수량이 128~135개 사이인 경우
+    const isLaydownDishwasher = totalValidQty >= 128 && totalValidQty <= 135 && products.length > 0 && products.filter(p => p.division !== 'ZZZ').every(p => {
+        return p.division === 'CDZ' && p.height !== undefined && p.height >= 900;
+    });
+
     if (isElecOvenContainer) {
         finalType = isMultiModel ? '다모델 일렉오븐' : '일렉오븐';
+    } else if (isLaydownDishwasher) {
+        finalType = isMultiModel ? '다모델 레이다운식기' : '레이다운식기';
     }
 
     return finalType;
