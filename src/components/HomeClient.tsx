@@ -325,12 +325,22 @@ export default function Home({ user }: { user: SessionUser }) {
 
         dataArray.forEach((dateGroup: any) => {
             lines.push(`📅 ${dateGroup.dateStr || dateGroup.date} 작업 분량`);
-            let totalCntr = 0;
+            const activeCarrierCounts: Record<string, number> = {};
             dateGroup.uploaders.forEach((u: any) => {
-                const activeCntrs = u.containers.filter((c: any) => !c.isCancelled && !c.adminComment?.includes('[취소]') && !c.adminComment?.includes('[작업취소]') && !c.adminComment?.includes('[작업제외]'));
-                totalCntr += activeCntrs.length;
+                u.containers.forEach((c: any) => {
+                    if (!c.isCancelled && !c.adminComment?.includes('[취소]') && !c.adminComment?.includes('[작업취소]') && !c.adminComment?.includes('[작업제외]')) {
+                        const cName = c.transporter ? (c.transporter.includes("천마") ? "천마" : (c.transporter.includes("BNI") || c.transporter.includes("비엔아이") ? "BNI" : c.transporter.split('(')[0])) : (u.teamName.includes("천마") ? "천마" : "BNI");
+                        activeCarrierCounts[cName] = (activeCarrierCounts[cName] || 0) + 1;
+                    }
+                });
             });
-            lines.push(`총합계: ${totalCntr}개 작업완료\n`);
+            const finalCarrierCounts = dateGroup.customCarrierCounts || activeCarrierCounts;
+            const displayTotal = Object.values(finalCarrierCounts).reduce((a: any, b: any) => a + b, 0);
+            
+            const carrierEntries = Object.entries(finalCarrierCounts);
+            const carrierStr = carrierEntries.length > 0 ? ` ( ${carrierEntries.map(([k,v]) => `${k}: ${v}개`).join(', ')} )` : '';
+            const remarkText = dateGroup.customRemark ? ` | 비고: ${dateGroup.customRemark}` : '';
+            lines.push(`총합계: ${displayTotal}개 작업완료${carrierStr}${remarkText}\n`);
 
             dateGroup.uploaders.forEach((team: any) => {
                 const activeTeamCntrs = team.containers.filter((c: any) => !c.isCancelled && !c.adminComment?.includes('[취소]') && !c.adminComment?.includes('[작업취소]') && !c.adminComment?.includes('[작업제외]'));
@@ -356,6 +366,18 @@ export default function Home({ user }: { user: SessionUser }) {
         });
 
         return lines.join('\n');
+    };
+
+    const handleUpdateReportHeader = (dateStr: string, customCarrierCounts: Record<string, number> | undefined, customRemark: string) => {
+        setReportData((prevData: any[]) => {
+            const nextData = prevData.map(d => 
+                d.dateStr === dateStr 
+                    ? { ...d, customCarrierCounts, customRemark } 
+                    : d
+            );
+            setReportText(rebuildReportTextFromData(nextData));
+            return nextData;
+        });
     };
 
     const handleToggleCancelCntr = (cntrNo: string, mode?: 'cancel' | 'exclude') => {
@@ -480,7 +502,8 @@ export default function Home({ user }: { user: SessionUser }) {
             return;
         }
 
-        const duration = parseInt(manualDuration) || 45;
+        const parsedDuration = parseInt(manualDuration, 10);
+        const duration = isNaN(parsedDuration) ? 45 : parsedDuration;
         const totalQty = validProducts.reduce((sum, p) => sum + p.qty, 0);
 
         const adminCommentStr = isManualCancelled 
@@ -3129,6 +3152,7 @@ export default function Home({ user }: { user: SessionUser }) {
                 isAdmin={isAdmin}
                 user={user}
                 reportData={reportData}
+                onUpdateReportHeader={handleUpdateReportHeader}
                 reportStartDate={reportStartDate}
                 setReportStartDate={setReportStartDate}
                 reportEndDate={reportEndDate}

@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { FileText, X, ChevronLeft, ChevronRight, RotateCw, Loader2, Folder, Ban, Plus, Calendar, AlertCircle, Camera, UploadCloud, Save, Check, Copy, Download, BarChart3 } from 'lucide-react';
+import { FileText, X, ChevronLeft, ChevronRight, RotateCw, Loader2, Folder, Ban, Plus, Calendar, AlertCircle, Camera, UploadCloud, Save, Check, Copy, Download, BarChart3, Edit3 } from 'lucide-react';
 import { getCarrierColor } from '@/lib/utils/colorUtils';
 import { getWorkDateString } from '@/lib/utils/dateUtils';
 import { generateJobType } from '@/lib/utils/jobType';
@@ -47,6 +47,7 @@ interface ReportModalProps {
     savedReportInfo: { isSaved: boolean; savedAt?: string; savedBy?: string };
     isImageCopied: boolean;
     onOpenGallery?: () => void;
+    onUpdateReportHeader?: (dateStr: string, customCarrierCounts: Record<string, number> | undefined, customRemark: string) => void;
 }
 
 export default function ReportModal({
@@ -56,9 +57,13 @@ export default function ReportModal({
     isReportGenerating, isExportingImage, handleEditReportItem, handleDeleteReportItem,
     handleToggleCancelCntr, editingCommentCntr, setEditingCommentCntr, commentInput, setCommentInput,
     handleSaveComment, reportCaptureRef, handleSaveReport, handleCopyReport, handleCopyReportImage,
-    handleDownloadReportImage, isSavingReport, imageCopyModalUrl, setImageCopyModalUrl, isCopied, reportText, savedReportInfo, isImageCopied, onOpenGallery
+    handleDownloadReportImage, isSavingReport, imageCopyModalUrl, setImageCopyModalUrl, isCopied, reportText, savedReportInfo, isImageCopied, onOpenGallery,
+    onUpdateReportHeader
 }: ReportModalProps) {
     const [isSummaryOpen, setIsSummaryOpen] = React.useState(false);
+    const [editingHeaderDate, setEditingHeaderDate] = React.useState<string | null>(null);
+    const [editCarrierCounts, setEditCarrierCounts] = React.useState<Record<string, number>>({});
+    const [editRemarkVal, setEditRemarkVal] = React.useState<string>('');
 
     if (!isReportOpen) return null;
 
@@ -393,28 +398,95 @@ export default function ReportModal({
                                                     <Calendar className="w-4 h-4 text-sky-600 animate-pulse" />
                                                     {dateGroup.dateStr} 작업 분량
                                                 </h3>
-                                                <span className="text-sm font-black text-slate-800 bg-white border border-slate-300 shadow-sm px-3.5 py-1 rounded-full flex items-center gap-1.5 flex-wrap">
-                                                    <span>총합계: {totalCntr}개 작업완료</span>
-                                                    {Object.keys(activeCarrierCounts).length > 0 && (
-                                                        <span className="text-slate-600 font-bold text-xs border-l border-slate-300 pl-2 ml-1 flex items-center gap-1.5 flex-wrap">
-                                                            (
-                                                            {Object.entries(activeCarrierCounts).map(([cName, count]: [string, any], idx: number) => {
-                                                                const carrierColorClass = cName.includes('천마') 
-                                                                    ? 'text-rose-600 font-black' 
-                                                                    : (cName.includes('BNI') || cName.includes('비엔아이')) 
-                                                                    ? 'text-indigo-600 font-black' 
-                                                                    : 'text-emerald-600 font-black';
-                                                                return (
-                                                                    <span key={cName} className="flex items-center">
-                                                                        {idx > 0 && <span className="text-slate-400 mr-1.5">,</span>}
-                                                                        <span className={carrierColorClass}>{cName}: {count}개</span>
-                                                                    </span>
-                                                                );
-                                                            })}
-                                                            )
+                                                {(() => {
+                                                    const finalCarrierCounts = dateGroup.customCarrierCounts || activeCarrierCounts;
+                                                    const displayTotal = Object.values(finalCarrierCounts).reduce((a: any, b: any) => a + b, 0);
+
+                                                    if (editingHeaderDate === dateGroup.dateStr) {
+                                                        return (
+                                                            <div className="flex items-center gap-2 bg-white border border-slate-300 p-1.5 rounded-full shadow-sm text-sm flex-wrap">
+                                                                <span className="font-bold pl-2 text-slate-900">총합계: {Object.values(editCarrierCounts).reduce((a, b) => a + b, 0)}개</span>
+                                                                <span className="text-slate-300 mx-1">|</span>
+                                                                {Object.keys(editCarrierCounts).map(cName => (
+                                                                    <div key={cName} className="flex items-center gap-1">
+                                                                        <span className="font-bold text-slate-600">{cName}:</span>
+                                                                        <input 
+                                                                            type="number" 
+                                                                            className="w-12 px-1 py-0.5 border border-slate-200 rounded focus:outline-none focus:border-sky-500 font-bold text-center"
+                                                                            value={editCarrierCounts[cName]}
+                                                                            onChange={e => setEditCarrierCounts(prev => ({ ...prev, [cName]: parseInt(e.target.value) || 0 }))}
+                                                                        />
+                                                                    </div>
+                                                                ))}
+                                                                <span className="text-slate-300 mx-1">|</span>
+                                                                <span className="font-bold pl-1 text-slate-600">비고:</span>
+                                                                <input 
+                                                                    type="text" 
+                                                                    className="w-32 px-2 py-0.5 border border-slate-200 rounded-md focus:outline-none focus:border-sky-500 font-bold"
+                                                                    value={editRemarkVal}
+                                                                    onChange={e => setEditRemarkVal(e.target.value)}
+                                                                    placeholder="없음"
+                                                                />
+                                                                <button 
+                                                                    onClick={() => {
+                                                                        onUpdateReportHeader?.(dateGroup.dateStr, editCarrierCounts, editRemarkVal);
+                                                                        setEditingHeaderDate(null);
+                                                                    }}
+                                                                    className="ml-1 bg-sky-600 hover:bg-sky-500 text-white rounded-full p-1 cursor-pointer flex items-center justify-center"
+                                                                >
+                                                                    <Check className="w-4 h-4" />
+                                                                </button>
+                                                                <button 
+                                                                    onClick={() => setEditingHeaderDate(null)}
+                                                                    className="bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-full p-1 cursor-pointer flex items-center justify-center"
+                                                                >
+                                                                    <X className="w-4 h-4" />
+                                                                </button>
+                                                            </div>
+                                                        );
+                                                    }
+
+                                                    return (
+                                                        <span className="text-sm font-black text-slate-800 bg-white border border-slate-300 shadow-sm px-3.5 py-1 rounded-full flex items-center gap-1.5 flex-wrap">
+                                                            <span>총합계: {displayTotal}개 작업완료</span>
+                                                            {Object.keys(finalCarrierCounts).length > 0 && (
+                                                                <span className="text-slate-600 font-bold text-xs border-l border-slate-300 pl-2 ml-1 flex items-center gap-1.5 flex-wrap">
+                                                                    (
+                                                                    {Object.entries(finalCarrierCounts).map(([cName, count]: [string, any], idx: number) => {
+                                                                        const carrierColorClass = cName.includes('천마') 
+                                                                            ? 'text-rose-600 font-black' 
+                                                                            : (cName.includes('BNI') || cName.includes('비엔아이')) 
+                                                                            ? 'text-indigo-600 font-black' 
+                                                                            : 'text-emerald-600 font-black';
+                                                                        return (
+                                                                            <span key={cName} className="flex items-center">
+                                                                                {idx > 0 && <span className="text-slate-400 mr-1.5">,</span>}
+                                                                                <span className={carrierColorClass}>{cName}: {count}개</span>
+                                                                            </span>
+                                                                        );
+                                                                    })}
+                                                                    )
+                                                                </span>
+                                                            )}
+                                                            {dateGroup.customRemark && (
+                                                                <span className="text-slate-600 font-bold text-xs border-l border-slate-300 pl-2 ml-1 flex items-center gap-1.5">
+                                                                    비고: {dateGroup.customRemark}
+                                                                </span>
+                                                            )}
+                                                            <button 
+                                                                onClick={() => {
+                                                                    setEditCarrierCounts(finalCarrierCounts);
+                                                                    setEditRemarkVal(dateGroup.customRemark || '');
+                                                                    setEditingHeaderDate(dateGroup.dateStr);
+                                                                }}
+                                                                className="ml-1 text-slate-400 hover:text-sky-600 cursor-pointer p-0.5"
+                                                                title="총합계 및 비고 수정"
+                                                            >
+                                                                <Edit3 className="w-3.5 h-3.5" />
+                                                            </button>
                                                         </span>
-                                                    )}
-                                                </span>
+                                                    );
+                                                })()}
                                             </div>
                                             <div className={`grid grid-cols-1 ${gridColsStyle} gap-4 items-start w-full`}>
                                                 {dateGroup.uploaders.map((upGroup: any) => {
