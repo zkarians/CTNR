@@ -20,6 +20,7 @@ import fs from 'fs';
 import crypto from 'crypto';
 import { pool } from '@/lib/db';
 import { getSession } from '@/lib/auth';
+import { getGoogleDriveMd5Batch } from '@/lib/gdrive';
 
 function getFileMd5(filePath: string): string | null {
     try {
@@ -51,7 +52,7 @@ export async function GET(req: NextRequest) {
 
         // Fetch all active photos for this container number
         const dbRes = await pool.query(
-            `SELECT p.id, p.photo_path, p.uploaded_at, p.cntr_no, p.remark
+            `SELECT p.id, p.photo_path, p.uploaded_at, p.cntr_no, p.remark, p.gdrive_file_id
              FROM container_photos p
              WHERE p.cntr_no = $1 AND (p.is_deleted = false OR p.is_deleted IS NULL)
              ORDER BY p.uploaded_at ASC`,
@@ -62,17 +63,32 @@ export async function GET(req: NextRequest) {
             if (!workDate) return true;
             return getWorkDateString(new Date(photo.uploaded_at)) === workDate;
         });
+        
         const hashMap: { [hash: string]: typeof photos } = {};
+        const missingLocalPhotos: typeof photos = [];
 
         for (const photo of photos) {
             const filePath = path.resolve(uploadsDir, photo.photo_path);
             const hash = getFileMd5(filePath);
-            if (!hash) continue;
-
-            if (!hashMap[hash]) {
-                hashMap[hash] = [];
+            if (hash) {
+                if (!hashMap[hash]) hashMap[hash] = [];
+                hashMap[hash].push(photo);
+            } else if (photo.gdrive_file_id) {
+                missingLocalPhotos.push(photo);
             }
-            hashMap[hash].push(photo);
+        }
+        
+        if (missingLocalPhotos.length > 0) {
+            const fileIds = missingLocalPhotos.map(p => p.gdrive_file_id);
+            const gdriveMd5Map = await getGoogleDriveMd5Batch(fileIds);
+            
+            for (const photo of missingLocalPhotos) {
+                const hash = gdriveMd5Map[photo.gdrive_file_id];
+                if (hash) {
+                    if (!hashMap[hash]) hashMap[hash] = [];
+                    hashMap[hash].push(photo);
+                }
+            }
         }
 
         const duplicateGroups: any[] = [];
@@ -149,7 +165,7 @@ export async function POST(req: NextRequest) {
             for (const folder of foldersToClean) {
                 // Fetch active photos sorted by upload time
                 const dbRes = await client.query(
-                    `SELECT p.id, p.photo_path, p.uploaded_at
+                    `SELECT p.id, p.photo_path, p.uploaded_at, p.gdrive_file_id
                      FROM container_photos p
                      WHERE p.cntr_no = $1 AND (p.is_deleted = false OR p.is_deleted IS NULL)
                      ORDER BY p.uploaded_at ASC`,
@@ -161,16 +177,30 @@ export async function POST(req: NextRequest) {
                     return getWorkDateString(new Date(photo.uploaded_at)) === folder.workDate;
                 });
                 const hashMap: { [hash: string]: string[] } = {};
+                const missingLocalPhotos: typeof photos = [];
 
                 for (const photo of photos) {
                     const filePath = path.resolve(uploadsDir, photo.photo_path);
                     const hash = getFileMd5(filePath);
-                    if (!hash) continue;
-
-                    if (!hashMap[hash]) {
-                        hashMap[hash] = [];
+                    if (hash) {
+                        if (!hashMap[hash]) hashMap[hash] = [];
+                        hashMap[hash].push(photo.id);
+                    } else if (photo.gdrive_file_id) {
+                        missingLocalPhotos.push(photo);
                     }
-                    hashMap[hash].push(photo.id);
+                }
+                
+                if (missingLocalPhotos.length > 0) {
+                    const fileIds = missingLocalPhotos.map(p => p.gdrive_file_id);
+                    const gdriveMd5Map = await getGoogleDriveMd5Batch(fileIds);
+                    
+                    for (const photo of missingLocalPhotos) {
+                        const hash = gdriveMd5Map[photo.gdrive_file_id];
+                        if (hash) {
+                            if (!hashMap[hash]) hashMap[hash] = [];
+                            hashMap[hash].push(photo.id);
+                        }
+                    }
                 }
 
                 // Collect duplicate photo IDs (keep first, trash the rest)

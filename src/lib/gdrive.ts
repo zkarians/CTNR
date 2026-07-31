@@ -108,3 +108,44 @@ export async function downloadFromGoogleDrive(fileId: string): Promise<Buffer> {
     return Buffer.from(response.data as ArrayBuffer);
 }
 
+/**
+ * Fetch MD5 checksums for a batch of Google Drive file IDs
+ * Returns a map of fileId -> md5Checksum
+ */
+export async function getGoogleDriveMd5Batch(fileIds: string[]): Promise<Record<string, string>> {
+    if (!fileIds || fileIds.length === 0) return {};
+    
+    const auth = getOAuth2Client();
+    const drive = google.drive({ version: 'v3', auth });
+    
+    const md5Map: Record<string, string> = {};
+    
+    // Chunk fileIds into groups of 30 to avoid overly long query strings or hitting rate limits
+    const chunkSize = 30;
+    for (let i = 0; i < fileIds.length; i += chunkSize) {
+        const chunk = fileIds.slice(i, i + chunkSize);
+        
+        // Build query: id = 'id1' or id = 'id2' ...
+        const q = chunk.map(id => `id = '${id}'`).join(' or ');
+        
+        try {
+            const res = await drive.files.list({
+                q,
+                fields: 'files(id, md5Checksum)',
+                pageSize: chunkSize
+            });
+            
+            if (res.data.files) {
+                for (const f of res.data.files) {
+                    if (f.id && f.md5Checksum) {
+                        md5Map[f.id] = f.md5Checksum;
+                    }
+                }
+            }
+        } catch (e) {
+            console.error(`[GDrive MD5 Batch Fetch Error] chunk starting at index ${i}:`, e);
+        }
+    }
+    
+    return md5Map;
+}
