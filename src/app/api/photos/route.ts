@@ -110,7 +110,7 @@ export async function POST(req: NextRequest) {
 
             // Use original filename, but sanitize it
             let baseName = path.parse(originalName).name;
-            baseName = baseName.replace(/[^a-zA-Z0-9_\-\.가-힣ㄱ-ㅎㅏ-ㅣ]/g, '_');
+            baseName = baseName.replace(/[^a-zA-Z0-9_\-\.가-힣ㄱ-ㅎㅏ-ㅣ\s]/g, '_');
             if (!baseName) baseName = 'photo';
             
             let filename = `${baseName}${ext}`;
