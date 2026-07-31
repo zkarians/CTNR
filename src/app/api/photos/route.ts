@@ -27,6 +27,7 @@ export async function POST(req: NextRequest) {
         const durationMinutesStr = formData.get('durationMinutes') as string | null;
         const durationMinutes = durationMinutesStr && !isNaN(parseInt(durationMinutesStr, 10)) ? parseInt(durationMinutesStr, 10) : 45;
         const photoType = (formData.get('photoType') as string | null) || 'normal';
+        const lastModifiedStr = formData.get('lastModified') as string | null;
 
         if (!file || !jobIdStr || !cntrNo) {
             return NextResponse.json({ error: '필수 데이터가 누락되었습니다.' }, { status: 400 });
@@ -108,10 +109,43 @@ export async function POST(req: NextRequest) {
                 }
             }
 
-            // Use original filename, but sanitize it
-            let baseName = path.parse(originalName).name;
-            baseName = baseName.replace(/[^a-zA-Z0-9_\-\.가-힣ㄱ-ㅎㅏ-ㅣ\s]/g, '_');
-            if (!baseName) baseName = 'photo';
+            // Determine Smart Timestamp Naming
+            let extractedDate: Date | null = null;
+
+            // 1. Try to extract EXIF DateTimeOriginal
+            try {
+                const metadata = await sharp(inputBuffer).metadata();
+                if (metadata.exif) {
+                    const exifStr = metadata.exif.toString('utf8');
+                    // Look for standard EXIF format YYYY:MM:DD HH:MM:SS
+                    const match = exifStr.match(/(\d{4}):(\d{2}):(\d{2}) (\d{2}):(\d{2}):(\d{2})/);
+                    if (match) {
+                        extractedDate = new Date(
+                            parseInt(match[1]), parseInt(match[2]) - 1, parseInt(match[3]),
+                            parseInt(match[4]), parseInt(match[5]), parseInt(match[6])
+                        );
+                    }
+                }
+            } catch (e) {
+                // Ignore sharp metadata error
+            }
+
+            // 2. Try to use lastModified
+            if (!extractedDate && lastModifiedStr) {
+                const lm = parseInt(lastModifiedStr, 10);
+                if (!isNaN(lm)) {
+                    extractedDate = new Date(lm);
+                }
+            }
+
+            // 3. Fallback to current time
+            if (!extractedDate || isNaN(extractedDate.getTime())) {
+                extractedDate = new Date();
+            }
+
+            // Format date to YYYYMMDD_HHMMSS
+            const pad = (n: number) => n.toString().padStart(2, '0');
+            let baseName = `${extractedDate.getFullYear()}${pad(extractedDate.getMonth() + 1)}${pad(extractedDate.getDate())}_${pad(extractedDate.getHours())}${pad(extractedDate.getMinutes())}${pad(extractedDate.getSeconds())}`;
             
             let filename = `${baseName}${ext}`;
             let filePath = path.join(containerDir, filename);

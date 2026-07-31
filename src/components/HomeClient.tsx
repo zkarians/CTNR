@@ -1479,6 +1479,7 @@ export default function Home({ user }: { user: SessionUser }) {
                 
                 const formData = new FormData();
                 formData.append('file', file);
+                formData.append('lastModified', file.lastModified.toString());
                 formData.append('jobId', targetJobId.toString());
                 formData.append('cntrNo', uploadCntrNo.trim());
                 formData.append('remark', uploadRemark.trim());
