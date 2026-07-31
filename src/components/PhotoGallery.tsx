@@ -76,7 +76,7 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
     const [isLoading, setIsLoading] = useState(false);
     
     // Sort State
-    const [sortBy, setSortBy] = useState<'UPLOAD_DESC' | 'UPLOAD_ASC' | 'CREATION_DESC' | 'CREATION_ASC' | 'NAME_ASC' | 'NAME_DESC'>('CREATION_ASC');
+    const [sortBy, setSortBy] = useState<'UPLOAD_DESC' | 'UPLOAD_ASC' | 'CREATION_DESC' | 'CREATION_ASC' | 'NAME_ASC' | 'NAME_DESC'>('NAME_ASC');
     const [viewMode, setViewMode] = useState<'GRID' | 'LARGE'>('LARGE');
     
     // Lightbox State

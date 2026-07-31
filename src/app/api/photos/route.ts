@@ -64,19 +64,7 @@ export async function POST(req: NextRequest) {
                 }
             }
 
-            // Count photos uploaded today for this container number to determine sequence
-            const countRes = await client.query(
-                `SELECT COUNT(*) as count FROM container_photos WHERE cntr_no = $1 AND uploaded_at::date = CURRENT_DATE`,
-                [cntrNo]
-            );
-            const existingCount = parseInt(countRes.rows[0].count, 10);
-
-            // Generate filename in KST: YYYYMMDD_CNTRNO_SEQ.ext
-            const kstDate = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
-            const year = kstDate.getFullYear();
-            const month = String(kstDate.getMonth() + 1).padStart(2, '0');
-            const day = String(kstDate.getDate()).padStart(2, '0');
-            const dateStr = `${year}${month}${day}`;
+            // Generate filename based on original uploaded filename to preserve sort order (creation time)
 
             const originalName = file.name;
             let ext = (path.extname(originalName) || '.jpg').toLowerCase();
@@ -120,15 +108,20 @@ export async function POST(req: NextRequest) {
                 }
             }
 
-            let seqNum = existingCount + 1;
-            let filename = `${dateStr}_${sanitizedCntrNo}_${seqNum.toString().padStart(2, '0')}${ext}`;
+            // Use original filename, but sanitize it
+            let baseName = path.parse(originalName).name;
+            baseName = baseName.replace(/[^a-zA-Z0-9_\-\.가-힣ㄱ-ㅎㅏ-ㅣ]/g, '_');
+            if (!baseName) baseName = 'photo';
+            
+            let filename = `${baseName}${ext}`;
             let filePath = path.join(containerDir, filename);
 
-            // Prevent filesystem overwrite by incrementing sequence if file already exists
+            let duplicateCount = 1;
+            // Prevent filesystem overwrite by incrementing suffix if file exactly matches
             while (fs.existsSync(filePath)) {
-                seqNum++;
-                filename = `${dateStr}_${sanitizedCntrNo}_${seqNum.toString().padStart(2, '0')}${ext}`;
+                filename = `${baseName}_${duplicateCount}${ext}`;
                 filePath = path.join(containerDir, filename);
+                duplicateCount++;
             }
 
             fs.writeFileSync(filePath, buffer);
