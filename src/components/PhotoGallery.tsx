@@ -5,7 +5,7 @@ import {
     X, Calendar, User, Download, Search, Image as ImageIcon, 
     ChevronLeft, ChevronRight, ChevronDown, Loader2, ArrowLeft, Trash2, Folder,
     ExternalLink, RotateCw, RotateCcw, Grid, LayoutGrid, Check, Undo,
-    RefreshCw, SkipForward, Upload, Camera, FileText, AlertCircle
+    RefreshCw, SkipForward, Upload, Camera, FileText, AlertCircle, Pencil
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { fetchTeams } from '@/lib/actions';
@@ -115,6 +115,10 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
     const [isMoveModalOpen, setIsMoveModalOpen] = useState(false);
     const [targetMoveCntrNo, setTargetMoveCntrNo] = useState('');
     const [isMoving, setIsMoving] = useState(false);
+
+    // Rename State
+    const [editingPhotoId, setEditingPhotoId] = useState<string | null>(null);
+    const [editFilename, setEditFilename] = useState('');
 
     type ActionType = 'LOCAL_COPY' | 'ZIP_DOWNLOAD' | 'GDRIVE_BACKUP';
     const [warningModalInfo, setWarningModalInfo] = useState<{ isOpen: boolean, action: ActionType | null, missingCntrs: string[] }>({ isOpen: false, action: null, missingCntrs: [] });
@@ -1124,6 +1128,40 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
         } catch (error) {
             console.error("Delete folder permanently error:", error);
             alert("영구 삭제 중 오류가 발생했습니다.");
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const handleRenameSubmit = async (photoId: string, newFilename: string) => {
+        if (!newFilename.trim()) {
+            alert("파일 이름을 입력해주세요.");
+            return;
+        }
+
+        try {
+            setIsLoading(true);
+            const res = await fetch('/api/photos/rename', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ photoId, newFilename })
+            });
+
+            const data = await res.json();
+            if (data.success) {
+                setPhotos(prev => prev.map(p => {
+                    if (p.id === photoId) {
+                        return { ...p, photo_path: data.photoPath };
+                    }
+                    return p;
+                }));
+                setEditingPhotoId(null);
+            } else {
+                alert(`이름 변경 실패: ${data.error}`);
+            }
+        } catch (error) {
+            console.error("Rename photo error:", error);
+            alert("파일 이름 변경 중 오류가 발생했습니다.");
         } finally {
             setIsLoading(false);
         }
@@ -2466,14 +2504,54 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
                                             {/* Description */}
                                             <div className="p-3 flex-1 flex flex-col justify-between space-y-2">
                                                 <div className="space-y-0.5">
-                                                    <p className={`text-xs truncate uppercase tracking-tight font-black ${getCarrierColor(photo.transporter)}`}>
-                                                        {photo.cntr_no}
-                                                    </p>
-                                                    {photo.remark && (
-                                                        <p className="text-[10px] text-slate-400 font-bold line-clamp-1">
-                                                            {photo.remark}
+                                                    <div className="flex items-center justify-between">
+                                                        <p className={`text-xs truncate uppercase tracking-tight font-black ${getCarrierColor(photo.transporter)}`}>
+                                                            {photo.cntr_no}
                                                         </p>
-                                                    )}
+                                                        {photo.remark && (
+                                                            <p className="text-[10px] text-slate-400 font-bold line-clamp-1 truncate max-w-[60px] ml-2">
+                                                                {photo.remark}
+                                                            </p>
+                                                        )}
+                                                    </div>
+                                                    
+                                                    {/* Filename display and edit */}
+                                                    <div className="pt-1.5">
+                                                        {editingPhotoId === photo.id ? (
+                                                            <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
+                                                                <input 
+                                                                    type="text" 
+                                                                    value={editFilename}
+                                                                    onChange={e => setEditFilename(e.target.value)}
+                                                                    onKeyDown={e => {
+                                                                        if (e.key === 'Enter') handleRenameSubmit(photo.id, editFilename);
+                                                                        if (e.key === 'Escape') setEditingPhotoId(null);
+                                                                    }}
+                                                                    className="flex-1 w-full bg-black/50 border border-sky-500 rounded px-1.5 py-0.5 text-[10px] text-white focus:outline-none focus:ring-1 focus:ring-sky-500 font-mono"
+                                                                    autoFocus
+                                                                />
+                                                                <button onClick={() => handleRenameSubmit(photo.id, editFilename)} className="p-1 rounded bg-sky-500/20 text-sky-400 hover:bg-sky-500 hover:text-white transition-colors">
+                                                                    <Check className="w-3 h-3" />
+                                                                </button>
+                                                                <button onClick={() => setEditingPhotoId(null)} className="p-1 rounded bg-rose-500/20 text-rose-400 hover:bg-rose-500 hover:text-white transition-colors">
+                                                                    <X className="w-3 h-3" />
+                                                                </button>
+                                                            </div>
+                                                        ) : (
+                                                            <div className="flex items-center justify-between group/name cursor-text border border-transparent hover:border-white/10 rounded" onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                setEditingPhotoId(photo.id);
+                                                                const baseName = photo.photo_path.split('/').pop() || '';
+                                                                const nameWithoutExt = baseName.substring(0, baseName.lastIndexOf('.')) || baseName;
+                                                                setEditFilename(nameWithoutExt);
+                                                            }}>
+                                                                <p className="text-[10px] text-slate-300 truncate font-mono bg-white/5 px-1.5 py-0.5 flex-1" title={photo.photo_path.split('/').pop()}>
+                                                                    {photo.photo_path.split('/').pop()}
+                                                                </p>
+                                                                <Pencil className="w-3 h-3 text-slate-500 opacity-0 group-hover/name:opacity-100 ml-1 hover:text-sky-400 transition-colors" />
+                                                            </div>
+                                                        )}
+                                                    </div>
                                                 </div>
 
                                                 <div className="flex items-center justify-between pt-1.5 border-t border-white/5 text-[9px] text-slate-500 font-bold">

@@ -149,3 +149,24 @@ export async function getGoogleDriveMd5Batch(fileIds: string[]): Promise<Record<
     
     return md5Map;
 }
+
+/**
+ * Rename a file on Google Drive
+ */
+export async function renameGoogleDriveFile(fileId: string, newName: string): Promise<boolean> {
+    try {
+        const auth = getOAuth2Client();
+        const drive = google.drive({ version: 'v3', auth });
+        
+        await drive.files.update({
+            fileId,
+            requestBody: {
+                name: newName
+            }
+        });
+        return true;
+    } catch (e) {
+        console.error(`[GDrive Rename Error] fileId ${fileId}:`, e);
+        return false;
+    }
+}
