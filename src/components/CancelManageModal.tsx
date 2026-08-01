@@ -23,7 +23,7 @@ export default function CancelManageModal({
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[110] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
             <div className="bg-white border border-slate-200 rounded-3xl w-full max-w-2xl shadow-2xl p-5 md:p-6 flex flex-col max-h-[85vh] animate-fade-in text-slate-900">
                 <div className="flex items-center justify-between pb-3 border-b border-slate-200 shrink-0">
                     <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
