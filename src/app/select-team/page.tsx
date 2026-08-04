@@ -4,20 +4,24 @@ import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Package, Users, CheckCircle2, AlertCircle, LogOut } from "lucide-react";
 import { fetchTeams, selectTeam } from "@/lib/actions";
-import { logout } from "@/lib/auth";
+import { logout, getSession } from "@/lib/auth";
 import type { Team } from "@/lib/types";
 
 export default function SelectTeamPage() {
     const router = useRouter();
     const [teams, setTeams] = useState<Team[]>([]);
     const [selectedTeamId, setSelectedTeamId] = useState<number | null>(null);
+    const [isAdminOrManager, setIsAdminOrManager] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
     const [isFetching, setIsFetching] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
-        fetchTeams().then((data) => {
-            setTeams(data);
+        Promise.all([fetchTeams(), getSession()]).then(([teamsData, session]) => {
+            setTeams(teamsData);
+            if (session && (session.role.toUpperCase() === 'ADMIN' || session.role.toUpperCase() === 'MANAGER')) {
+                setIsAdminOrManager(true);
+            }
             setIsFetching(false);
         });
     }, []);
@@ -137,6 +141,38 @@ export default function SelectTeamPage() {
                                     </button>
                                 );
                             })}
+                            
+                            {isAdminOrManager && (
+                                <button
+                                    onClick={() => setSelectedTeamId(-1)}
+                                    className={`
+                                        relative group flex flex-col items-center justify-center
+                                        rounded-2xl border p-5 transition-all duration-200 text-center
+                                        ${selectedTeamId === -1
+                                            ? "border-rose-500/60 bg-rose-500/10 shadow-[0_0_20px_rgba(244,63,94,0.15)]"
+                                            : "border-white/[0.08] bg-white/[0.03] hover:border-rose-500/30 hover:bg-rose-500/5"
+                                        }
+                                    `}
+                                >
+                                    {selectedTeamId === -1 && (
+                                        <div className="absolute top-2.5 right-2.5">
+                                            <CheckCircle2 className="w-4 h-4 text-rose-400" />
+                                        </div>
+                                    )}
+                                    <div className={`
+                                        w-10 h-10 rounded-xl flex items-center justify-center mb-3 font-black text-lg
+                                        ${selectedTeamId === -1
+                                            ? "bg-rose-500/20 text-rose-300"
+                                            : "bg-white/[0.05] text-slate-400 group-hover:text-rose-200"
+                                        }
+                                    `}>
+                                        <AlertCircle className="w-5 h-5" />
+                                    </div>
+                                    <span className={`font-bold text-sm ${selectedTeamId === -1 ? "text-rose-300" : "text-slate-300 group-hover:text-rose-200"}`}>
+                                        미지정 (조 없음)
+                                    </span>
+                                </button>
+                            )}
                         </div>
                     )}
 
@@ -147,7 +183,7 @@ export default function SelectTeamPage() {
                         </div>
                     )}
 
-                    {teams.length > 0 && (
+                    {(teams.length > 0 || isAdminOrManager) && (
                         <button
                             onClick={handleConfirm}
                             disabled={isLoading || !selectedTeamId}
@@ -158,7 +194,7 @@ export default function SelectTeamPage() {
                             ) : (
                                 <>
                                     <CheckCircle2 className="w-4 h-4" />
-                                    {selectedTeamId ? `${teams.find(t => t.id === selectedTeamId)?.name} 선택 완료` : "조를 선택해주세요"}
+                                    {selectedTeamId === -1 ? "미지정으로 시작" : selectedTeamId ? `${teams.find(t => t.id === selectedTeamId)?.name} 선택 완료` : "조를 선택해주세요"}
                                 </>
                             )}
                         </button>

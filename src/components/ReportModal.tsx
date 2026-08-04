@@ -26,8 +26,8 @@ interface ReportModalProps {
     handleOpenAddManual: () => void;
     isReportGenerating: boolean;
     isExportingImage: boolean;
-    handleEditReportItem: (uploader: string, idx: number, cntr: any) => void;
-    handleDeleteReportItem: (uploader: string, idx: number) => void;
+    handleEditReportItem?: (teamName: string, cntrIdx: number, cntr: any, dateGroupIdx?: number) => void;
+    handleDeleteReportItem?: (teamName: string, cntrIdx: number, dateGroupIdx?: number) => void;
     handleToggleCancelCntr: (cntrNo: string) => void;
     editingCommentCntr: string | null;
     setEditingCommentCntr: (val: string | null) => void;
@@ -369,7 +369,7 @@ export default function ReportModal({
                         ) : reportData && reportData.length > 0 ? (
                             isAdmin ? (
                             <div className="space-y-8">
-                                {reportData.map((dateGroup: any) => {
+                                {reportData.map((dateGroup: any, dgIdx: number) => {
                                     const activeContainers = dateGroup.uploaders.flatMap((u: any) => u.containers).filter((c: any) => !c.isCancelled && !c.adminComment?.includes('[취소]') && !c.adminComment?.includes('[작업취소]') && !c.adminComment?.includes('[작업제외]'));
                                     const totalCntr = activeContainers.length;
                                     
@@ -524,14 +524,20 @@ export default function ReportModal({
                                                                                 {!isExportingImage && (
                                                                                     <>
                                                                                         <button
-                                                                                            onClick={() => handleEditReportItem(upGroup.teamName ?? upGroup.uploaderName, cntrIdx, cntr)}
+                                                                                            onClick={(e) => {
+                                                                                                e.stopPropagation();
+                                                                                                if (handleEditReportItem) handleEditReportItem(upGroup.teamName ?? upGroup.uploaderName, cntrIdx, cntr, dgIdx);
+                                                                                            }}
                                                                                             className="p-0.5 rounded bg-slate-100 hover:bg-sky-100 text-slate-500 hover:text-sky-600 transition-colors cursor-pointer border border-transparent hover:border-sky-200"
                                                                                             title="이 항목 수정 (보고서 내용만)"
                                                                                         >
                                                                                             <span className="text-[12px] font-black">✏️</span>
                                                                                         </button>
                                                                                         <button
-                                                                                            onClick={() => handleDeleteReportItem(upGroup.teamName ?? upGroup.uploaderName, cntrIdx)}
+                                                                                            onClick={(e) => {
+                                                                                                e.stopPropagation();
+                                                                                                if (handleDeleteReportItem) handleDeleteReportItem(upGroup.teamName ?? upGroup.uploaderName, cntrIdx, dgIdx);
+                                                                                            }}
                                                                                             className="p-0.5 rounded bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-600 transition-colors cursor-pointer border border-transparent hover:border-rose-200"
                                                                                             title="이 항목 삭제 (보고서 내용만)"
                                                                                         >
@@ -539,15 +545,7 @@ export default function ReportModal({
                                                                                         </button>
                                                                                     </>
                                                                                 )}
-                                                                                {isAdmin && !isExportingImage && isCancelled && (
-                                                                                    <button
-                                                                                        onClick={() => handleToggleCancelCntr(cntr.cntrNo)}
-                                                                                        className="px-2 py-0.5 rounded text-[11px] font-black transition-all cursor-pointer shadow-sm bg-emerald-600 text-white hover:bg-emerald-500 border border-emerald-600"
-                                                                                        title="취소 해제 (정상 작업으로 복원)"
-                                                                                    >
-                                                                                        🔄 취소 해제
-                                                                                    </button>
-                                                                                )}
+
                                                                                 {cntr.startTimeStr && cntr.endTimeStr && (
                                                                                     <span className="text-sky-900 font-bold text-[11px] bg-sky-100 px-1.5 py-0.5 rounded border border-sky-200 shrink-0">
                                                                                         {cntr.durationMinutes || 45}분 ({cntr.startTimeStr}~{cntr.endTimeStr})

@@ -298,7 +298,7 @@ export default function Home({ user }: { user: SessionUser }) {
     const [isAddManualOpen, setIsAddManualOpen] = useState(false);
     const [isCancelManageOpen, setIsCancelManageOpen] = useState(false);
     const [manualTeamName, setManualTeamName] = useState('1조(BNI)');
-    const [editingReportItem, setEditingReportItem] = useState<{ teamName: string; cntrIdx: number } | null>(null);
+    const [editingReportItem, setEditingReportItem] = useState<{ teamName: string; cntrIdx: number; dateGroupIdx?: number } | null>(null);
     const [manualInsertIndex, setManualInsertIndex] = useState<number | 'end'>('end');
     const [manualCntrNo, setManualCntrNo] = useState('');
     const [manualCategory, setManualCategory] = useState('');
@@ -398,6 +398,11 @@ export default function Home({ user }: { user: SessionUser }) {
                                 const clean = (cntr.adminComment || '').replace(/\[작업취소\]/g, '').replace(/\[작업제외\]/g, '').replace(/\[취소\]/g, '').trim();
                                 cntr.adminComment = clean;
                                 updatedComment = clean;
+
+                                const catStr = clean ? ` ( ${clean} )` : '';
+                                const modelCount = cntr.products ? cntr.products.length : cntr.modelCount || 1;
+                                const totalQty = cntr.products ? cntr.products.reduce((s: any, p: any) => s + p.qty, 0) : cntr.totalQty || 0;
+                                cntr.modelSummaryStr = `${modelCount}모델, ${totalQty.toLocaleString()}개${catStr}`;
                             } else {
                                 cntr.isCancelled = true;
                                 const tag = targetMode === 'exclude' ? '[작업제외]' : '[작업취소]';
@@ -405,6 +410,11 @@ export default function Home({ user }: { user: SessionUser }) {
                                 const newComment = clean ? `${clean} ${tag}`.trim() : tag;
                                 cntr.adminComment = newComment;
                                 updatedComment = newComment;
+
+                                const catStr = newComment ? ` ( ${newComment} )` : '';
+                                const modelCount = cntr.products ? cntr.products.length : cntr.modelCount || 1;
+                                const totalQty = cntr.products ? cntr.products.reduce((s: any, p: any) => s + p.qty, 0) : cntr.totalQty || 0;
+                                cntr.modelSummaryStr = `${modelCount}모델, ${totalQty.toLocaleString()}개${catStr}`;
                             }
                         }
                     });
@@ -438,6 +448,11 @@ export default function Home({ user }: { user: SessionUser }) {
                             const newComment = comment ? `${comment} ${tag}`.trim() : tag;
                             cntr.adminComment = newComment;
                             updatedComment = newComment;
+
+                            const catStr = newComment ? ` ( ${newComment} )` : '';
+                            const modelCount = cntr.products ? cntr.products.length : cntr.modelCount || 1;
+                            const totalQty = cntr.products ? cntr.products.reduce((s: any, p: any) => s + p.qty, 0) : cntr.totalQty || 0;
+                            cntr.modelSummaryStr = `${modelCount}모델, ${totalQty.toLocaleString()}개${catStr}`;
                         }
                     });
                 });
@@ -549,7 +564,15 @@ export default function Home({ user }: { user: SessionUser }) {
             }
 
             const nextData = JSON.parse(JSON.stringify(prevData));
-            const targetDateGroup = nextData[0];
+            
+            let targetDateGroupIdx = 0;
+            if (editingReportItem && editingReportItem.dateGroupIdx !== undefined) {
+                targetDateGroupIdx = editingReportItem.dateGroupIdx;
+            } else if (reportStartDate) {
+                const foundIdx = nextData.findIndex((dg: any) => dg.dateStr === reportStartDate);
+                if (foundIdx !== -1) targetDateGroupIdx = foundIdx;
+            }
+            const targetDateGroup = nextData[targetDateGroupIdx];
             let teamGroup = targetDateGroup.uploaders.find((u: any) => isSameTeam(u.teamName, manualTeamName));
 
             if (!teamGroup) {
@@ -787,6 +810,8 @@ export default function Home({ user }: { user: SessionUser }) {
         try {
             const res = await generateWorkReport({
                 ...filters,
+                containerNo: '', // Ignore dashboard text search for the full report
+                productName: '', // Ignore dashboard text search for the full report
                 startDate: newDateStr,
                 endDate: newDateStr
             });
@@ -866,6 +891,8 @@ export default function Home({ user }: { user: SessionUser }) {
         try {
             const res = await generateWorkReport({
                 ...filters,
+                containerNo: '', // Ignore dashboard text search for the full report
+                productName: '', // Ignore dashboard text search for the full report
                 startDate: reportStartDate,
                 endDate: reportEndDate
             });
@@ -1304,8 +1331,8 @@ export default function Home({ user }: { user: SessionUser }) {
         setIsAddManualOpen(true);
     };
 
-    const handleEditReportItem = (teamName: string, cntrIdx: number, cntr: any) => {
-        setEditingReportItem({ teamName, cntrIdx });
+    const handleEditReportItem = (teamName: string, cntrIdx: number, cntr: any, dateGroupIdx?: number) => {
+        setEditingReportItem({ teamName, cntrIdx, dateGroupIdx });
         setManualTeamName(teamName);
         setManualCntrNo(cntr.cntrNo || '');
         
@@ -1338,13 +1365,14 @@ export default function Home({ user }: { user: SessionUser }) {
         setIsAddManualOpen(true);
     };
 
-    const handleDeleteReportItem = (teamName: string, cntrIdx: number) => {
+    const handleDeleteReportItem = (teamName: string, cntrIdx: number, dateGroupIdx?: number) => {
         if (!window.confirm("정말 삭제하시겠습니까?\n(실제 데이터는 삭제되지 않으며 보고서에서만 제외됩니다.)")) return;
 
         setReportData((prevData: any[]) => {
             if (!prevData || prevData.length === 0) return prevData;
             const nextData = JSON.parse(JSON.stringify(prevData));
-            const targetDateGroup = nextData[0];
+            let targetDateGroupIdx = dateGroupIdx !== undefined ? dateGroupIdx : 0;
+            const targetDateGroup = nextData[targetDateGroupIdx];
             const teamGroup = targetDateGroup.uploaders.find((u: any) => isSameTeam(u.teamName, teamName));
             
             if (teamGroup && teamGroup.containers) {

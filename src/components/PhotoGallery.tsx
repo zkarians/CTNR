@@ -2004,84 +2004,12 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
                                         </button>
                                     )}
                                 </div>
-                                {/* Right: Selection count + download (PC only) */}
+                                {/* Right: Total count (PC only) */}
                                 <div className="hidden md:flex items-center gap-2">
                                     <span className="text-xs font-bold text-slate-400">
-                                        총 {folders.length}개 폴더 / <strong className={isTrashView ? "text-purple-400" : isCompletedView ? "text-emerald-400" : "text-sky-400"}>{selectedFolders.length}개</strong> 선택
+                                        총 {folders.length}개 폴더
                                     </span>
-                                    {selectedFolders.length > 0 && (
-                                        <div className="flex items-center gap-2">
-                                            {isTrashView ? (
-                                                isAdmin && (
-                                                    <>
-                                                        <button onClick={handleRestoreSelectedFolders}
-                                                            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-black text-xs transition-all cursor-pointer">
-                                                            <RotateCw className="w-3.5 h-3.5" /> 선택 복구 ({selectedFolders.length})
-                                                        </button>
-                                                        <button onClick={() => handleActionWithCheck('GDRIVE_BACKUP')}
-                                                            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 border border-sky-400 text-white font-black text-xs transition-all cursor-pointer shadow-md shadow-sky-500/20"
-                                                            title="선택한 폴더의 사진을 구글 드라이브로 백업하고 로컬 용량을 정리합니다.">
-                                                            <Upload className="w-3.5 h-3.5" /> ☁️ GDrive 백업 ({selectedFolders.length})
-                                                        </button>
-                                                        <button onClick={() => handleActionWithCheck('LOCAL_COPY')}
-                                                            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 border border-emerald-600 text-white font-black text-xs transition-all cursor-pointer">
-                                                            <Folder className="w-3.5 h-3.5" /> 로컬 복사
-                                                        </button>
-                                                        <button onClick={handleDeleteSelectedFolders}
-                                                            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-rose-500/10 border border-rose-500/20 hover:bg-rose-600 text-rose-400 hover:text-white font-black text-xs transition-all cursor-pointer">
-                                                            <Trash2 className="w-3.5 h-3.5" /> 영구 삭제 ({selectedFolders.length})
-                                                        </button>
-                                                    </>
-                                                )
-                                            ) : (
-                                                <>
-                                                    {isCompletedView ? (
-                                                        <button onClick={() => handleToggleSelectedFoldersCompletion(true)}
-                                                            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-500/10 border border-amber-500/20 hover:bg-amber-600 text-amber-400 hover:text-white font-black text-xs transition-all cursor-pointer">
-                                                            <Undo className="w-3.5 h-3.5" /> 완료 취소 ({selectedFolders.length})
-                                                        </button>
-                                                    ) : (
-                                                        <>
-                                                            <button onClick={() => handleToggleSelectedFoldersCompletion(false)}
-                                                                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20 hover:bg-emerald-600 text-emerald-400 hover:text-white font-black text-xs transition-all cursor-pointer">
-                                                                <Check className="w-3.5 h-3.5" /> 완료 처리 ({selectedFolders.length})
-                                                            </button>
-                                                            <button onClick={handleCleanupSelectedFoldersDuplicates}
-                                                                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-500/10 border border-amber-500/20 hover:bg-amber-600 text-amber-400 hover:text-white font-black text-xs transition-all cursor-pointer">
-                                                                <ImageIcon className="w-3.5 h-3.5" /> 중복 정리 ({selectedFolders.length})
-                                                            </button>
-                                                        </>
-                                                    )}
-                                                    {isAdmin && (
-                                                        <button onClick={handleDeleteSelectedFolders}
-                                                            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-rose-500/10 border border-rose-500/20 hover:bg-rose-600 text-rose-400 hover:text-white font-black text-xs transition-all cursor-pointer">
-                                                            <Trash2 className="w-3.5 h-3.5" /> 삭제 ({selectedFolders.length})
-                                                        </button>
-                                                    )}
-                                                    <button onClick={() => handleActionWithCheck('GDRIVE_BACKUP')}
-                                                        className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 border border-sky-400 text-white font-black text-xs transition-all cursor-pointer shadow-md shadow-sky-500/20"
-                                                        title="선택한 폴더의 사진을 구글 드라이브로 백업하고 로컬 용량을 정리합니다.">
-                                                        <Upload className="w-3.5 h-3.5" /> ☁️ GDrive 백업 ({selectedFolders.length})
-                                                    </button>
-                                                    <button onClick={() => handleActionWithCheck('LOCAL_COPY')}
-                                                        className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 border border-emerald-600 text-white font-black text-xs transition-all cursor-pointer">
-                                                        <Folder className="w-3.5 h-3.5" /> 로컬 복사
-                                                    </button>
-                                                    <button onClick={() => handleActionWithCheck('ZIP_DOWNLOAD')}
-                                                        className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-sky-500 hover:bg-sky-400 border border-sky-600 text-white font-black text-xs transition-all cursor-pointer">
-                                                        <Download className="w-3.5 h-3.5" /> ZIP 다운로드
-                                                    </button>
-                                                </>
-                                            )}
-                                        </div>
-                                    )}
                                 </div>
-                                {/* Mobile: selection count badge */}
-                                {selectedFolders.length > 0 && (
-                                    <span className="md:hidden text-xs font-bold text-slate-400">
-                                        <strong className={isTrashView ? "text-purple-400" : isCompletedView ? "text-emerald-400" : "text-sky-400"}>{selectedFolders.length}개</strong> 선택됨
-                                    </span>
-                                )}
                             </div>
 
                             {/* Mobile Floating Action Bar (appears when folders selected) */}
@@ -2340,46 +2268,6 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
                                     )}
                                 </div>
 
-                                {selectedPhotoIds.filter(id => folderPhotos.some(p => p.id === id)).length > 0 && (
-                                    <div className="flex items-center gap-2">
-                                        {isTrashView ? (
-                                            <>
-                                                {isAdmin && (
-                                                    <button
-                                                        onClick={handleRestoreSelectedPhotos}
-                                                        className="px-3.5 py-1.5 rounded-xl bg-sky-500/10 hover:bg-sky-500 border border-sky-500/20 text-sky-400 hover:text-white transition-all flex items-center gap-1.5 text-xs font-black cursor-pointer shadow-md"
-                                                    >
-                                                        <RotateCw className="w-3.5 h-3.5" /> 선택 사진 복구
-                                                    </button>
-                                                )}
-                                                {isAdmin && (
-                                                    <button
-                                                        onClick={handleDeleteSelectedPhotosPermanently}
-                                                        className="px-3.5 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-600 border border-rose-500/20 text-rose-400 hover:text-white transition-all flex items-center gap-1.5 text-xs font-black cursor-pointer shadow-md"
-                                                    >
-                                                        <Trash2 className="w-3.5 h-3.5" /> 선택 사진 영구 삭제
-                                                    </button>
-                                                )}
-                                            </>
-                                        ) : (
-                                            <>
-                                                <button
-                                                    onClick={() => setIsMoveModalOpen(true)}
-                                                    className="px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 border border-indigo-400 text-white transition-all flex items-center gap-1.5 text-xs font-black cursor-pointer shadow-md shadow-indigo-500/20"
-                                                    title="선택한 사진을 다른 컨테이너 폴더로 이동시킵니다."
-                                                >
-                                                    <Folder className="w-3.5 h-3.5" /> 📦 컨테이너 이동 ({selectedPhotoIds.filter(id => folderPhotos.some(p => p.id === id)).length}장)
-                                                </button>
-                                                <button
-                                                    onClick={handleDeleteSelectedPhotos}
-                                                    className="px-3.5 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-600 border border-rose-500/20 text-rose-400 hover:text-white transition-all flex items-center gap-1.5 text-xs font-black cursor-pointer shadow-md"
-                                                >
-                                                    <Trash2 className="w-3.5 h-3.5" /> 선택한 사진 삭제 ({selectedPhotoIds.filter(id => folderPhotos.some(p => p.id === id)).length}장)
-                                                </button>
-                                            </>
-                                        )}
-                                    </div>
-                                )}
                             </div>
 
                             {/* Duplicate Photos Banner */}
@@ -3291,6 +3179,100 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
                         </div>
                     )}
                 </AnimatePresence>
+
+                {/* Floating Action Bar (FAB) */}
+                {(selectedFolders.length > 0 || (selectedPhotoIds && selectedPhotoIds.length > 0)) && (
+                    <div className="fixed bottom-[72px] md:bottom-8 left-1/2 -translate-x-1/2 z-[100] animate-in slide-in-from-bottom-5 fade-in duration-300">
+                        <div className="flex items-center gap-3 px-4 py-2.5 rounded-2xl bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl border border-slate-200 dark:border-slate-700/50 shadow-2xl shadow-slate-900/20 text-slate-800 dark:text-slate-200 w-max max-w-[95vw] md:max-w-[90vw]">
+                            <div className="flex items-center gap-2 pr-3 border-r border-slate-300 dark:border-slate-700 shrink-0">
+                                <span className="flex items-center justify-center min-w-[24px] h-6 px-1.5 rounded-full bg-sky-500/10 text-sky-600 dark:text-sky-400 font-bold text-xs">
+                                    {selectedFolders.length > 0 ? selectedFolders.length : selectedPhotoIds.length}
+                                </span>
+                                <span className="text-sm font-black tracking-tight whitespace-nowrap hidden sm:inline">
+                                    {selectedFolders.length > 0 ? '폴더 선택됨' : '사진 선택됨'}
+                                </span>
+                            </div>
+
+                            <div className="flex items-center gap-2 overflow-x-auto hide-scrollbar">
+                                {selectedFolders.length > 0 ? (
+                                    /* Folder Actions */
+                                    isTrashView ? (
+                                        isAdmin && (
+                                            <>
+                                                <button onClick={handleRestoreSelectedFolders} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-100 hover:bg-purple-200 dark:bg-purple-500/10 dark:hover:bg-purple-500 text-purple-700 dark:text-purple-400 dark:hover:text-white transition-all text-xs font-black shrink-0 cursor-pointer">
+                                                    <RotateCw className="w-3.5 h-3.5" /> 복구
+                                                </button>
+                                                <button onClick={handleDeleteSelectedFolders} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-100 hover:bg-rose-200 dark:bg-rose-500/10 dark:hover:bg-rose-500 text-rose-700 dark:text-rose-400 dark:hover:text-white transition-all text-xs font-black shrink-0 cursor-pointer">
+                                                    <Trash2 className="w-3.5 h-3.5" /> 영구 삭제
+                                                </button>
+                                            </>
+                                        )
+                                    ) : (
+                                        <>
+                                            {isCompletedView ? (
+                                                <button onClick={() => handleToggleSelectedFoldersCompletion(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-100 hover:bg-amber-200 dark:bg-amber-500/10 dark:hover:bg-amber-500 text-amber-700 dark:text-amber-400 dark:hover:text-white transition-all text-xs font-black shrink-0 cursor-pointer">
+                                                    <Undo className="w-3.5 h-3.5" /> 완료 취소
+                                                </button>
+                                            ) : (
+                                                <>
+                                                    <button onClick={() => handleToggleSelectedFoldersCompletion(false)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-100 hover:bg-emerald-200 dark:bg-emerald-500/10 dark:hover:bg-emerald-500 text-emerald-700 dark:text-emerald-400 dark:hover:text-white transition-all text-xs font-black shrink-0 cursor-pointer">
+                                                        <Check className="w-3.5 h-3.5" /> 완료 처리
+                                                    </button>
+                                                    <button onClick={handleCleanupSelectedFoldersDuplicates} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-100 hover:bg-amber-200 dark:bg-amber-500/10 dark:hover:bg-amber-500 text-amber-700 dark:text-amber-400 dark:hover:text-white transition-all text-xs font-black shrink-0 cursor-pointer">
+                                                        <ImageIcon className="w-3.5 h-3.5" /> 중복 정리
+                                                    </button>
+                                                </>
+                                            )}
+                                            {isAdmin && (
+                                                <button onClick={handleDeleteSelectedFolders} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-100 hover:bg-rose-200 dark:bg-rose-500/10 dark:hover:bg-rose-500 text-rose-700 dark:text-rose-400 dark:hover:text-white transition-all text-xs font-black shrink-0 cursor-pointer">
+                                                    <Trash2 className="w-3.5 h-3.5" /> 삭제
+                                                </button>
+                                            )}
+                                            <button onClick={() => handleActionWithCheck('GDRIVE_BACKUP')} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white transition-all text-xs font-black shrink-0 shadow-md shadow-sky-500/20 cursor-pointer">
+                                                <Upload className="w-3.5 h-3.5" /> <span className="hidden sm:inline">GDrive </span>백업
+                                            </button>
+                                            <button onClick={() => handleActionWithCheck('LOCAL_COPY')} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-white transition-all text-xs font-black shrink-0 shadow-md shadow-emerald-500/20 cursor-pointer">
+                                                <Folder className="w-3.5 h-3.5" /> 로컬 복사
+                                            </button>
+                                            <button onClick={() => handleActionWithCheck('ZIP_DOWNLOAD')} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-sky-500 hover:bg-sky-400 border border-sky-600 text-white transition-all text-xs font-black shrink-0 shadow-md shadow-indigo-500/20 cursor-pointer">
+                                                <Download className="w-3.5 h-3.5" /> ZIP
+                                            </button>
+                                        </>
+                                    )
+                                ) : (
+                                    /* Photo Actions */
+                                    isTrashView ? (
+                                        isAdmin && (
+                                            <>
+                                                <button onClick={handleRestoreSelectedPhotos} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-sky-100 hover:bg-sky-200 dark:bg-sky-500/10 dark:hover:bg-sky-500 text-sky-700 dark:text-sky-400 dark:hover:text-white transition-all text-xs font-black shrink-0 cursor-pointer">
+                                                    <RotateCw className="w-3.5 h-3.5" /> 복구
+                                                </button>
+                                                <button onClick={handleDeleteSelectedPhotosPermanently} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-100 hover:bg-rose-200 dark:bg-rose-500/10 dark:hover:bg-rose-500 text-rose-700 dark:text-rose-400 dark:hover:text-white transition-all text-xs font-black shrink-0 cursor-pointer">
+                                                    <Trash2 className="w-3.5 h-3.5" /> 영구 삭제
+                                                </button>
+                                            </>
+                                        )
+                                    ) : (
+                                        <>
+                                            <button onClick={() => setIsMoveModalOpen(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white transition-all text-xs font-black shrink-0 shadow-md shadow-indigo-500/20 cursor-pointer">
+                                                <Folder className="w-3.5 h-3.5" /> 이동
+                                            </button>
+                                            <button onClick={handleDeleteSelectedPhotos} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-100 hover:bg-rose-200 dark:bg-rose-500/10 dark:hover:bg-rose-500 text-rose-700 dark:text-rose-400 dark:hover:text-white transition-all text-xs font-black shrink-0 cursor-pointer">
+                                                <Trash2 className="w-3.5 h-3.5" /> 삭제
+                                            </button>
+                                        </>
+                                    )
+                                )}
+                            </div>
+
+                            <div className="pl-3 border-l border-slate-300 dark:border-slate-700 shrink-0">
+                                <button onClick={() => { setSelectedFolders([]); setSelectedPhotoIds([]); }} className="p-1.5 rounded-full hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 dark:hover:text-slate-200 transition-colors cursor-pointer" title="선택 취소">
+                                    <X className="w-5 h-5" />
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
 
                 {/* Mobile Bottom Tab Bar */}
                 <div className="flex md:hidden fixed bottom-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-md border-t border-slate-200 shadow-lg text-slate-700">

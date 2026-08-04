@@ -318,8 +318,6 @@ export async function generateWorkReport(filters: JobFilters): Promise<{ success
             const todayWorkDateStr = getWorkDateString(new Date());
             const targetDateStr = filters.startDate || todayWorkDateStr;
             const isPastDate = targetDateStr < todayWorkDateStr;
-            const photoCompletedCondition = isPastDate ? "(is_completed IS TRUE)" : "(is_completed IS NOT TRUE)";
-
             const whereClauses: string[] = [];
             const params: any[] = [];
             let paramIdx = 1;
@@ -377,7 +375,6 @@ export async function generateWorkReport(filters: JobFilters): Promise<{ success
                         MAX(remark) as remark
                     FROM container_photos
                     WHERE (is_deleted IS NOT TRUE)
-                      AND ${photoCompletedCondition}
                     GROUP BY job_id, cntr_no
                 ) p ON p.job_id = j.id AND (p.cntr_no = r.cntr_no OR (r.cntr_no IS NULL AND p.cntr_no IS NULL))
                 LEFT JOIN teams t ON p.team_id = t.id
@@ -742,6 +739,12 @@ export async function updateContainerAdminComment(
         try {
             const todayStr = getWorkDateString(new Date());
             const targetWorkDate = workDate || todayStr;
+            await client.query(`
+                UPDATE container_comments
+                SET admin_comment = $2, updated_at = NOW()
+                WHERE cntr_no = $1
+            `, [cntrNo, comment]);
+
             await client.query(`
                 INSERT INTO container_comments (work_date, cntr_no, admin_comment, updated_at)
                 VALUES ($1, $2, $3, NOW())

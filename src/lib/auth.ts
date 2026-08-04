@@ -386,23 +386,25 @@ export async function selectTeam(teamId: number): Promise<{ success: boolean; er
             return { success: false, error: "세션이 만료되었습니다. 다시 로그인해주세요." };
         }
 
-        const client = await pool.connect();
         let teamName = '';
-        try {
-            const res = await client.query(`SELECT name FROM teams WHERE id = $1 LIMIT 1`, [teamId]);
-            if (res.rows.length === 0) {
-                return { success: false, error: "존재하지 않는 조입니다." };
+        if (teamId !== -1) {
+            const client = await pool.connect();
+            try {
+                const res = await client.query(`SELECT name FROM teams WHERE id = $1 LIMIT 1`, [teamId]);
+                if (res.rows.length === 0) {
+                    return { success: false, error: "존재하지 않는 조입니다." };
+                }
+                teamName = res.rows[0].name;
+            } finally {
+                client.release();
             }
-            teamName = res.rows[0].name;
-        } finally {
-            client.release();
         }
 
         const updatedSession: SessionUser = {
             ...session,
-            teamId,
-            teamName,
-            teamSelectedAt: new Date().toISOString(),
+            teamId: teamId !== -1 ? teamId : undefined,
+            teamName: teamId !== -1 ? teamName : undefined,
+            teamSelectedAt: teamId !== -1 ? new Date().toISOString() : undefined,
         };
 
         const cookieStore = await cookies();
