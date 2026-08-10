@@ -518,7 +518,7 @@ export async function generateWorkReport(filters: JobFilters): Promise<{ success
                         isCompleted: true, 
                         division: 'DFZ', 
                         durationMinutes: mRow.duration_minutes || 45, 
-                        firstUploadedAt: new Date(), 
+                        firstUploadedAt: mRow.first_uploaded_at ? new Date(mRow.first_uploaded_at) : new Date(), 
                         remark: mRow.remark || '', 
                         transporter: '', 
                         adminComment: mRow.category || '', 
@@ -1333,6 +1333,7 @@ export async function addManualReportEntry(params: {
     remark: string;
     products: any[];
     emptyBoxes: any[];
+    firstUploadedAt?: string;
 }): Promise<{ success: boolean; error?: string }> {
     try {
         const session = await getSession();
@@ -1343,8 +1344,8 @@ export async function addManualReportEntry(params: {
         try {
             await client.query(`
                 INSERT INTO manual_report_entries 
-                (work_date, team_name, cntr_no, category, duration_minutes, remark, products, empty_boxes)
-                VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb)
+                (work_date, team_name, cntr_no, category, duration_minutes, remark, products, empty_boxes, first_uploaded_at)
+                VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9)
             `, [
                 params.workDate, 
                 params.teamName, 
@@ -1353,7 +1354,8 @@ export async function addManualReportEntry(params: {
                 params.durationMinutes, 
                 params.remark, 
                 JSON.stringify(params.products || []),
-                JSON.stringify(params.emptyBoxes || [])
+                JSON.stringify(params.emptyBoxes || []),
+                params.firstUploadedAt ? new Date(params.firstUploadedAt) : new Date()
             ]);
         } finally {
             client.release();
@@ -1383,3 +1385,4 @@ export async function deleteManualReportEntry(id: number): Promise<{ success: bo
         return { success: false, error: err?.message || 'DB delete error' };
     }
 }
+
