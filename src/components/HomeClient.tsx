@@ -558,6 +558,8 @@ export default function Home({ user }: { user: SessionUser }) {
             }))
         };
 
+        let targetFirstUploadedAt: string | undefined = undefined;
+
         setReportData((prevData: any[]) => {
             let dateStr = reportStartDate || getLocalDateString(new Date());
             if (!prevData || prevData.length === 0) {
@@ -614,6 +616,27 @@ export default function Home({ user }: { user: SessionUser }) {
                 if (manualInsertIndex !== 'end' && typeof manualInsertIndex === 'number') {
                     insertIdx = Math.min(Math.max(0, manualInsertIndex), existingCntrs.length);
                 }
+                
+                if (existingCntrs.length > 0) {
+                    if (insertIdx === 0) {
+                        const firstTime = existingCntrs[0].firstUploadedAt ? new Date(existingCntrs[0].firstUploadedAt).getTime() : new Date().getTime();
+                        targetFirstUploadedAt = new Date(firstTime - 60000).toISOString();
+                    } else if (insertIdx >= existingCntrs.length) {
+                        const lastTime = existingCntrs[existingCntrs.length - 1].firstUploadedAt ? new Date(existingCntrs[existingCntrs.length - 1].firstUploadedAt).getTime() : new Date().getTime();
+                        targetFirstUploadedAt = new Date(lastTime + 60000).toISOString();
+                    } else {
+                        const prevTime = existingCntrs[insertIdx - 1].firstUploadedAt ? new Date(existingCntrs[insertIdx - 1].firstUploadedAt).getTime() : new Date().getTime();
+                        const nextTime = existingCntrs[insertIdx].firstUploadedAt ? new Date(existingCntrs[insertIdx].firstUploadedAt).getTime() : new Date().getTime();
+                        targetFirstUploadedAt = new Date((prevTime + nextTime) / 2).toISOString();
+                    }
+                } else {
+                    targetFirstUploadedAt = new Date().toISOString();
+                }
+                
+                if (targetFirstUploadedAt) {
+                    (newRawContainer as any).firstUploadedAt = targetFirstUploadedAt;
+                }
+
                 existingCntrs.splice(insertIdx, 0, newRawContainer);
             }
 
@@ -653,7 +676,8 @@ export default function Home({ user }: { user: SessionUser }) {
                 durationMinutes: duration,
                 remark: manualRemark.trim(),
                 products: validProducts,
-                emptyBoxes: manualEmptyBoxes.filter(e => e.name.trim() && e.qty > 0)
+                emptyBoxes: manualEmptyBoxes.filter(e => e.name.trim() && e.qty > 0),
+                firstUploadedAt: targetFirstUploadedAt
             }).catch(console.error);
         }
     };
