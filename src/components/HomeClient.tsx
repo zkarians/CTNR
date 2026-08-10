@@ -1597,7 +1597,7 @@ export default function Home({ user }: { user: SessionUser }) {
         if (isAdmin && !id.startsWith('manual_')) {
             if (window.confirm("이 제품을 데이터베이스에서 영구적으로 삭제하시겠습니까?\n[확인]을 누르면 DB에서 삭제되며, [취소]를 누르면 현재 화면에서만 임시로 제외됩니다.")) {
                 try {
-                    const jobId = selectedJob?.id;
+                    const jobId = selectedJobId;
                     if (!jobId) {
                         alert("작업을 먼저 선택해주세요.");
                         return;
