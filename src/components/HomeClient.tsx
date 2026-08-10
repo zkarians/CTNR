@@ -1007,6 +1007,7 @@ export default function Home({ user }: { user: SessionUser }) {
 
     const [isExportingDb, setIsExportingDb] = useState<boolean>(false);
     const [isRestoringDb, setIsRestoringDb] = useState<boolean>(false);
+    const [isTriggeringSync, setIsTriggeringSync] = useState<boolean>(false);
     const restoreFileInputRef = useRef<HTMLInputElement | null>(null);
 
     const handleExportDbDump = async () => {

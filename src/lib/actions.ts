@@ -1202,10 +1202,11 @@ export async function deleteContainerResult(id: string): Promise<{ success: bool
         if (!session || (session.role !== 'ADMIN' && session.role !== 'MANAGER')) {
             return { success: false, error: 'Unauthorized' };
         }
-        await client.query('DELETE FROM container_results WHERE id = $1', [id]);
+        await pool.query('DELETE FROM container_results WHERE id = $1', [id]);
         return { success: true };
     } catch (err: any) {
         console.error('deleteContainerResult Error:', err);
         return { success: false, error: err?.message || 'DB delete error' };
     }
 }
+
