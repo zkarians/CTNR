@@ -422,20 +422,20 @@ export async function generateWorkReport(filters: JobFilters): Promise<{ success
             let mParamIdx = 1;
             
             if (!filters.startDate && !filters.endDate) {
-                manualWhereClauses.push(`work_date = ${mParamIdx++}`);
+                manualWhereClauses.push(`work_date = $${mParamIdx++}`);
                 manualParams.push(todayWorkDateStr);
             } else {
                 if (filters.startDate) {
-                    manualWhereClauses.push(`work_date >= ${mParamIdx++}`);
+                    manualWhereClauses.push(`work_date >= $${mParamIdx++}`);
                     manualParams.push(filters.startDate);
                 }
                 if (filters.endDate) {
-                    manualWhereClauses.push(`work_date <= ${mParamIdx++}`);
+                    manualWhereClauses.push(`work_date <= $${mParamIdx++}`);
                     manualParams.push(filters.endDate);
                 }
             }
             if (filters.containerNo) {
-                manualWhereClauses.push(`cntr_no ILIKE ${mParamIdx++}`);
+                manualWhereClauses.push(`cntr_no ILIKE $${mParamIdx++}`);
                 manualParams.push(`%${filters.containerNo}%`);
             }
             
