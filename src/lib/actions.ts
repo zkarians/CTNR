@@ -327,14 +327,29 @@ export async function generateWorkReport(filters: JobFilters): Promise<{ success
 
             whereClauses.push(`COALESCE(r.qty_plan, 0) > 0`);
 
-            if (filters.startDate) {
+            if (!filters.startDate && !filters.endDate) {
+                // 기본값: 오늘 날짜
                 whereClauses.push(`COALESCE(p.uploaded_at, j.saved_at) AT TIME ZONE 'Asia/Seoul' >= $${paramIdx++}::timestamp`);
-                params.push(`${filters.startDate} 13:00:00`);
+                params.push(`${todayWorkDateStr} 13:00:00`);
+            } else {
+                if (filters.startDate && filters.endDate) {
+                    const s = new Date(filters.startDate);
+                    const e = new Date(filters.endDate);
+                    const diffDays = Math.ceil((e.getTime() - s.getTime()) / (1000 * 60 * 60 * 24));
+                    if (diffDays > 31) {
+                        return { success: false, error: "보고서 생성은 최대 31일 범위까지만 가능합니다. 조회 기간을 줄여주세요." };
+                    }
+                }
+                if (filters.startDate) {
+                    whereClauses.push(`COALESCE(p.uploaded_at, j.saved_at) AT TIME ZONE 'Asia/Seoul' >= $${paramIdx++}::timestamp`);
+                    params.push(`${filters.startDate} 13:00:00`);
+                }
+                if (filters.endDate) {
+                    whereClauses.push(`COALESCE(p.uploaded_at, j.saved_at) AT TIME ZONE 'Asia/Seoul' <= ($${paramIdx++}::date + INTERVAL '1 day 12 hours 59 minutes 59.999 seconds')`);
+                    params.push(filters.endDate);
+                }
             }
-            if (filters.endDate) {
-                whereClauses.push(`COALESCE(p.uploaded_at, j.saved_at) AT TIME ZONE 'Asia/Seoul' <= ($${paramIdx++}::date + INTERVAL '1 day 12 hours 59 minutes 59.999 seconds')`);
-                params.push(filters.endDate);
-            }
+
             if (filters.productName) {
                 whereClauses.push(`r.prod_name ILIKE $${paramIdx++}`);
                 params.push(`%${filters.productName}%`);

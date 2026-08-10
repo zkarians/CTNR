@@ -180,6 +180,16 @@ export async function getJobsFromDB(filters?: JobFilters): Promise<Job[]> {
                 }
             }
 
+            // 기본 조건: 필터가 아무것도 없을 경우 최근 30일 데이터만 조회 (서버 부하 및 OOM 방지)
+            if (whereClauses.length === 0) {
+                const thirtyDaysAgo = new Date();
+                thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+                const dateStr = thirtyDaysAgo.toISOString().split('T')[0];
+                whereClauses.push(`j.saved_at >= $${paramIdx++}`);
+                params.push(dateStr);
+            }
+
+
             const whereSql = whereClauses.length > 0 ? "WHERE " + whereClauses.join(" AND ") : "";
             const query = `
                 SELECT * FROM (
@@ -220,7 +230,7 @@ export async function getJobsFromDB(filters?: JobFilters): Promise<Job[]> {
                     ORDER BY COALESCE(r.cntr_no, j.id::text), j.job_name, j.saved_at DESC, j.id DESC
                 ) sub
                 ORDER BY saved_at DESC, id DESC 
-                LIMIT 100
+                LIMIT 500
             `;
             const res = await client.query(query, params);
             return res.rows.map(row => ({

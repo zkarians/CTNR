@@ -742,14 +742,14 @@ export default function ReportModal({
                             </span>
                         )}
 
-                        <div className={`w-full sm:w-auto ml-auto grid grid-cols-4 gap-1 sm:gap-2 sm:flex sm:items-center sm:justify-end`}>
+                        <div className={`w-full sm:w-auto ml-auto flex ${isAdmin ? 'grid grid-cols-4 sm:flex' : 'justify-end'} items-center sm:justify-end gap-2`}>
                                 <button
                                     onClick={handleSaveReport}
                                     disabled={isSavingReport || !reportText}
-                                    className="py-2 px-1 sm:py-2.5 sm:px-4 md:px-5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-black text-[11px] sm:text-xs md:text-sm transition-all flex items-center justify-center gap-1 sm:gap-1.5 cursor-pointer disabled:opacity-50 shadow-md whitespace-nowrap"
+                                    className="py-2 px-3 sm:py-2.5 sm:px-4 md:px-5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-black text-xs sm:text-sm transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 shadow-lg ring-2 ring-sky-400 ring-offset-2 animate-[pulse_2s_ease-in-out_infinite] whitespace-nowrap"
                                     title={isAdmin ? "현재 화면의 데이터를 1일 보고서 DB에 덮어쓰기 합니다" : "추가한 작업내역을 영구 저장합니다"}
                                 >
-                                    {isSavingReport ? <Loader2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 animate-spin text-white shrink-0" /> : <Save className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />}
+                                    {isSavingReport ? <Loader2 className="w-4 h-4 animate-spin text-white shrink-0" /> : <Save className="w-4 h-4 shrink-0" />}
                                     <span>{isSavingReport ? '저장 중...' : isAdmin ? '보고서 저장' : '작업내역 저장'}</span>
                                 </button>
 
@@ -795,7 +795,7 @@ export default function ReportModal({
 
                             <button
                                 onClick={() => setIsReportOpen(false)}
-                                className={`py-2 px-3 sm:py-2.5 sm:px-4 rounded-xl bg-slate-100 border border-slate-300 hover:bg-slate-200 text-slate-700 font-bold text-xs md:text-sm transition-all cursor-pointer ${isAdmin ? 'hidden sm:inline-flex items-center justify-center' : 'w-full sm:w-auto inline-flex items-center justify-center'}`}
+                                className={`py-2 px-4 sm:py-2.5 sm:px-4 rounded-xl bg-slate-100 border border-slate-300 hover:bg-slate-200 text-slate-700 font-bold text-xs md:text-sm transition-all cursor-pointer ${isAdmin ? 'hidden sm:inline-flex items-center justify-center' : 'w-auto inline-flex items-center justify-center shrink-0'}`}
                             >
                                 닫기
                             </button>

@@ -8,9 +8,9 @@
     "dev": "next dev -H 0.0.0.0 -p 4000",
     "clean": "powershell -Command \"Remove-Item -Path .next -Recurse -Force -ErrorAction SilentlyContinue\"",
     "dev:clean": "npm run clean && npm run dev",
-    "build": "next build",
+    "build": "cross-env NODE_OPTIONS=--max-old-space-size=4096 next build",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "cross-env NODE_OPTIONS=--max-old-space-size=4096 next lint",
     "electron:build": "electron-builder"
   },
   "build": {
@@ -63,6 +63,7 @@
     "@types/react-dom": "latest",
     "@types/three": "latest",
     "autoprefixer": "latest",
+    "cross-env": "^10.1.0",
     "electron": "^43.2.0",
     "electron-builder": "^26.15.3",
     "eslint": "latest",
