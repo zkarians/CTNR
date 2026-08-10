@@ -26,7 +26,7 @@ import {
     Product, PackingResult, ContainerType, CONTAINER_DATA, Job, JobFilters, DbConfig, UserAccount, Team
 } from '@/lib/types';
 import { packContainer } from '@/lib/packer';
-import { fetchJobs, fetchProductsByJob, searchProducts, getDbConfig, updateDbConfig, updatePassword, fetchAllUsers, createUserAccount, updateUserAccount, deleteUserAccount, deleteMultipleUserAccounts, generateWorkReport, saveDailyWorkReport, getSavedDailyWorkReport, exportDatabaseDump, restoreDatabaseDump, triggerManualBackupAndSync, fetchTeams, createTeam, updateTeam, deleteTeam, fetchTeamWorkProgress, TeamWorkProgress, updateContainerWorkDuration, updateContainerAdminComment, resetTeamWorkProgress, deleteContainerResult } from '@/lib/actions';
+import { fetchJobs, fetchProductsByJob, searchProducts, getDbConfig, updateDbConfig, updatePassword, fetchAllUsers, createUserAccount, updateUserAccount, deleteUserAccount, deleteMultipleUserAccounts, generateWorkReport, saveDailyWorkReport, getSavedDailyWorkReport, exportDatabaseDump, restoreDatabaseDump, triggerManualBackupAndSync, fetchTeams, createTeam, updateTeam, deleteTeam, fetchTeamWorkProgress, TeamWorkProgress, updateContainerWorkDuration, updateContainerAdminComment, resetTeamWorkProgress, deleteContainerResult, addManualReportEntry, deleteManualReportEntry } from '@/lib/actions';
 import { SessionUser } from '@/lib/auth';
 import { calculateTeamTimeline } from '@/lib/timeline';
 
@@ -643,6 +643,19 @@ export default function Home({ user }: { user: SessionUser }) {
         setManualInsertIndex('end');
         setManualProducts([{ division: 'DFZ', name: '', qty: 0 }]);
         setIsManualCancelled(false);
+
+        if (!editingReportItem) {
+            addManualReportEntry({
+                workDate: reportStartDate || getLocalDateString(new Date()),
+                teamName: manualTeamName,
+                cntrNo: manualCntrNo.trim().toUpperCase(),
+                category: adminCommentStr,
+                durationMinutes: duration,
+                remark: manualRemark.trim(),
+                products: validProducts,
+                emptyBoxes: manualEmptyBoxes.filter(e => e.name.trim() && e.qty > 0)
+            }).catch(console.error);
+        }
     };
 
     const handleSaveComment = async (cntrNo: string) => {

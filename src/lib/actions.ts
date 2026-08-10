@@ -416,7 +416,33 @@ export async function generateWorkReport(filters: JobFilters): Promise<{ success
             const res = await client.query(query, params);
             const rows = res.rows;
 
-            if (rows.length === 0) {
+            // --- Fetch Manual Report Entries ---
+            const manualWhereClauses = [];
+            const manualParams = [];
+            let mParamIdx = 1;
+            
+            if (!filters.startDate && !filters.endDate) {
+                manualWhereClauses.push(`work_date = ${mParamIdx++}`);
+                manualParams.push(todayWorkDateStr);
+            } else {
+                if (filters.startDate) {
+                    manualWhereClauses.push(`work_date >= ${mParamIdx++}`);
+                    manualParams.push(filters.startDate);
+                }
+                if (filters.endDate) {
+                    manualWhereClauses.push(`work_date <= ${mParamIdx++}`);
+                    manualParams.push(filters.endDate);
+                }
+            }
+            if (filters.containerNo) {
+                manualWhereClauses.push(`cntr_no ILIKE ${mParamIdx++}`);
+                manualParams.push(`%${filters.containerNo}%`);
+            }
+            
+            const mWhereSql = manualWhereClauses.length > 0 ? "WHERE " + manualWhereClauses.join(" AND ") : "";
+            const manualRes = await client.query(`SELECT * FROM manual_report_entries ${mWhereSql}`, manualParams);
+            
+            if (rows.length === 0 && manualRes.rows.length === 0) {
                 return { success: false, error: '조건에 일치하는 작업 내역이 없습니다.' };
             }
 
@@ -473,6 +499,45 @@ export async function generateWorkReport(filters: JobFilters): Promise<{ success
                 const emptyBoxes = Array.isArray(row.empty_boxes) ? row.empty_boxes : [];
                 if (emptyBoxes.length > 0 && cntrData.emptyBoxes.length === 0) {
                     cntrData.emptyBoxes = emptyBoxes;
+                }
+            }
+            
+            // --- Merge Manual Report Entries ---
+            for (const mRow of manualRes.rows) {
+                const workDateStr = mRow.work_date;
+                const teamName = mRow.team_name;
+                const cntrNo = mRow.cntr_no;
+                
+                if (!dateMap.has(workDateStr)) dateMap.set(workDateStr, new Map());
+                const teamMap = dateMap.get(workDateStr);
+                if (!teamMap.has(teamName)) teamMap.set(teamName, new Map());
+                const cntrMap = teamMap.get(teamName);
+                
+                if (!cntrMap.has(cntrNo)) {
+                    cntrMap.set(cntrNo, { 
+                        isCompleted: true, 
+                        division: 'DFZ', 
+                        durationMinutes: mRow.duration_minutes || 45, 
+                        firstUploadedAt: new Date(), 
+                        remark: mRow.remark || '', 
+                        transporter: '', 
+                        adminComment: mRow.category || '', 
+                        products: [], 
+                        emptyBoxes: [],
+                        manualEntryId: mRow.id
+                    });
+                }
+                
+                const cntrData = cntrMap.get(cntrNo);
+                
+                const mProducts = mRow.products || [];
+                for (const p of mProducts) {
+                    cntrData.products.push({ name: p.name, qty: p.qty, division: p.division || 'DFZ', height: 0 });
+                }
+                
+                const mEmptyBoxes = mRow.empty_boxes || [];
+                if (mEmptyBoxes.length > 0) {
+                    cntrData.emptyBoxes.push(...mEmptyBoxes);
                 }
             }
 
@@ -1254,6 +1319,67 @@ export async function deleteContainerResult(jobId: string, prodName: string): Pr
         return { success: true };
     } catch (err: any) {
         console.error('deleteContainerResult Error:', err);
+        return { success: false, error: err?.message || 'DB delete error' };
+    }
+}
+
+
+export async function addManualReportEntry(params: {
+    workDate: string;
+    teamName: string;
+    cntrNo: string;
+    category: string;
+    durationMinutes: number;
+    remark: string;
+    products: any[];
+    emptyBoxes: any[];
+}): Promise<{ success: boolean; error?: string }> {
+    try {
+        const session = await getSession();
+        if (!session || (session.role !== 'ADMIN' && session.role !== 'MANAGER')) {
+            return { success: false, error: 'Unauthorized' };
+        }
+        const client = await pool.connect();
+        try {
+            await client.query(`
+                INSERT INTO manual_report_entries 
+                (work_date, team_name, cntr_no, category, duration_minutes, remark, products, empty_boxes)
+                VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb)
+            `, [
+                params.workDate, 
+                params.teamName, 
+                params.cntrNo, 
+                params.category, 
+                params.durationMinutes, 
+                params.remark, 
+                JSON.stringify(params.products || []),
+                JSON.stringify(params.emptyBoxes || [])
+            ]);
+        } finally {
+            client.release();
+        }
+        return { success: true };
+    } catch (err: any) {
+        console.error('addManualReportEntry Error:', err);
+        return { success: false, error: err?.message || 'DB insert error' };
+    }
+}
+
+export async function deleteManualReportEntry(id: number): Promise<{ success: boolean; error?: string }> {
+    try {
+        const session = await getSession();
+        if (!session || (session.role !== 'ADMIN' && session.role !== 'MANAGER')) {
+            return { success: false, error: 'Unauthorized' };
+        }
+        const client = await pool.connect();
+        try {
+            await client.query('DELETE FROM manual_report_entries WHERE id = $1', [id]);
+        } finally {
+            client.release();
+        }
+        return { success: true };
+    } catch (err: any) {
+        console.error('deleteManualReportEntry Error:', err);
         return { success: false, error: err?.message || 'DB delete error' };
     }
 }
