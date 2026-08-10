@@ -43,7 +43,8 @@ export async function performBackupAndRemoteSync(): Promise<{ success: boolean; 
             'container_photos',
             'container_comments',
             'daily_work_reports',
-            'db_config'
+            'db_config',
+            'container_empty_boxes'
         ];
 
         // 1단계: 로컬 PC DB 백업 파일 생성
@@ -143,6 +144,15 @@ export async function performBackupAndRemoteSync(): Promise<{ success: boolean; 
                 created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
             );
+            CREATE TABLE IF NOT EXISTS container_empty_boxes (
+                job_id VARCHAR(100),
+                cntr_no VARCHAR(100),
+                box_name VARCHAR(100),
+                qty INTEGER NOT NULL DEFAULT 0,
+                is_worker_edited BOOLEAN NOT NULL DEFAULT FALSE,
+                updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (job_id, cntr_no, box_name)
+            );
             CREATE TABLE IF NOT EXISTS db_config (
                 id SERIAL PRIMARY KEY,
                 key VARCHAR(100) UNIQUE NOT NULL,
@@ -182,6 +192,8 @@ export async function performBackupAndRemoteSync(): Promise<{ success: boolean; 
                 conflictClause = 'ON CONFLICT (work_date) DO UPDATE SET report_text = EXCLUDED.report_text, report_data = EXCLUDED.report_data, saved_by = EXCLUDED.saved_by, updated_at = EXCLUDED.updated_at';
             } else if (tableName === 'container_comments') {
                 conflictClause = 'ON CONFLICT (work_date, cntr_no) DO UPDATE SET admin_comment = EXCLUDED.admin_comment, updated_at = EXCLUDED.updated_at';
+            } else if (tableName === 'container_empty_boxes') {
+                conflictClause = 'ON CONFLICT (job_id, cntr_no, box_name) DO UPDATE SET qty = EXCLUDED.qty, is_worker_edited = EXCLUDED.is_worker_edited, updated_at = EXCLUDED.updated_at';
             } else if (columns.includes('id')) {
                 const updateCols = columns.filter(c => c !== 'id').map(c => `"${c}" = EXCLUDED."${c}"`).join(', ');
                 if (updateCols) {
@@ -250,114 +262,5 @@ export async function performBackupAndRemoteSync(): Promise<{ success: boolean; 
 export function initRemoteSyncScheduler() {
     if (isSchedulerRunning) return;
     isSchedulerRunning = true;
-    console.log("⏰ [스케줄러] 매일 13:00 DB 자동 백업 & 원격 동기화 스케줄러 시작됨");
-
-    setInterval(async () => {
-        try {
-            const now = new Date();
-            const kstOffset = 9 * 60 * 60 * 1000;
-            const kstDate = new Date(now.getTime() + kstOffset);
-
-            const hours = kstDate.getUTCHours();
-            const minutes = kstDate.getUTCMinutes();
-            const dateStr = kstDate.toISOString().split('T')[0];
-
-            // 12:30 KST - GDrive Auto Backup
-            if (hours === 12 && minutes === 30 && lastAutoGdriveSyncDate !== dateStr) {
-                const client = await localPool.connect();
-                try {
-                    const res = await client.query("SELECT value FROM db_config WHERE key = 'auto_gdrive_sync_enabled'");
-                    const enabled = res.rows.length > 0 && res.rows[0].value === 'true';
-
-                    if (enabled) {
-                        lastAutoGdriveSyncDate = dateStr;
-                        console.log(`⏰ [12:30 KST 정시 백업] 미백업 사진 GDrive 자동 백업 및 용량 정리 시작 (${dateStr})`);
-                        
-                        const pRes = await client.query(`SELECT id, photo_path, cntr_no, gdrive_file_id FROM container_photos WHERE gdrive_file_id IS NULL AND is_deleted IS NOT TRUE`);
-                        const targetPhotos = pRes.rows;
-                        
-                        if (targetPhotos.length > 0) {
-                            const uploadsDir = process.env.UPLOAD_DIR || path.join(process.cwd(), 'uploads');
-                            let uploadedCount = 0;
-                            let cleanedCount = 0;
-                            let freedBytes = 0;
-                            
-                            for (const photo of targetPhotos) {
-                                const localPath = path.resolve(uploadsDir, photo.photo_path);
-                                const filename = path.basename(photo.photo_path);
-                                let fileId = photo.gdrive_file_id;
-                                let gdriveUrl = null;
-
-                                if (!fileId && !fs.existsSync(localPath)) {
-                                    const foundGDrive = await findGoogleDriveFileByName(filename);
-                                    if (foundGDrive) {
-                                        fileId = foundGDrive.fileId;
-                                        gdriveUrl = foundGDrive.gdriveUrl;
-                                        await client.query(`UPDATE container_photos SET gdrive_file_id = $1, gdrive_url = $2 WHERE id = $3`, [fileId, gdriveUrl, photo.id]);
-                                    }
-                                }
-
-                                if (!fileId && fs.existsSync(localPath)) {
-                                    try {
-                                        let gRes: any = null;
-                                        for (let attempt = 1; attempt <= 3; attempt++) {
-                                            try {
-                                                gRes = await uploadToGoogleDrive(localPath, filename);
-                                                break;
-                                            } catch (retryErr: any) {
-                                                if (attempt === 3) throw retryErr;
-                                                await new Promise(r => setTimeout(r, 1000));
-                                            }
-                                        }
-                                        fileId = gRes.fileId;
-                                        gdriveUrl = gRes.gdriveUrl;
-                                        
-                                        await client.query(`UPDATE container_photos SET gdrive_file_id = $1, gdrive_url = $2 WHERE id = $3`, [fileId, gdriveUrl, photo.id]);
-                                        uploadedCount++;
-                                    } catch (err: any) {
-                                        console.error(`[GDrive AutoSync Error] ${filename}:`, err?.message);
-                                    }
-                                }
-
-                                if (fileId && fs.existsSync(localPath)) {
-                                    try {
-                                        const stat = fs.statSync(localPath);
-                                        freedBytes += stat.size;
-                                        fs.unlinkSync(localPath);
-                                        cleanedCount++;
-                                    } catch (err) {}
-                                }
-                            }
-                            console.log(`✅ [12:30 KST GDrive 백업 완료] 신규 백업: ${uploadedCount}장 / 삭제: ${cleanedCount}장 / 용량 확보: ${(freedBytes / (1024*1024)).toFixed(1)}MB`);
-                        } else {
-                            console.log(`✅ [12:30 KST GDrive 백업] 미백업 사진이 없습니다.`);
-                        }
-                    }
-                } catch (e: any) {
-                    console.error("GDrive 자동 백업 스케줄러 오류:", e?.message);
-                } finally {
-                    client.release();
-                }
-            }
-
-            // 13:00 KST - Remote DB Sync
-            if (hours === 13 && minutes === 0 && lastAutoSyncDate !== dateStr) {
-                const client = await localPool.connect();
-                try {
-                    const res = await client.query("SELECT value FROM db_config WHERE key = 'auto_remote_sync_enabled'");
-                    const enabled = res.rows.length > 0 && res.rows[0].value === 'true';
-
-                    if (enabled) {
-                        lastAutoSyncDate = dateStr;
-                        console.log(`⏰ [13:00 KST 정시 백업] 자동 DB 백업 & 원격 동기화 트리거 (${dateStr})`);
-                        await performBackupAndRemoteSync();
-                    }
-                } finally {
-                    client.release();
-                }
-            }
-        } catch (e: any) {
-            console.error("스케줄러 주기 검사 오류:", e?.message);
-        }
-    }, 45000);
+    console.log("⏰ [스케줄러] 자동 백업 및 동기화 스케줄러 기능이 사용자 요청으로 비활성화되었습니다.");
 }

@@ -26,7 +26,7 @@ import {
     Product, PackingResult, ContainerType, CONTAINER_DATA, Job, JobFilters, DbConfig, UserAccount, Team
 } from '@/lib/types';
 import { packContainer } from '@/lib/packer';
-import { fetchJobs, fetchProductsByJob, searchProducts, getDbConfig, updateDbConfig, updatePassword, fetchAllUsers, createUserAccount, updateUserAccount, deleteUserAccount, deleteMultipleUserAccounts, generateWorkReport, saveDailyWorkReport, getSavedDailyWorkReport, exportDatabaseDump, restoreDatabaseDump, triggerManualBackupAndSync, fetchTeams, createTeam, updateTeam, deleteTeam, fetchTeamWorkProgress, TeamWorkProgress, updateContainerWorkDuration, updateContainerAdminComment, resetTeamWorkProgress, deleteContainerResult } from '@/lib/actions';
+import { fetchJobs, fetchProductsByJob, searchProducts, getDbConfig, updateDbConfig, updatePassword, fetchAllUsers, createUserAccount, updateUserAccount, deleteUserAccount, deleteMultipleUserAccounts, generateWorkReport, saveDailyWorkReport, getSavedDailyWorkReport, exportDatabaseDump, restoreDatabaseDump, triggerManualBackupAndSync, fetchTeams, createTeam, updateTeam, deleteTeam, fetchTeamWorkProgress, TeamWorkProgress, updateContainerWorkDuration, updateContainerAdminComment, resetTeamWorkProgress } from '@/lib/actions';
 import { SessionUser } from '@/lib/auth';
 import { calculateTeamTimeline } from '@/lib/timeline';
 
@@ -273,7 +273,6 @@ export default function Home({ user }: { user: SessionUser }) {
     const [gallerySearchCntrNo, setGallerySearchCntrNo] = useState<string>('');
     const [uploadFiles, setUploadFiles] = useState<File[]>([]);
     const [uploadRemark, setUploadRemark] = useState('');
-    const [uploadEmptyBoxes, setUploadEmptyBoxes] = useState<Array<{ name: string; qty: number }>>([]);
     const [uploadCntrNo, setUploadCntrNo] = useState('');
     const [uploadDurationMinutes, setUploadDurationMinutes] = useState<number | ''>('');
     const [isUploading, setIsUploading] = useState(false);
@@ -307,9 +306,6 @@ export default function Home({ user }: { user: SessionUser }) {
     const [manualRemark, setManualRemark] = useState('');
     const [manualProducts, setManualProducts] = useState<Array<{ division: string; name: string; qty: number }>>([
         { division: 'DFZ', name: '', qty: 0 }
-    ]);
-    const [manualEmptyBoxes, setManualEmptyBoxes] = useState<Array<{ name: string; qty: number }>>([
-        { name: '', qty: 0 }
     ]);
     const [isManualCancelled, setIsManualCancelled] = useState(false);
 
@@ -363,11 +359,6 @@ export default function Home({ user }: { user: SessionUser }) {
                     }
                     for (const p of cntr.products) {
                         lines.push(`- [${p.division || 'DFZ'}] ${p.name} ${p.qty.toLocaleString()}개`);
-                    }
-                    if (cntr.emptyBoxes && cntr.emptyBoxes.length > 0) {
-                        for (const eb of cntr.emptyBoxes) {
-                            lines.push(`- 📦 [공박스] ${eb.name} ${eb.qty.toLocaleString()}개`);
-                        }
                     }
                     lines.push(``);
                 });
@@ -551,10 +542,6 @@ export default function Home({ user }: { user: SessionUser }) {
                 division: p.division.trim() || 'DFZ',
                 name: p.name.trim().toUpperCase(),
                 qty: p.qty
-            })),
-            emptyBoxes: manualEmptyBoxes.filter(e => e.name.trim() && e.qty > 0).map(e => ({
-                name: e.name.trim().toUpperCase(),
-                qty: e.qty
             }))
         };
 
@@ -1275,7 +1262,6 @@ export default function Home({ user }: { user: SessionUser }) {
         setManualDuration('45');
         setManualRemark('');
         setManualProducts([{ division: 'DFZ', name: '', qty: 0 }]);
-        setManualEmptyBoxes([{ name: '', qty: 0 }]);
         setIsManualCancelled(false);
 
         if (!isAdmin && !user.teamName) {
@@ -1319,15 +1305,6 @@ export default function Home({ user }: { user: SessionUser }) {
             })));
         } else {
             setManualProducts([{ division: 'DFZ', name: '', qty: 0 }]);
-        }
-
-        if (cntr.emptyBoxes && cntr.emptyBoxes.length > 0) {
-            setManualEmptyBoxes(cntr.emptyBoxes.map((e: any) => ({
-                name: e.name || '',
-                qty: e.qty || 0
-            })));
-        } else {
-            setManualEmptyBoxes([{ name: '', qty: 0 }]);
         }
 
         setIsAddManualOpen(true);
@@ -1419,48 +1396,6 @@ export default function Home({ user }: { user: SessionUser }) {
         }
     };
 
-    const handleOpenUploadModal = (job: Job, type: 'normal' | 'seal' = 'normal') => {
-        setUploadJob(job);
-        setUploadCntrNo(job.cntr_no || '');
-        setUploadFiles([]);
-        setUploadPhotoType(type);
-        setUploadDurationMinutes(job.work_duration_minutes ?? '');
-
-        let remark = job.remark || '';
-        
-        // Initialize empty boxes
-        let useWorkerSavedBoxes = false;
-        if (job.empty_boxes_updated_at) {
-            const lastUpdated = new Date(job.empty_boxes_updated_at).getTime();
-            const now = new Date().getTime();
-            const hoursDiff = (now - lastUpdated) / (1000 * 60 * 60);
-            if (hoursDiff <= 16) {
-                useWorkerSavedBoxes = true;
-            }
-        }
-
-        const parsedBoxes: { name: string, qty: number }[] = [];
-        if (useWorkerSavedBoxes && job.empty_boxes && job.empty_boxes.length > 0) {
-            parsedBoxes.push(...job.empty_boxes);
-        } else if (job.db_remark) {
-            const regex = /(MAY[A-Z0-9]+)\s*\*\s*([0-9]+)/gi;
-            let match;
-            while ((match = regex.exec(job.db_remark)) !== null) {
-                parsedBoxes.push({
-                    name: match[1].toUpperCase(),
-                    qty: parseInt(match[2], 10)
-                });
-            }
-        }
-        setUploadEmptyBoxes(parsedBoxes);
-
-        // Clean up any remaining MAY tags in remark if necessary
-        let cleanedRemark = remark.replace(/(MAY[A-Z0-9]+)\s*(?:\*\s*)?([0-9]+)(?:\s*장)?/gi, '').trim();
-        // Also remove duplicate spaces and trim
-        cleanedRemark = cleanedRemark.replace(/\s{2,}/g, ' ').trim();
-        setUploadRemark(cleanedRemark);
-    };
-
     const handlePhotoUpload = async () => {
         if (!isAdmin && !user.teamName) {
             if (confirm("사진 및 작업시간을 등록하려면 먼저 소속 조를 선택해야 합니다.\n조 선택 화면으로 이동하시겠습니까?")) {
@@ -1478,15 +1413,12 @@ export default function Home({ user }: { user: SessionUser }) {
             return;
         }
 
-        const emptyBoxText = uploadEmptyBoxes.filter(eb => eb.qty > 0).map(eb => `${eb.name} ${eb.qty}장`).join(' ');
-        const finalRemark = (uploadRemark.trim() + (emptyBoxText ? ' ' + emptyBoxText : '')).trim();
-
         if (uploadFiles.length === 0) {
             if (uploadJob && uploadJob.photo_count && uploadJob.photo_count > 0) {
                 setIsUploading(true);
                 try {
                     const finalDuration = uploadDurationMinutes === '' ? 45 : Number(uploadDurationMinutes);
-                    const res = await updateContainerWorkDuration(targetJobId, uploadCntrNo.trim(), finalDuration, finalRemark, uploadEmptyBoxes);
+                    const res = await updateContainerWorkDuration(targetJobId, uploadCntrNo.trim(), finalDuration, uploadRemark.trim());
                     if (res.success) {
                         alert("작업시간 및 지연사유가 수정되었습니다.");
                         setUploadFiles([]);
@@ -1523,8 +1455,7 @@ export default function Home({ user }: { user: SessionUser }) {
                 formData.append('lastModified', file.lastModified.toString());
                 formData.append('jobId', targetJobId.toString());
                 formData.append('cntrNo', uploadCntrNo.trim());
-                formData.append('remark', finalRemark);
-                formData.append('emptyBoxes', JSON.stringify(uploadEmptyBoxes));
+                formData.append('remark', uploadRemark.trim());
                 formData.append('durationMinutes', (uploadDurationMinutes === '' ? 45 : uploadDurationMinutes).toString());
                 formData.append('photoType', uploadPhotoType);
 
@@ -1592,23 +1523,7 @@ export default function Home({ user }: { user: SessionUser }) {
         setResult(null);
     };
 
-    const removeProduct = async (id: string) => {
-        if (isAdmin && !id.startsWith('manual_')) {
-            if (window.confirm("이 제품을 데이터베이스에서 영구적으로 삭제하시겠습니까?\n[확인]을 누르면 DB에서 삭제되며, [취소]를 누르면 현재 화면에서만 임시로 제외됩니다.")) {
-                try {
-                    const res = await deleteContainerResult(id);
-                    if (!res.success) {
-                        alert(res.error || "DB 삭제에 실패했습니다.");
-                        return; // DB 삭제 실패 시 UI에서도 지우지 않음 (또는 지워도 되지만 일관성을 위해 리턴)
-                    }
-                } catch (e) {
-                    console.error("delete product error:", e);
-                    alert("DB 삭제 중 오류가 발생했습니다.");
-                    return;
-                }
-            }
-        }
-        
+    const removeProduct = (id: string) => {
         setProducts(prev => prev.filter(p => p.id !== id));
         setResult(null);
     };
@@ -1832,7 +1747,12 @@ export default function Home({ user }: { user: SessionUser }) {
                                                 <button 
                                                     onClick={(e) => {
                                                         e.stopPropagation();
-                                                        handleOpenUploadModal(job, 'normal');
+                                                        setUploadJob(job);
+                                                        setUploadCntrNo(job.cntr_no || '');
+                                                        setUploadFiles([]);
+                                                        setUploadRemark(job.remark || '');
+                                                        setUploadDurationMinutes(job.work_duration_minutes ?? '');
+                                                        setUploadPhotoType('normal');
                                                     }}
                                                     className={`p-1.5 hover:bg-white/10 rounded-lg transition-all flex items-center gap-1 ${
                                                         job.photo_count && job.photo_count > 0 
@@ -1847,7 +1767,12 @@ export default function Home({ user }: { user: SessionUser }) {
                                                     <button
                                                         onClick={(e) => {
                                                             e.stopPropagation();
-                                                            handleOpenUploadModal(job, 'seal');
+                                                            setUploadJob(job);
+                                                            setUploadCntrNo(job.cntr_no || '');
+                                                            setUploadFiles([]);
+                                                            setUploadRemark(job.remark || '');
+                                                            setUploadDurationMinutes(job.work_duration_minutes ?? '');
+                                                            setUploadPhotoType('seal');
                                                         }}
                                                         className="p-1.5 hover:bg-rose-500/20 rounded-lg text-rose-500 hover:text-rose-400 transition-all animate-pulse border border-transparent"
                                                         title="씰(Seal) 사진 등록 — 반드시 등록해 주세요!"
@@ -1928,7 +1853,11 @@ export default function Home({ user }: { user: SessionUser }) {
                                                                 }
                                                                 return;
                                                             }
-                                                            handleOpenUploadModal(job, 'normal');
+                                                            setUploadJob(job);
+                                                            setUploadCntrNo(job.cntr_no || '');
+                                                            setUploadFiles([]);
+                                                            setUploadRemark(job.remark || '');
+                                                            setUploadDurationMinutes(job.work_duration_minutes ?? '');
                                                         }}
                                                         className="p-1 hover:bg-white/10 rounded-lg text-sky-400 hover:text-white transition-all cursor-pointer"
                                                         title="사진 등록"
@@ -2012,7 +1941,11 @@ export default function Home({ user }: { user: SessionUser }) {
                                                     <button
                                                         onClick={(e) => {
                                                             e.stopPropagation();
-                                                            handleOpenUploadModal(job, 'normal');
+                                                            setUploadJob(job);
+                                                            setUploadCntrNo(job.cntr_no || '');
+                                                            setUploadFiles([]);
+                                                            setUploadRemark(job.remark || '');
+                                                            setUploadDurationMinutes(job.work_duration_minutes ?? '');
                                                         }}
                                                         className="p-1 hover:bg-white/10 rounded-lg text-sky-400 hover:text-white transition-all"
                                                         title="사진 추가 등록"
@@ -2024,7 +1957,12 @@ export default function Home({ user }: { user: SessionUser }) {
                                                         <button
                                                             onClick={(e) => {
                                                                 e.stopPropagation();
-                                                                handleOpenUploadModal(job, 'seal');
+                                                                setUploadJob(job);
+                                                                setUploadCntrNo(job.cntr_no || '');
+                                                                setUploadFiles([]);
+                                                                setUploadRemark(job.remark || '');
+                                                                setUploadDurationMinutes(job.work_duration_minutes ?? '');
+                                                                setUploadPhotoType('seal');
                                                             }}
                                                             className="p-1 hover:bg-rose-500/20 rounded-lg text-rose-500 hover:text-rose-400 transition-all animate-pulse"
                                                             title="씰(Seal) 사진 등록 — 반드시 등록해 주세요!"
@@ -3086,71 +3024,6 @@ export default function Home({ user }: { user: SessionUser }) {
                                         </div>
                                     </div>
 
-                                    {/* Empty Boxes UI */}
-                                    <div className="space-y-1.5 pt-2 border-t border-white/5">
-                                        <div className="flex items-center justify-between">
-                                            <label className="text-xs text-amber-500 font-bold ml-1 flex items-center gap-1">
-                                                <span>📦</span> 공박스 내역
-                                            </label>
-                                            <button
-                                                type="button"
-                                                onClick={() => setUploadEmptyBoxes(prev => [...prev, { name: 'MAY', qty: 0 }])}
-                                                className="text-[10px] bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 px-2 py-0.5 rounded font-bold transition-colors"
-                                            >
-                                                + 추가
-                                            </button>
-                                        </div>
-                                        {uploadEmptyBoxes.length > 0 ? (
-                                            <div className="space-y-2">
-                                                {uploadEmptyBoxes.map((eb, idx) => (
-                                                    <div key={idx} className="flex gap-2">
-                                                        <input
-                                                            type="text"
-                                                            value={eb.name}
-                                                            onChange={e => {
-                                                                const val = e.target.value.toUpperCase();
-                                                                setUploadEmptyBoxes(prev => {
-                                                                    const next = [...prev];
-                                                                    next[idx].name = val;
-                                                                    return next;
-                                                                });
-                                                            }}
-                                                            placeholder="MAY..."
-                                                            className="flex-1 bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs outline-none focus:border-amber-500 transition-colors uppercase font-bold text-slate-200"
-                                                        />
-                                                        <div className="relative w-24 shrink-0">
-                                                            <input
-                                                                type="number"
-                                                                min={0}
-                                                                value={eb.qty || ''}
-                                                                onChange={e => {
-                                                                    const val = parseInt(e.target.value, 10) || 0;
-                                                                    setUploadEmptyBoxes(prev => {
-                                                                        const next = [...prev];
-                                                                        next[idx].qty = val;
-                                                                        return next;
-                                                                    });
-                                                                }}
-                                                                placeholder="0"
-                                                                className="w-full bg-black/40 border border-white/10 rounded-xl pl-3 pr-6 py-2 text-xs outline-none focus:border-amber-500 transition-colors font-black text-amber-400"
-                                                            />
-                                                            <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] text-slate-500 font-bold">장</span>
-                                                        </div>
-                                                        <button
-                                                            onClick={() => setUploadEmptyBoxes(prev => prev.filter((_, i) => i !== idx))}
-                                                            className="w-8 flex items-center justify-center shrink-0 bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 rounded-xl transition-colors"
-                                                            title="삭제"
-                                                        >
-                                                            ✕
-                                                        </button>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        ) : (
-                                            <div className="text-[10px] text-slate-500 px-1">등록된 공박스가 없습니다. 누락 시 추가 버튼을 눌러주세요.</div>
-                                        )}
-                                    </div>
-
                                     <div className="space-y-1.5">
                                         <label className="text-xs text-slate-500 font-bold ml-1 block">작업자 메모 (작업시간 지연사유 등)</label>
                                         <textarea 
@@ -3263,8 +3136,6 @@ export default function Home({ user }: { user: SessionUser }) {
                                 setIsManualCancelled={setIsManualCancelled}
                                 manualProducts={manualProducts}
                                 setManualProducts={setManualProducts}
-                                manualEmptyBoxes={manualEmptyBoxes}
-                                setManualEmptyBoxes={setManualEmptyBoxes}
                                 handlePasteExcel={handlePasteExcel}
                                 handleAddManualSubmit={handleAddManualSubmit}
                             />

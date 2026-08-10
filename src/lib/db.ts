@@ -57,6 +57,50 @@ export function getPool(): Pool {
                 PRIMARY KEY (work_date, cntr_no)
             );
             ALTER TABLE container_comments ADD COLUMN IF NOT EXISTS work_date VARCHAR(20) NOT NULL DEFAULT '';
+
+            CREATE TABLE IF NOT EXISTS container_empty_boxes (
+                job_id INTEGER REFERENCES container_jobs(id) ON DELETE CASCADE,
+                cntr_no VARCHAR(100) NOT NULL,
+                box_name VARCHAR(100) NOT NULL,
+                qty INTEGER NOT NULL DEFAULT 0,
+                is_worker_edited BOOLEAN NOT NULL DEFAULT FALSE,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (job_id, cntr_no, box_name)
+            );
+
+            -- Run one-time migration: Populate container_empty_boxes from container_results db_remark
+            DO $$
+            DECLARE
+                r RECORD;
+                match_arr TEXT[];
+                box_name VARCHAR;
+                qty INTEGER;
+            BEGIN
+                -- This will only insert if the table is currently empty, avoiding repeated expensive parsing
+                IF NOT EXISTS (SELECT 1 FROM container_empty_boxes LIMIT 1) THEN
+                    FOR r IN 
+                        SELECT job_id, cntr_no, MAX(remark) as db_remark 
+                        FROM container_results 
+                        WHERE remark IS NOT NULL AND remark LIKE '%MAY%'
+                        GROUP BY job_id, cntr_no 
+                    LOOP
+                        -- Simple regex parsing using regexp_matches in postgres
+                        FOR match_arr IN SELECT regexp_matches(r.db_remark, '(MAY[A-Z0-9]+)\\s*\\*?\\s*([0-9]+)', 'gi')
+                        LOOP
+                            BEGIN
+                                box_name := UPPER(match_arr[1]);
+                                qty := match_arr[2]::INTEGER;
+                                INSERT INTO container_empty_boxes (job_id, cntr_no, box_name, qty, is_worker_edited)
+                                VALUES (r.job_id, r.cntr_no, box_name, qty, false)
+                                ON CONFLICT DO NOTHING;
+                            EXCEPTION WHEN OTHERS THEN
+                                -- Ignore casting errors etc
+                            END;
+                        END LOOP;
+                    END LOOP;
+                END IF;
+            END $$;
+
             DO $$
             BEGIN
                 IF EXISTS (
@@ -149,6 +193,7 @@ export async function getJobsFromDB(filters?: JobFilters): Promise<Job[]> {
                         r.cntr_type,
                         r.model_count,
                         r.total_qty,
+                        r.db_remark,
                         (SELECT COUNT(*)::integer FROM container_photos p WHERE p.job_id = j.id AND (r.cntr_no IS NULL OR p.cntr_no = r.cntr_no) AND (p.is_deleted IS NOT TRUE)) as photo_count,
                         (SELECT COUNT(*)::integer FROM container_photos p WHERE p.job_id = j.id AND (r.cntr_no IS NULL OR p.cntr_no = r.cntr_no) AND (p.is_deleted IS NOT TRUE) AND (p.is_completed IS NOT TRUE)) as active_photo_count,
                         (SELECT COUNT(*)::integer FROM container_photos p WHERE p.job_id = j.id AND (r.cntr_no IS NULL OR p.cntr_no = r.cntr_no) AND (p.is_deleted IS NOT TRUE) AND p.photo_type = 'seal') as seal_photo_count,
@@ -159,12 +204,15 @@ export async function getJobsFromDB(filters?: JobFilters): Promise<Job[]> {
                             WHERE p.job_id = j.id AND (r.cntr_no IS NULL OR p.cntr_no = r.cntr_no) AND (p.is_deleted IS NOT TRUE) AND (p.is_completed IS NOT TRUE)
                         ) sub_u WHERE uploader_info IS NOT NULL) as uploaders,
                         (SELECT p.work_duration_minutes FROM container_photos p WHERE p.job_id = j.id AND (r.cntr_no IS NULL OR p.cntr_no = r.cntr_no) AND (p.is_deleted IS NOT TRUE) ORDER BY p.id DESC LIMIT 1) as work_duration_minutes,
-                        (SELECT p.remark FROM container_photos p WHERE p.job_id = j.id AND (r.cntr_no IS NULL OR p.cntr_no = r.cntr_no) AND (p.is_deleted IS NOT TRUE) AND p.remark IS NOT NULL AND p.remark != '' ORDER BY p.id DESC LIMIT 1) as last_remark
+                        (SELECT p.remark FROM container_photos p WHERE p.job_id = j.id AND (r.cntr_no IS NULL OR p.cntr_no = r.cntr_no) AND (p.is_deleted IS NOT TRUE) AND p.remark IS NOT NULL AND p.remark != '' ORDER BY p.id DESC LIMIT 1) as last_remark,
+                        (SELECT json_agg(json_build_object('name', eb.box_name, 'qty', eb.qty)) FROM container_empty_boxes eb WHERE eb.job_id = j.id AND eb.cntr_no = r.cntr_no AND eb.qty > 0) as empty_boxes,
+                        (SELECT MAX(eb.updated_at) FROM container_empty_boxes eb WHERE eb.job_id = j.id AND eb.cntr_no = r.cntr_no) as empty_boxes_updated_at
                     FROM container_jobs j
                     LEFT JOIN (
                         SELECT job_id, cntr_no, MAX(transporter) as transporter, MAX(cntr_type) as cntr_type,
                                COUNT(DISTINCT prod_name)::integer as model_count,
-                               SUM(qty_plan)::integer as total_qty
+                               SUM(qty_plan)::integer as total_qty,
+                               MAX(remark) as db_remark
                         FROM container_results
                         GROUP BY job_id, cntr_no
                     ) r ON r.job_id = j.id
@@ -189,6 +237,9 @@ export async function getJobsFromDB(filters?: JobFilters): Promise<Job[]> {
                 uploaders: Array.isArray(row.uploaders) ? row.uploaders.filter(Boolean) : [],
                 work_duration_minutes: row.work_duration_minutes ? Number(row.work_duration_minutes) : undefined,
                 remark: row.last_remark || undefined,
+                db_remark: row.db_remark || undefined,
+                empty_boxes: Array.isArray(row.empty_boxes) ? row.empty_boxes : [],
+                empty_boxes_updated_at: row.empty_boxes_updated_at ? new Date(row.empty_boxes_updated_at).toISOString() : undefined,
                 model_count: row.model_count ? Number(row.model_count) : undefined,
                 total_qty: row.total_qty ? Number(row.total_qty) : undefined,
                 work_date: (() => {

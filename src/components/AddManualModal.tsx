@@ -25,6 +25,8 @@ interface AddManualModalProps {
     setIsManualCancelled: (val: boolean) => void;
     manualProducts: any[];
     setManualProducts: (val: any[]) => void;
+    manualEmptyBoxes: any[];
+    setManualEmptyBoxes: (val: any[]) => void;
     handlePasteExcel: (e: React.ClipboardEvent<HTMLDivElement>) => void;
     handleAddManualSubmit: () => void;
 }
@@ -52,6 +54,8 @@ export default function AddManualModal({
     setIsManualCancelled,
     manualProducts,
     setManualProducts,
+    manualEmptyBoxes,
+    setManualEmptyBoxes,
     handlePasteExcel,
     handleAddManualSubmit
 }: AddManualModalProps) {
@@ -239,6 +243,61 @@ export default function AddManualModal({
                                     )}
                                 </div>
                             ))}
+                        </div>
+                    </div>
+
+                    <div className="pt-2 border-t border-slate-200">
+                        <div className="flex items-center justify-between mb-2">
+                            <label className="font-black text-slate-700">공박스 추가/수정</label>
+                            <button
+                                type="button"
+                                onClick={() => setManualEmptyBoxes([...manualEmptyBoxes, { name: '', qty: 0 }])}
+                                className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-700 font-bold rounded-lg flex items-center gap-1 cursor-pointer"
+                            >
+                                <Plus className="w-3 h-3" /> 공박스 추가
+                            </button>
+                        </div>
+                        <div className="space-y-2 max-h-40 overflow-y-auto p-1.5 border border-slate-200 rounded-xl bg-slate-50 transition-colors focus-within:border-amber-300 focus-within:ring-2 focus-within:ring-amber-100">
+                            {manualEmptyBoxes.map((eb, idx) => (
+                                <div key={idx} className="flex items-center gap-1.5 bg-white p-1.5 rounded-lg border border-slate-200 shadow-sm">
+                                    <span className="text-amber-600 font-black px-1">📦</span>
+                                    <input
+                                        type="text"
+                                        placeholder="모델명 (MAY...)"
+                                        value={eb.name}
+                                        onChange={e => {
+                                            const next = [...manualEmptyBoxes];
+                                            next[idx].name = e.target.value;
+                                            setManualEmptyBoxes(next);
+                                        }}
+                                        className="flex-1 px-2 py-1 border border-slate-200 rounded-md font-bold uppercase min-w-0"
+                                    />
+                                    <input
+                                        type="number"
+                                        placeholder="수량"
+                                        value={eb.qty || ''}
+                                        onChange={e => {
+                                            const next = [...manualEmptyBoxes];
+                                            next[idx].qty = parseInt(e.target.value) || 0;
+                                            setManualEmptyBoxes(next);
+                                        }}
+                                        className="w-16 px-2 py-1 border border-slate-200 rounded-md font-bold text-right"
+                                    />
+                                    <span className="text-slate-500 font-bold">개</span>
+                                    <button
+                                        type="button"
+                                        onClick={() => setManualEmptyBoxes(manualEmptyBoxes.filter((_, i) => i !== idx))}
+                                        className="text-rose-500 hover:bg-rose-50 p-1 rounded-md cursor-pointer"
+                                    >
+                                        <X className="w-3.5 h-3.5" />
+                                    </button>
+                                </div>
+                            ))}
+                            {manualEmptyBoxes.length === 0 && (
+                                <div className="text-center py-2 text-slate-400 font-bold text-[11px]">
+                                    등록된 공박스가 없습니다.
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>

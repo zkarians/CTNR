@@ -88,6 +88,37 @@ export default function TeamSummaryModal({ isOpen, onClose, reportData }: TeamSu
         return teamMap;
     }, [reportData]);
 
+    const emptyBoxSummary = useMemo(() => {
+        const boxMap = new Map<string, number>();
+        
+        if (!reportData) return boxMap;
+
+        reportData.forEach((dateGroup: any) => {
+            if (!dateGroup.uploaders) return;
+            dateGroup.uploaders.forEach((team: any) => {
+                if (!team.containers) return;
+                team.containers.forEach((cntr: any) => {
+                    const isExcluded = cntr.adminComment?.includes('[작업제외]');
+                    const isCancelled = !isExcluded && (cntr.isCancelled || cntr.adminComment?.includes('[취소]') || cntr.adminComment?.includes('[작업취소]'));
+                    
+                    if (!isExcluded && !isCancelled && cntr.emptyBoxes && Array.isArray(cntr.emptyBoxes)) {
+                        cntr.emptyBoxes.forEach((box: any) => {
+                            if (box.name && box.name.toUpperCase().startsWith('MAY')) {
+                                const qty = parseInt(box.qty, 10) || 0;
+                                if (qty > 0) {
+                                    const current = boxMap.get(box.name) || 0;
+                                    boxMap.set(box.name, current + qty);
+                                }
+                            }
+                        });
+                    }
+                });
+            });
+        });
+        
+        return boxMap;
+    }, [reportData]);
+
     if (!isOpen) return null;
 
     const teams = Array.from(summary.keys()).sort((a, b) => a.localeCompare(b));
@@ -102,6 +133,9 @@ export default function TeamSummaryModal({ isOpen, onClose, reportData }: TeamSu
         CATEGORIES.forEach(cat => colTotals[cat] += counts[cat]);
         colTotals['total'] += counts['total'];
     });
+
+    const emptyBoxEntries = Array.from(emptyBoxSummary.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+    const totalEmptyBoxes = emptyBoxEntries.reduce((sum, [_, qty]) => sum + qty, 0);
 
     return (
         <AnimatePresence>
@@ -179,6 +213,48 @@ export default function TeamSummaryModal({ isOpen, onClose, reportData }: TeamSu
                                     </tfoot>
                                 )}
                             </table>
+                        </div>
+
+                        {/* 공박스 내역 합계 표 */}
+                        <div className="mt-8">
+                            <h3 className="text-md font-black text-slate-800 mb-3 flex items-center gap-2">
+                                <div className="w-1.5 h-4 bg-sky-500 rounded-full"></div>
+                                공박스 소모량 총계
+                            </h3>
+                            <div className="overflow-x-auto ring-1 ring-slate-200 rounded-xl">
+                                <table className="w-full text-sm text-left whitespace-nowrap">
+                                    <thead>
+                                        <tr className="bg-slate-50 text-slate-600">
+                                            <th className="px-4 py-3 font-bold border-b border-r border-slate-200">공박스 모델명</th>
+                                            <th className="px-4 py-3 font-bold text-center border-b border-slate-200">합계 수량</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {emptyBoxEntries.length === 0 ? (
+                                            <tr>
+                                                <td colSpan={2} className="px-4 py-8 text-center text-slate-400">당일 사용된 공박스 내역이 없습니다.</td>
+                                            </tr>
+                                        ) : (
+                                            emptyBoxEntries.map(([name, qty]) => (
+                                                <tr key={name} className="border-b border-slate-100 hover:bg-slate-50/50">
+                                                    <td className="px-4 py-3 font-bold text-slate-700 border-r border-slate-100">{name}</td>
+                                                    <td className="px-4 py-3 text-center text-slate-700">{qty}</td>
+                                                </tr>
+                                            ))
+                                        )}
+                                    </tbody>
+                                    {emptyBoxEntries.length > 0 && (
+                                        <tfoot className="bg-slate-50 font-black">
+                                            <tr>
+                                                <td className="px-4 py-3 text-slate-700 border-r border-slate-200">전체 합계</td>
+                                                <td className="px-4 py-3 text-center text-sky-600 border-t border-slate-200">
+                                                    {totalEmptyBoxes}
+                                                </td>
+                                            </tr>
+                                        </tfoot>
+                                    )}
+                                </table>
+                            </div>
                         </div>
                         <div className="mt-4 text-xs text-slate-500 bg-slate-50 p-3 rounded-lg border border-slate-200">
                             <strong>* 분류 우선순위:</strong> 오븐 &gt; 세탁기 &gt; 식기 &gt; 횡적 &gt; 콤프 &gt; SK냉장고 &gt; 냉장고<br/>

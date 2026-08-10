@@ -314,9 +314,9 @@ export default function ReportModal({
                                 )}
                             </div>
 
-                            {isAdmin && (
-                                <div className="flex items-center justify-between gap-1.5 w-full">
+                            <div className="flex items-center justify-between gap-1.5 w-full">
                                     <div className="flex items-center gap-1 flex-1 min-w-0">
+                                        {isAdmin && (
                                         <button
                                             onClick={() => setIsCancelManageOpen(true)}
                                             className="flex-1 py-1.5 px-1 bg-rose-50 border border-rose-200 text-rose-600 font-black rounded-lg shadow-2xs flex items-center justify-center gap-1 text-[11px] truncate cursor-pointer h-8"
@@ -324,6 +324,7 @@ export default function ReportModal({
                                             <Ban className="w-3.5 h-3.5 text-rose-500 shrink-0" />
                                             <span className="truncate">작업취소</span>
                                         </button>
+                                        )}
                                         <button
                                             onClick={handleOpenAddManual}
                                             className="flex-1 py-1.5 px-1 bg-sky-600 hover:bg-sky-500 text-white font-black rounded-lg shadow-xs flex items-center justify-center gap-1 text-[11px] truncate cursor-pointer h-8"
@@ -356,7 +357,6 @@ export default function ReportModal({
                                         </button>
                                     </div>
                                 </div>
-                            )}
                         </div>
                     </div>
 
@@ -641,6 +641,12 @@ export default function ReportModal({
                                                                                         <span className="font-black text-slate-800 shrink-0 ml-1">{p.qty.toLocaleString()}개</span>
                                                                                     </div>
                                                                                 ))}
+                                                                                {cntr.emptyBoxes && cntr.emptyBoxes.map((eb: any, idx: number) => (
+                                                                                    <div key={`eb-${idx}`} className="text-[11px] sm:text-xs text-slate-600 font-medium flex items-center justify-between gap-1.5 leading-snug min-w-0">
+                                                                                        <span className="truncate min-w-0 flex-1" title={`[공박스] ${eb.name}`}>- 📦 [공박스] {eb.name}</span>
+                                                                                        <span className="font-black text-slate-800 shrink-0 ml-1">{eb.qty.toLocaleString()}개</span>
+                                                                                    </div>
+                                                                                ))}
                                                                             </div>
                                                                         )}
                                                                     </div>
@@ -696,6 +702,12 @@ export default function ReportModal({
                                                                         <span className="font-bold text-slate-800 shrink-0">{p.qty.toLocaleString()}개</span>
                                                                     </div>
                                                                 ))}
+                                                                {cntr.emptyBoxes && cntr.emptyBoxes.map((eb: any, idx: number) => (
+                                                                    <div key={`eb-${idx}`} className="text-xs text-slate-600 font-medium flex items-center justify-between gap-2">
+                                                                        <span className="break-words min-w-0 flex-1 leading-snug">- 📦 [공박스] {eb.name}</span>
+                                                                        <span className="font-bold text-slate-800 shrink-0">{eb.qty.toLocaleString()}개</span>
+                                                                    </div>
+                                                                ))}
                                                             </div>
 
                                                             {cntr.remark && cntr.remark.trim() && (
@@ -730,18 +742,16 @@ export default function ReportModal({
                             </span>
                         )}
 
-                        <div className={`w-full sm:w-auto ml-auto ${isAdmin ? 'grid grid-cols-4 gap-1 sm:gap-2 sm:flex sm:items-center sm:justify-end' : 'flex justify-end'}`}>
-                            {isAdmin && (
+                        <div className={`w-full sm:w-auto ml-auto grid grid-cols-4 gap-1 sm:gap-2 sm:flex sm:items-center sm:justify-end`}>
                                 <button
                                     onClick={handleSaveReport}
                                     disabled={isSavingReport || !reportText}
                                     className="py-2 px-1 sm:py-2.5 sm:px-4 md:px-5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-black text-[11px] sm:text-xs md:text-sm transition-all flex items-center justify-center gap-1 sm:gap-1.5 cursor-pointer disabled:opacity-50 shadow-md whitespace-nowrap"
-                                    title="현재 선택 일자의 단 1장 보고서로 DB에 덮어쓰기 저장"
+                                    title={isAdmin ? "현재 화면의 데이터를 1일 보고서 DB에 덮어쓰기 합니다" : "추가한 작업내역을 영구 저장합니다"}
                                 >
                                     {isSavingReport ? <Loader2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 animate-spin text-white shrink-0" /> : <Save className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />}
-                                    <span>{isSavingReport ? '저장 중...' : '보고서 저장'}</span>
+                                    <span>{isSavingReport ? '저장 중...' : isAdmin ? '보고서 저장' : '작업내역 저장'}</span>
                                 </button>
-                            )}
 
                             {isAdmin && (
                                 <button

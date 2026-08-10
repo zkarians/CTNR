@@ -828,12 +828,16 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
             {/* Warning Modal */}
             <AnimatePresence>
                 {warningModalInfo.isOpen && (
-                    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
+                    <div 
+                        className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm"
+                        onClick={(e) => e.stopPropagation()}
+                    >
                         <motion.div 
                             initial={{ opacity: 0, scale: 0.95 }}
                             animate={{ opacity: 1, scale: 1 }}
                             exit={{ opacity: 0, scale: 0.95 }}
                             className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden border border-slate-200 flex flex-col"
+                            onClick={(e) => e.stopPropagation()}
                         >
                             <div className="flex items-center gap-3 p-4 border-b border-slate-100 bg-rose-50/50 shrink-0">
                                 <div className="p-2 bg-rose-100 text-rose-600 rounded-lg shrink-0">
@@ -862,13 +866,17 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
 
                             <div className="p-4 border-t border-slate-100 bg-slate-50 flex gap-2 justify-end shrink-0">
                                 <button 
-                                    onClick={() => setWarningModalInfo({ isOpen: false, action: null, missingCntrs: [] })}
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        setWarningModalInfo({ isOpen: false, action: null, missingCntrs: [] });
+                                    }}
                                     className="px-4 py-2 rounded-xl text-slate-600 hover:bg-slate-200 font-bold text-sm transition-colors cursor-pointer"
                                 >
                                     취소
                                 </button>
                                 <button 
-                                    onClick={() => {
+                                    onClick={(e) => {
+                                        e.stopPropagation();
                                         if (warningModalInfo.action) executeAction(warningModalInfo.action);
                                         setWarningModalInfo({ isOpen: false, action: null, missingCntrs: [] });
                                     }}

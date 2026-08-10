@@ -113,16 +113,33 @@ export async function GET(req: NextRequest) {
                         const fetchUrl = gdriveUrl || (gdriveFileId ? `https://lh3.googleusercontent.com/d/${gdriveFileId}` : null);
                         if (fetchUrl) {
                             try {
-                                const res = await fetch(fetchUrl, { signal: AbortSignal.timeout(5000) });
+                                const res = await fetch(fetchUrl, { signal: AbortSignal.timeout(5000), redirect: 'manual' });
                                 if (res.ok) {
-                                    fileBuffer = Buffer.from(await res.arrayBuffer());
+                                    const buffer = Buffer.from(await res.arrayBuffer());
+                                    // Validate it's an image
+                                    if (buffer.length > 3) {
+                                        const hex = buffer.subarray(0, 3).toString('hex').toUpperCase();
+                                        const isJpg = relativePath.toLowerCase().endsWith('.jpg') || relativePath.toLowerCase().endsWith('.jpeg');
+                                        const isPng = relativePath.toLowerCase().endsWith('.png');
+                                        if ((isJpg && hex === 'FFD8FF') || (isPng && hex === '89504E')) {
+                                            fileBuffer = buffer;
+                                        }
+                                    }
                                 }
                             } catch (e) {}
                         }
 
                         if (!fileBuffer && gdriveFileId) {
                             try {
-                                fileBuffer = await downloadFromGoogleDrive(gdriveFileId);
+                                const buffer = await downloadFromGoogleDrive(gdriveFileId);
+                                if (buffer && buffer.length > 3) {
+                                    const hex = buffer.subarray(0, 3).toString('hex').toUpperCase();
+                                    const isJpg = relativePath.toLowerCase().endsWith('.jpg') || relativePath.toLowerCase().endsWith('.jpeg');
+                                    const isPng = relativePath.toLowerCase().endsWith('.png');
+                                    if ((isJpg && hex === 'FFD8FF') || (isPng && hex === '89504E')) {
+                                        fileBuffer = buffer;
+                                    }
+                                }
                             } catch (e) {}
                         }
 

@@ -24,6 +24,7 @@ export async function POST(req: NextRequest) {
         const jobIdStr = formData.get('jobId') as string | null;
         const cntrNo = formData.get('cntrNo') as string | null;
         const remark = formData.get('remark') as string | null;
+        const emptyBoxesStr = formData.get('emptyBoxes') as string | null;
         const durationMinutesStr = formData.get('durationMinutes') as string | null;
         const durationMinutes = durationMinutesStr && !isNaN(parseInt(durationMinutesStr, 10)) ? parseInt(durationMinutesStr, 10) : 45;
         const photoType = (formData.get('photoType') as string | null) || 'normal';
@@ -42,7 +43,7 @@ export async function POST(req: NextRequest) {
 
         // Create container-specific folder inside uploads
         const uploadsDir = process.env.UPLOAD_DIR || path.join(process.cwd(), 'uploads');
-        const containerDir = path.join(uploadsDir, sanitizedCntrNo);
+        const containerDir = path.join(/*turbopackIgnore: true*/ uploadsDir, sanitizedCntrNo);
         if (!fs.existsSync(containerDir)) {
             fs.mkdirSync(containerDir, { recursive: true });
         }
@@ -148,13 +149,13 @@ export async function POST(req: NextRequest) {
             let baseName = `${extractedDate.getFullYear()}${pad(extractedDate.getMonth() + 1)}${pad(extractedDate.getDate())}_${pad(extractedDate.getHours())}${pad(extractedDate.getMinutes())}${pad(extractedDate.getSeconds())}`;
             
             let filename = `${baseName}${ext}`;
-            let filePath = path.join(containerDir, filename);
+            let filePath = path.join(/*turbopackIgnore: true*/ containerDir, filename);
 
             let duplicateCount = 1;
             // Prevent filesystem overwrite by incrementing suffix if file exactly matches
             while (fs.existsSync(filePath)) {
                 filename = `${baseName}_${duplicateCount}${ext}`;
-                filePath = path.join(containerDir, filename);
+                filePath = path.join(/*turbopackIgnore: true*/ containerDir, filename);
                 duplicateCount++;
             }
 
@@ -202,6 +203,34 @@ export async function POST(req: NextRequest) {
                     remark = COALESCE(NULLIF($2, ''), remark)
                 WHERE job_id = $3 AND (cntr_no = $4 OR ($4 = '' AND cntr_no IS NULL)) AND (is_deleted IS NOT TRUE)
             `, [durationMinutes, remark || '', jobId, cntrNo]);
+
+            if (emptyBoxesStr !== null) {
+                try {
+                    const emptyBoxes: {name: string, qty: number}[] = JSON.parse(emptyBoxesStr);
+                    if (emptyBoxes.length > 0) {
+                        for (const box of emptyBoxes) {
+                            await client.query(`
+                                INSERT INTO container_empty_boxes (job_id, cntr_no, box_name, qty, is_worker_edited)
+                                VALUES ($1, $2, $3, $4, true)
+                                ON CONFLICT (job_id, cntr_no, box_name) DO UPDATE 
+                                SET qty = EXCLUDED.qty, is_worker_edited = true, updated_at = CURRENT_TIMESTAMP
+                            `, [jobId, cntrNo, box.name, box.qty]);
+                        }
+                        const boxNames = emptyBoxes.map(b => b.name);
+                        await client.query(`
+                            DELETE FROM container_empty_boxes 
+                            WHERE job_id = $1 AND cntr_no = $2 AND box_name != ALL($3)
+                        `, [jobId, cntrNo, boxNames]);
+                    } else {
+                        await client.query(`
+                            DELETE FROM container_empty_boxes 
+                            WHERE job_id = $1 AND cntr_no = $2
+                        `, [jobId, cntrNo]);
+                    }
+                } catch (e) {
+                    console.error("Failed to parse or save emptyBoxes", e);
+                }
+            }
 
             return NextResponse.json({
                 success: true,
@@ -339,7 +368,7 @@ export async function GET(req: NextRequest) {
             const photosWithStats = res.rows.map(row => {
                 let fileCreatedAt = row.uploaded_at;
                 try {
-                    const filePath = path.join(uploadsDir, row.photo_path);
+                    const filePath = path.join(/*turbopackIgnore: true*/ uploadsDir, row.photo_path);
                     if (fs.existsSync(filePath)) {
                         let parsedExif = false;
                         try {
@@ -542,7 +571,7 @@ export async function DELETE(req: NextRequest) {
                     }
 
                     const containerFolder = cntrNo.replace(/[^a-zA-Z0-9]/g, '_').toUpperCase();
-                    const containerDir = path.join(uploadsDir, containerFolder);
+                    const containerDir = path.join(/*turbopackIgnore: true*/ uploadsDir, containerFolder);
                     if (fs.existsSync(containerDir) && fs.readdirSync(containerDir).length === 0) {
                         fs.rmdirSync(containerDir);
                     }

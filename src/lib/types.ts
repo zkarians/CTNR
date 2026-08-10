@@ -72,6 +72,9 @@ export interface Job {
     photo_count?: number;
     active_photo_count?: number;
     seal_photo_count?: number;
+    db_remark?: string;
+    empty_boxes?: { name: string; qty: number }[];
+    empty_boxes_updated_at?: string;
     uploaders?: string[];
     work_duration_minutes?: number;
     remark?: string;

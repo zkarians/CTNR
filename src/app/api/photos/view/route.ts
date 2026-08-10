@@ -116,6 +116,25 @@ export async function GET(req: NextRequest) {
                         remoteBuffer = Buffer.from(arrayBuffer);
                         fetchedContentType = res.headers.get('content-type') || 'image/jpeg';
                         
+                        // Strict validation: Must be an image
+                        if (!fetchedContentType.toLowerCase().includes('image')) {
+                            remoteBuffer = null;
+                            continue;
+                        }
+
+                        // Strict validation: Check magic bytes for JPEG or PNG
+                        if (remoteBuffer.length > 3) {
+                            const hex = remoteBuffer.subarray(0, 3).toString('hex').toUpperCase();
+                            const isJpg = filename.toLowerCase().endsWith('.jpg') || filename.toLowerCase().endsWith('.jpeg');
+                            const isPng = filename.toLowerCase().endsWith('.png');
+                            
+                            if ((isJpg && hex !== 'FFD8FF') || (isPng && hex !== '89504E')) {
+                                console.warn(`[Cache Warning] Remote server returned invalid image data (Hex: ${hex}) for ${filename}. Skipping cache.`);
+                                remoteBuffer = null;
+                                continue;
+                            }
+                        }
+
                         // Cache it locally so subsequent requests are served instantly from disk
                         try {
                             const dir = path.dirname(filePath);

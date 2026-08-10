@@ -98,14 +98,25 @@ export async function findGoogleDriveFileByName(
  */
 export async function downloadFromGoogleDrive(fileId: string): Promise<Buffer> {
     const auth = getOAuth2Client();
-    const drive = google.drive({ version: 'v3', auth });
+    const token = await auth.getAccessToken();
+    if (!token.token) {
+        throw new Error('Failed to retrieve access token for Google Drive.');
+    }
 
-    const response = await drive.files.get(
-        { fileId, alt: 'media' },
-        { responseType: 'arraybuffer' }
-    );
+    const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
+        headers: {
+            Authorization: `Bearer ${token.token}`
+        },
+        // Prevent Next.js from caching this fetch aggressively
+        cache: 'no-store'
+    });
 
-    return Buffer.from(response.data as ArrayBuffer);
+    if (!res.ok) {
+        throw new Error(`Google Drive download failed: ${res.statusText}`);
+    }
+
+    const arrayBuffer = await res.arrayBuffer();
+    return Buffer.from(arrayBuffer);
 }
 
 /**
