@@ -1597,7 +1597,12 @@ export default function Home({ user }: { user: SessionUser }) {
         if (isAdmin && !id.startsWith('manual_')) {
             if (window.confirm("이 제품을 데이터베이스에서 영구적으로 삭제하시겠습니까?\n[확인]을 누르면 DB에서 삭제되며, [취소]를 누르면 현재 화면에서만 임시로 제외됩니다.")) {
                 try {
-                    const res = await deleteContainerResult(id);
+                    const jobId = selectedJob?.id;
+                    if (!jobId) {
+                        alert("작업을 먼저 선택해주세요.");
+                        return;
+                    }
+                    const res = await deleteContainerResult(jobId, id);
                     if (!res.success) {
                         alert(res.error || "DB 삭제에 실패했습니다.");
                         return; // DB 삭제 실패 시 UI에서도 지우지 않음 (또는 지워도 되지만 일관성을 위해 리턴)

@@ -1196,7 +1196,39 @@ export async function triggerManualBackupAndSync(): Promise<{ success: boolean; 
         return { success: false, error: err?.message || '실행 중 오류가 발생했습니다.' };
     }
 }
-export async function deleteContainerResult(id: string): Promise<{ success: boolean; error?: string }> {
+export async function deleteContainerResult(jobId: string, prodName: string): Promise<{ success: boolean; error?: string }> {
+    try {
+        const session = await getSession();
+        if (!session || (session.role !== 'ADMIN' && session.role !== 'MANAGER')) {
+            return { success: false, error: 'Unauthorized' };
+        }
+
+        const client = await pool.connect();
+        try {
+            // Find job info
+            const infoRes = await client.query('SELECT job_name, (SELECT cntr_no FROM container_results WHERE job_id = $1 LIMIT 1) as cntr_no FROM container_jobs WHERE id = $1', [jobId]);
+            if (infoRes.rows.length > 0) {
+                const { job_name, cntr_no } = infoRes.rows[0];
+                await client.query(
+                    DELETE FROM container_results 
+                    WHERE prod_name = $1 
+                    AND (
+                        ($2::text IS NOT NULL AND cntr_no = $2 AND job_id IN (SELECT id FROM container_jobs WHERE job_name = $3))
+                        OR
+                        ($2::text IS NULL AND job_id = $4)
+                    )
+                , [prodName, cntr_no, job_name, jobId]);
+            }
+        } finally {
+            client.release();
+        }
+        
+        return { success: true };
+    } catch (err: any) {
+        console.error('deleteContainerResult Error:', err);
+        return { success: false, error: err?.message || 'DB delete error' };
+    }
+}> {
     try {
         const session = await getSession();
         if (!session || (session.role !== 'ADMIN' && session.role !== 'MANAGER')) {
@@ -1209,4 +1241,5 @@ export async function deleteContainerResult(id: string): Promise<{ success: bool
         return { success: false, error: err?.message || 'DB delete error' };
     }
 }
+
 
