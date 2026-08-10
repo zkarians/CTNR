@@ -1602,14 +1602,14 @@ export default function Home({ user }: { user: SessionUser }) {
                         alert("작업을 먼저 선택해주세요.");
                         return;
                     }
-                    const res = await deleteContainerResult(jobId, id);
+                    const res = await deleteContainerResult(String(jobId), id);
                     if (!res.success) {
                         alert(res.error || "DB 삭제에 실패했습니다.");
                         return; // DB 삭제 실패 시 UI에서도 지우지 않음 (또는 지워도 되지만 일관성을 위해 리턴)
                     }
-                } catch (e) {
+                } catch (e: any) {
                     console.error("delete product error:", e);
-                    alert("DB 삭제 중 오류가 발생했습니다.");
+                    alert("DB 삭제 중 오류가 발생했습니다. 상세: " + (e.message || String(e)));
                     return;
                 }
             }
