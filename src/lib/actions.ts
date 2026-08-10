@@ -760,6 +760,7 @@ export async function updateContainerAdminComment(
     try {
         const client = await pool.connect();
         try {
+            await client.query('BEGIN');
             const todayStr = getWorkDateString(new Date());
             const targetWorkDate = workDate || todayStr;
             await client.query(`
@@ -774,7 +775,11 @@ export async function updateContainerAdminComment(
                 ON CONFLICT (work_date, cntr_no)
                 DO UPDATE SET admin_comment = EXCLUDED.admin_comment, updated_at = NOW()
             `, [targetWorkDate, cntrNo, comment]);
+            await client.query('COMMIT');
             return { success: true };
+        } catch (err) {
+            await client.query('ROLLBACK');
+            throw err;
         } finally {
             client.release();
         }
@@ -851,6 +856,7 @@ export async function saveDailyWorkReport({
     try {
         const client = await pool.connect();
         try {
+            await client.query('BEGIN');
             await client.query(`
                 CREATE TABLE IF NOT EXISTS daily_work_reports (
                     work_date VARCHAR(20) PRIMARY KEY,
@@ -874,6 +880,7 @@ export async function saveDailyWorkReport({
                 RETURNING updated_at;
             `, [workDate, reportText, JSON.stringify(reportData || []), savedBy || '관리자']);
 
+            await client.query('COMMIT');
             const updatedAt = res.rows[0]?.updated_at;
 
             return {
@@ -881,6 +888,9 @@ export async function saveDailyWorkReport({
                 message: `${workDate} 보고서가 성공적으로 저장되었습니다.`,
                 updatedAt: updatedAt ? new Date(updatedAt).toISOString() : new Date().toISOString()
             };
+        } catch (err) {
+            await client.query('ROLLBACK');
+            throw err;
         } finally {
             client.release();
         }
