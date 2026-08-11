@@ -367,7 +367,7 @@ export async function generateWorkReport(filters: JobFilters): Promise<{ success
             const query = `
                 WITH GroupedResults AS (
                     SELECT 
-                        MAX(j.id) as job_id,
+                        MAX(COALESCE(p.photo_job_id, j.id)) as job_id,
                         COALESCE(r.cntr_no, j.job_name, '미지정') as cntr_no,
                         r.prod_name,
                         r.division,
@@ -387,17 +387,19 @@ export async function generateWorkReport(filters: JobFilters): Promise<{ success
                     LEFT JOIN product_master_sync mp ON r.prod_name = mp.prod_name
                     LEFT JOIN (
                         SELECT 
-                            job_id, 
-                            cntr_no, 
-                            MAX(team_id) as team_id,
-                            MAX(work_duration_minutes) as work_duration_minutes,
-                            BOOL_OR(is_completed) as is_completed,
-                            MIN(uploaded_at) as uploaded_at,
-                            MAX(remark) as remark
-                        FROM container_photos
-                        WHERE (is_deleted IS NOT TRUE)
-                        GROUP BY job_id, cntr_no
-                    ) p ON p.job_id = j.id AND (p.cntr_no = r.cntr_no OR (r.cntr_no IS NULL AND p.cntr_no IS NULL))
+                            cj.job_name,
+                            cp.cntr_no, 
+                            MAX(cp.job_id) as photo_job_id,
+                            MAX(cp.team_id) as team_id,
+                            MAX(cp.work_duration_minutes) as work_duration_minutes,
+                            BOOL_OR(cp.is_completed) as is_completed,
+                            MIN(cp.uploaded_at) as uploaded_at,
+                            MAX(cp.remark) as remark
+                        FROM container_photos cp
+                        LEFT JOIN container_jobs cj ON cp.job_id = cj.id
+                        WHERE (cp.is_deleted IS NOT TRUE)
+                        GROUP BY cj.job_name, cp.cntr_no
+                    ) p ON p.job_name = j.job_name AND (p.cntr_no = r.cntr_no OR (r.cntr_no IS NULL AND p.cntr_no IS NULL))
                     LEFT JOIN teams t ON p.team_id = t.id
                     LEFT JOIN container_comments cc 
                       ON cc.cntr_no = COALESCE(r.cntr_no, j.job_name, '미지정')
