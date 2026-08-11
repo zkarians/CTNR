@@ -660,7 +660,9 @@ export async function generateWorkReport(filters: JobFilters): Promise<{ success
                             transporter: cntrData.transporter,
                             adminComment: cntrData.adminComment,
                             products: cntrData.products,
-                            emptyBoxes: cntrData.emptyBoxes || []
+                            emptyBoxes: cntrData.emptyBoxes || [],
+                            firstUploadedAt: cntrData.firstUploadedAt,
+                            manualEntryId: cntrData.manualEntryId
                         };
                     });
 
