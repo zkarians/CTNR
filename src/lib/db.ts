@@ -219,13 +219,14 @@ export async function getJobsFromDB(filters?: JobFilters): Promise<Job[]> {
                         (SELECT MAX(eb.updated_at) FROM container_empty_boxes eb WHERE eb.job_id = j.id AND eb.cntr_no = r.cntr_no) as empty_boxes_updated_at
                     FROM container_jobs j
                     LEFT JOIN (
-                        SELECT job_id, cntr_no, MAX(transporter) as transporter, MAX(cntr_type) as cntr_type,
+                        SELECT j2.job_name, cntr_no, MAX(transporter) as transporter, MAX(cntr_type) as cntr_type,
                                COUNT(DISTINCT prod_name)::integer as model_count,
                                SUM(qty_plan)::integer as total_qty,
-                               MAX(remark) as db_remark
-                        FROM container_results
-                        GROUP BY job_id, cntr_no
-                    ) r ON r.job_id = j.id
+                               MAX(cr.remark) as db_remark
+                        FROM container_results cr
+                        JOIN container_jobs j2 ON cr.job_id = j2.id
+                        GROUP BY j2.job_name, cntr_no
+                    ) r ON r.job_name = j.job_name
                     ${whereSql}
                     ORDER BY COALESCE(r.cntr_no, j.id::text), j.job_name, j.saved_at DESC, j.id DESC
                 ) sub
@@ -284,13 +285,20 @@ export async function getProductsForJob(jobId: number): Promise<Product[]> {
         const client = await pool.connect();
         try {
             // First, find the container number and job name for this jobId to handle split jobs
-            const infoQuery = `
-                SELECT j.job_name, r.cntr_no 
-                FROM container_jobs j
-                LEFT JOIN container_results r ON r.job_id = j.id
-                WHERE j.id = $1
-                LIMIT 1
-            `;
+              const infoQuery = `
+                  SELECT j.job_name, 
+                         COALESCE(r.cntr_no, (
+                             SELECT cr.cntr_no 
+                             FROM container_results cr 
+                             JOIN container_jobs j2 ON cr.job_id = j2.id 
+                             WHERE j2.job_name = j.job_name 
+                             LIMIT 1
+                         )) as cntr_no 
+                  FROM container_jobs j
+                  LEFT JOIN container_results r ON r.job_id = j.id
+                  WHERE j.id = $1
+                  LIMIT 1
+              `;
             const infoRes = await client.query(infoQuery, [jobId]);
             
             if (infoRes.rows.length === 0) return [];
