@@ -1382,6 +1382,10 @@ export default function Home({ user }: { user: SessionUser }) {
             const teamGroup = targetDateGroup.uploaders.find((u: any) => isSameTeam(u.teamName, teamName));
             
             if (teamGroup && teamGroup.containers) {
+                const container = teamGroup.containers[cntrIdx];
+                if (container && container.manualEntryId) {
+                    deleteManualReportEntry(container.manualEntryId).catch(console.error);
+                }
                 teamGroup.containers.splice(cntrIdx, 1);
                 teamGroup.containers = calculateTeamTimeline<any>(teamGroup.containers).map((item: any) => ({
                     ...item,
