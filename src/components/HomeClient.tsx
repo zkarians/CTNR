@@ -1390,7 +1390,7 @@ const handleSaveComment = async (cntrNo: string) => {
 
         setManualDuration(String(cntr.durationMinutes || 45));
         
-        let remark = cntr.lastRemark || '';
+        let remark = cntr.remark || cntr.lastRemark || '';
         if (remark.startsWith('지연사유: ')) {
             remark = remark.substring(6).trim();
         }
