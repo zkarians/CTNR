@@ -1330,7 +1330,20 @@ export async function deleteContainerResult(jobId: string, prodName: string): Pr
         const client = await pool.connect();
         try {
             // Find job info
-            const infoRes = await client.query('SELECT job_name, (SELECT cntr_no FROM container_results WHERE job_id = $1 LIMIT 1) as cntr_no FROM container_jobs WHERE id = $1', [jobId]);
+            const infoRes = await client.query(`
+                SELECT j.job_name, 
+                       COALESCE(r.cntr_no, (
+                           SELECT cr.cntr_no 
+                           FROM container_results cr 
+                           JOIN container_jobs j2 ON cr.job_id = j2.id 
+                           WHERE j2.job_name = j.job_name 
+                           LIMIT 1
+                       )) as cntr_no 
+                FROM container_jobs j
+                LEFT JOIN container_results r ON r.job_id = j.id
+                WHERE j.id = $1
+                LIMIT 1
+            `, [jobId]);
             if (infoRes.rows.length > 0) {
                 const { job_name, cntr_no } = infoRes.rows[0];
                 await client.query(`

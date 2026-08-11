@@ -997,10 +997,18 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
                 setPhotos(data.photos);
                 setSelectedFolders([]);
             } else {
-                console.error("Error fetching photos:", data.error);
+                if (res.status === 401 || data.error?.includes('인증되지 않은')) {
+                    // Ignore auth errors during logout
+                } else {
+                    console.error("Error fetching photos:", data.error);
+                }
             }
-        } catch (error) {
-            console.error("Error loading photos:", error);
+        } catch (error: any) {
+            if (error?.message?.includes('인증되지 않은')) {
+                // Ignore
+            } else {
+                console.error("Error loading photos:", error);
+            }
         } finally {
             setIsLoading(false);
         }
