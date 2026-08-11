@@ -205,26 +205,23 @@ export async function fetchJobs(filters?: JobFilters): Promise<Job[]> {
 export async function searchProducts(query: string): Promise<Product[]> {
     try {
         const client = await pool.connect();
-        try {
-            const res = await client.query(`
-                SELECT prod_name as model_name, COALESCE(width, 0) as width, COALESCE(depth, 0) as length, COALESCE(height, 0) as height, prod_type
-                FROM product_master_sync
-                WHERE prod_name ILIKE $1
-                LIMIT 10
-            `, [`%${query}%`]);
-            return res.rows.map((row: any, idx: number) => ({
-                id: `search_${idx}`,
-                model_name: row.model_name,
-                width: Number(row.width) || 0,
-                length: Number(row.length) || 0,
-                height: Number(row.height) || 0,
-                quantity: 1,
-                allow_rotate: true,
-                allow_lay_down: false
-            }));
-        } finally {
-            client.release();
-        }
+        const res = await client.query(`
+            SELECT prod_name as model_name, COALESCE(width, 0) as width, COALESCE(depth, 0) as length, COALESCE(height, 0) as height, prod_type
+            FROM product_master_sync
+            WHERE prod_name ILIKE $1
+            LIMIT 10
+        `, [`%${query}%`]);
+        client.release();
+        return res.rows.map((row: any, idx: number) => ({
+            id: `search_${idx}`,
+            model_name: row.model_name,
+            width: Number(row.width) || 0,
+            length: Number(row.length) || 0,
+            height: Number(row.height) || 0,
+            quantity: 1,
+            allow_rotate: true,
+            allow_lay_down: false
+        }));
     } catch (e) {
         console.error(e);
         return [];
@@ -327,29 +324,14 @@ export async function generateWorkReport(filters: JobFilters): Promise<{ success
 
             whereClauses.push(`COALESCE(r.qty_plan, 0) > 0`);
 
-            if (!filters.startDate && !filters.endDate) {
-                // 기본값: 오늘 날짜
+            if (filters.startDate) {
                 whereClauses.push(`COALESCE(p.uploaded_at, j.saved_at) AT TIME ZONE 'Asia/Seoul' >= $${paramIdx++}::timestamp`);
-                params.push(`${todayWorkDateStr} 13:00:00`);
-            } else {
-                if (filters.startDate && filters.endDate) {
-                    const s = new Date(filters.startDate);
-                    const e = new Date(filters.endDate);
-                    const diffDays = Math.ceil((e.getTime() - s.getTime()) / (1000 * 60 * 60 * 24));
-                    if (diffDays > 31) {
-                        return { success: false, error: "보고서 생성은 최대 31일 범위까지만 가능합니다. 조회 기간을 줄여주세요." };
-                    }
-                }
-                if (filters.startDate) {
-                    whereClauses.push(`COALESCE(p.uploaded_at, j.saved_at) AT TIME ZONE 'Asia/Seoul' >= $${paramIdx++}::timestamp`);
-                    params.push(`${filters.startDate} 13:00:00`);
-                }
-                if (filters.endDate) {
-                    whereClauses.push(`COALESCE(p.uploaded_at, j.saved_at) AT TIME ZONE 'Asia/Seoul' <= ($${paramIdx++}::date + INTERVAL '1 day 12 hours 59 minutes 59.999 seconds')`);
-                    params.push(filters.endDate);
-                }
+                params.push(`${filters.startDate} 13:00:00`);
             }
-
+            if (filters.endDate) {
+                whereClauses.push(`COALESCE(p.uploaded_at, j.saved_at) AT TIME ZONE 'Asia/Seoul' <= ($${paramIdx++}::date + INTERVAL '1 day 12 hours 59 minutes 59.999 seconds')`);
+                params.push(filters.endDate);
+            }
             if (filters.productName) {
                 whereClauses.push(`r.prod_name ILIKE $${paramIdx++}`);
                 params.push(`%${filters.productName}%`);
@@ -416,33 +398,7 @@ export async function generateWorkReport(filters: JobFilters): Promise<{ success
             const res = await client.query(query, params);
             const rows = res.rows;
 
-            // --- Fetch Manual Report Entries ---
-            const manualWhereClauses = [];
-            const manualParams = [];
-            let mParamIdx = 1;
-            
-            if (!filters.startDate && !filters.endDate) {
-                manualWhereClauses.push(`work_date = $${mParamIdx++}`);
-                manualParams.push(todayWorkDateStr);
-            } else {
-                if (filters.startDate) {
-                    manualWhereClauses.push(`work_date >= $${mParamIdx++}`);
-                    manualParams.push(filters.startDate);
-                }
-                if (filters.endDate) {
-                    manualWhereClauses.push(`work_date <= $${mParamIdx++}`);
-                    manualParams.push(filters.endDate);
-                }
-            }
-            if (filters.containerNo) {
-                manualWhereClauses.push(`cntr_no ILIKE $${mParamIdx++}`);
-                manualParams.push(`%${filters.containerNo}%`);
-            }
-            
-            const mWhereSql = manualWhereClauses.length > 0 ? "WHERE " + manualWhereClauses.join(" AND ") : "";
-            const manualRes = await client.query(`SELECT * FROM manual_report_entries ${mWhereSql}`, manualParams);
-            
-            if (rows.length === 0 && manualRes.rows.length === 0) {
+            if (rows.length === 0) {
                 return { success: false, error: '조건에 일치하는 작업 내역이 없습니다.' };
             }
 
@@ -499,45 +455,6 @@ export async function generateWorkReport(filters: JobFilters): Promise<{ success
                 const emptyBoxes = Array.isArray(row.empty_boxes) ? row.empty_boxes : [];
                 if (emptyBoxes.length > 0 && cntrData.emptyBoxes.length === 0) {
                     cntrData.emptyBoxes = emptyBoxes;
-                }
-            }
-            
-            // --- Merge Manual Report Entries ---
-            for (const mRow of manualRes.rows) {
-                const workDateStr = mRow.work_date;
-                const teamName = mRow.team_name;
-                const cntrNo = mRow.cntr_no;
-                
-                if (!dateMap.has(workDateStr)) dateMap.set(workDateStr, new Map());
-                const teamMap = dateMap.get(workDateStr);
-                if (!teamMap.has(teamName)) teamMap.set(teamName, new Map());
-                const cntrMap = teamMap.get(teamName);
-                
-                if (!cntrMap.has(cntrNo)) {
-                    cntrMap.set(cntrNo, { 
-                        isCompleted: true, 
-                        division: 'DFZ', 
-                        durationMinutes: mRow.duration_minutes || 45, 
-                        firstUploadedAt: mRow.first_uploaded_at ? new Date(mRow.first_uploaded_at) : new Date(), 
-                        remark: mRow.remark || '', 
-                        transporter: '', 
-                        adminComment: mRow.category || '', 
-                        products: [], 
-                        emptyBoxes: [],
-                        manualEntryId: mRow.id
-                    });
-                }
-                
-                const cntrData = cntrMap.get(cntrNo);
-                
-                const mProducts = mRow.products || [];
-                for (const p of mProducts) {
-                    cntrData.products.push({ name: p.name, qty: p.qty, division: p.division || 'DFZ', height: 0 });
-                }
-                
-                const mEmptyBoxes = mRow.empty_boxes || [];
-                if (mEmptyBoxes.length > 0) {
-                    cntrData.emptyBoxes.push(...mEmptyBoxes);
                 }
             }
 
@@ -660,9 +577,7 @@ export async function generateWorkReport(filters: JobFilters): Promise<{ success
                             transporter: cntrData.transporter,
                             adminComment: cntrData.adminComment,
                             products: cntrData.products,
-                            emptyBoxes: cntrData.emptyBoxes || [],
-                            firstUploadedAt: cntrData.firstUploadedAt ? cntrData.firstUploadedAt.toISOString() : undefined,
-                            manualEntryId: cntrData.manualEntryId
+                            emptyBoxes: cntrData.emptyBoxes || []
                         };
                     });
 
@@ -708,9 +623,6 @@ export interface TeamWorkProgress {
         durationMinutes: number;
         startTimeStr: string;
         endTimeStr: string;
-        isManual?: boolean;
-        manualEntryId?: number;
-        firstUploadedAt?: string;
     }[];
 }
 
@@ -725,46 +637,30 @@ export async function fetchTeamWorkProgress(targetWorkDate?: string): Promise<Re
             const workDate = targetWorkDate || getWorkDateString(new Date());
 
             const query = `
-                WITH Combined AS (
-                    SELECT 
-                        COALESCE(t.name, '미지정 조') as team_name,
-                        COALESCE(p.cntr_no, j.job_name, '미지정') as cntr_no,
-                        COALESCE(MAX(p.work_duration_minutes), 45) as duration_minutes,
-                        MIN(p.uploaded_at) as first_uploaded_at,
-                        false as is_manual,
-                        NULL::integer as manual_entry_id
-                    FROM container_photos p
-                    LEFT JOIN teams t ON p.team_id = t.id
-                    LEFT JOIN container_jobs j ON p.job_id = j.id
-                    WHERE (p.is_deleted IS NOT TRUE)
-                      AND (p.is_completed IS NOT TRUE)
-                      AND (
-                        CASE
-                          WHEN EXTRACT(HOUR FROM (p.uploaded_at AT TIME ZONE 'Asia/Seoul')) < 13
-                          THEN ((p.uploaded_at AT TIME ZONE 'Asia/Seoul')::date - INTERVAL '1 day')::date
-                          ELSE (p.uploaded_at AT TIME ZONE 'Asia/Seoul')::date
-                        END
-                      ) = $1::date
-                    GROUP BY COALESCE(t.name, '미지정 조'), COALESCE(p.cntr_no, j.job_name, '미지정')
-                    
-                    UNION ALL
-                    
-                    SELECT 
-                        team_name,
-                        cntr_no,
-                        duration_minutes,
-                        first_uploaded_at,
-                        true as is_manual,
-                        id as manual_entry_id
-                    FROM manual_report_entries
-                    WHERE work_date = $1
-                )
-                SELECT * FROM Combined ORDER BY first_uploaded_at ASC
+                SELECT 
+                    COALESCE(t.name, '미지정 조') as team_name,
+                    COALESCE(p.cntr_no, j.job_name, '미지정') as cntr_no,
+                    COALESCE(MAX(p.work_duration_minutes), 45) as duration_minutes,
+                    MIN(p.uploaded_at) as first_uploaded_at
+                FROM container_photos p
+                LEFT JOIN teams t ON p.team_id = t.id
+                LEFT JOIN container_jobs j ON p.job_id = j.id
+                WHERE (p.is_deleted IS NOT TRUE)
+                  AND (p.is_completed IS NOT TRUE)
+                  AND (
+                    CASE
+                      WHEN EXTRACT(HOUR FROM (p.uploaded_at AT TIME ZONE 'Asia/Seoul')) < 13
+                      THEN ((p.uploaded_at AT TIME ZONE 'Asia/Seoul')::date - INTERVAL '1 day')::date
+                      ELSE (p.uploaded_at AT TIME ZONE 'Asia/Seoul')::date
+                    END
+                  ) = $1::date
+                GROUP BY COALESCE(t.name, '미지정 조'), COALESCE(p.cntr_no, j.job_name, '미지정')
+                ORDER BY first_uploaded_at ASC
             `;
 
             const res = await client.query(query, [workDate]);
 
-            const teamContainersMap = new Map<string, Map<string, { durationMinutes: number; firstUploadedAt: Date; isManual?: boolean; manualEntryId?: number }>>();
+            const teamContainersMap = new Map<string, Map<string, { durationMinutes: number; firstUploadedAt: Date }>>();
 
             for (const row of res.rows) {
                 const uploadedAt = row.first_uploaded_at ? new Date(row.first_uploaded_at) : new Date();
@@ -778,12 +674,7 @@ export async function fetchTeamWorkProgress(targetWorkDate?: string): Promise<Re
                 }
                 const cntrMap = teamContainersMap.get(teamName)!;
                 if (!cntrMap.has(cntrNo)) {
-                    cntrMap.set(cntrNo, { 
-                        durationMinutes, 
-                        firstUploadedAt: uploadedAt,
-                        isManual: row.is_manual,
-                        manualEntryId: row.manual_entry_id
-                    });
+                    cntrMap.set(cntrNo, { durationMinutes, firstUploadedAt: uploadedAt });
                 }
             }
 
@@ -812,9 +703,6 @@ export async function fetchTeamWorkProgress(targetWorkDate?: string): Promise<Re
                             durationMinutes: c.durationMinutes,
                             startTimeStr: c.startTimeStr,
                             endTimeStr: c.endTimeStr,
-                            isManual: (c as any).isManual,
-                            manualEntryId: (c as any).manualEntryId,
-                            firstUploadedAt: (c as any).firstUploadedAt ? (c as any).firstUploadedAt.toISOString() : undefined
                         }))
                     };
                 }
@@ -869,7 +757,6 @@ export async function updateContainerAdminComment(
     try {
         const client = await pool.connect();
         try {
-            await client.query('BEGIN');
             const todayStr = getWorkDateString(new Date());
             const targetWorkDate = workDate || todayStr;
             await client.query(`
@@ -884,11 +771,7 @@ export async function updateContainerAdminComment(
                 ON CONFLICT (work_date, cntr_no)
                 DO UPDATE SET admin_comment = EXCLUDED.admin_comment, updated_at = NOW()
             `, [targetWorkDate, cntrNo, comment]);
-            await client.query('COMMIT');
             return { success: true };
-        } catch (err) {
-            await client.query('ROLLBACK');
-            throw err;
         } finally {
             client.release();
         }
@@ -965,7 +848,6 @@ export async function saveDailyWorkReport({
     try {
         const client = await pool.connect();
         try {
-            await client.query('BEGIN');
             await client.query(`
                 CREATE TABLE IF NOT EXISTS daily_work_reports (
                     work_date VARCHAR(20) PRIMARY KEY,
@@ -989,7 +871,6 @@ export async function saveDailyWorkReport({
                 RETURNING updated_at;
             `, [workDate, reportText, JSON.stringify(reportData || []), savedBy || '관리자']);
 
-            await client.query('COMMIT');
             const updatedAt = res.rows[0]?.updated_at;
 
             return {
@@ -997,9 +878,6 @@ export async function saveDailyWorkReport({
                 message: `${workDate} 보고서가 성공적으로 저장되었습니다.`,
                 updatedAt: updatedAt ? new Date(updatedAt).toISOString() : new Date().toISOString()
             };
-        } catch (err) {
-            await client.query('ROLLBACK');
-            throw err;
         } finally {
             client.release();
         }
@@ -1349,131 +1227,5 @@ export async function deleteContainerResult(jobId: string, prodName: string): Pr
     } catch (err: any) {
         console.error('deleteContainerResult Error:', err);
         return { success: false, error: err?.message || 'DB delete error' };
-    }
-}
-
-
-export async function addManualReportEntry(params: {
-    workDate: string;
-    teamName: string;
-    cntrNo: string;
-    category: string;
-    durationMinutes: number;
-    remark: string;
-    products: any[];
-    emptyBoxes: any[];
-    firstUploadedAt?: string;
-}): Promise<{ success: boolean; error?: string }> {
-    try {
-        const session = await getSession();
-        if (!session || (session.role !== 'ADMIN' && session.role !== 'MANAGER')) {
-            return { success: false, error: 'Unauthorized' };
-        }
-        const client = await pool.connect();
-        try {
-            await client.query(`
-                INSERT INTO manual_report_entries 
-                (work_date, team_name, cntr_no, category, duration_minutes, remark, products, empty_boxes, first_uploaded_at)
-                VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9)
-            `, [
-                params.workDate, 
-                params.teamName, 
-                params.cntrNo, 
-                params.category, 
-                params.durationMinutes, 
-                params.remark, 
-                JSON.stringify(params.products || []),
-                JSON.stringify(params.emptyBoxes || []),
-                params.firstUploadedAt ? new Date(params.firstUploadedAt) : new Date()
-            ]);
-        } finally {
-            client.release();
-        }
-        return { success: true };
-    } catch (err: any) {
-        console.error('addManualReportEntry Error:', err);
-        return { success: false, error: err?.message || 'DB insert error' };
-    }
-}
-
-export async function deleteManualReportEntry(id: number): Promise<{ success: boolean; error?: string }> {
-    try {
-        const session = await getSession();
-        if (!session || (session.role !== 'ADMIN' && session.role !== 'MANAGER')) {
-            return { success: false, error: 'Unauthorized' };
-        }
-        const client = await pool.connect();
-        try {
-            await client.query('DELETE FROM manual_report_entries WHERE id = $1', [id]);
-        } finally {
-            client.release();
-        }
-        return { success: true };
-    } catch (err: any) {
-        console.error('deleteManualReportEntry Error:', err);
-        return { success: false, error: err?.message || 'DB delete error' };
-    }
-}
-
-
-export async function updateManualReportEntry(id: number, params: {
-    workDate: string;
-    teamName: string;
-    cntrNo: string;
-    category: string;
-    durationMinutes: number;
-    remark: string;
-    products: any[];
-    emptyBoxes: any[];
-    firstUploadedAt?: string;
-}): Promise<{ success: boolean; error?: string }> {
-    try {
-        const session = await getSession();
-        if (!session || (session.role !== 'ADMIN' && session.role !== 'MANAGER')) {
-            return { success: false, error: 'Unauthorized' };
-        }
-        const client = await pool.connect();
-        try {
-            if (params.firstUploadedAt) {
-                await client.query(`
-                    UPDATE manual_report_entries 
-                    SET work_date = $1, team_name = $2, cntr_no = $3, category = $4, duration_minutes = $5, remark = $6, products = $7::jsonb, empty_boxes = $8::jsonb, first_uploaded_at = $10
-                    WHERE id = $9
-                `, [
-                    params.workDate, 
-                    params.teamName, 
-                    params.cntrNo, 
-                    params.category, 
-                    params.durationMinutes, 
-                    params.remark, 
-                    JSON.stringify(params.products || []),
-                    JSON.stringify(params.emptyBoxes || []),
-                    id,
-                    params.firstUploadedAt
-                ]);
-            } else {
-                await client.query(`
-                    UPDATE manual_report_entries 
-                    SET work_date = $1, team_name = $2, cntr_no = $3, category = $4, duration_minutes = $5, remark = $6, products = $7::jsonb, empty_boxes = $8::jsonb
-                    WHERE id = $9
-                `, [
-                    params.workDate, 
-                    params.teamName, 
-                    params.cntrNo, 
-                    params.category, 
-                    params.durationMinutes, 
-                    params.remark, 
-                    JSON.stringify(params.products || []),
-                    JSON.stringify(params.emptyBoxes || []),
-                    id
-                ]);
-            }
-            return { success: true };
-        } finally {
-            client.release();
-        }
-    } catch (error: any) {
-        console.error("updateManualReportEntry Error:", error);
-        return { success: false, error: error.message };
     }
 }

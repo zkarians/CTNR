@@ -26,7 +26,7 @@ import {
     Product, PackingResult, ContainerType, CONTAINER_DATA, Job, JobFilters, DbConfig, UserAccount, Team
 } from '@/lib/types';
 import { packContainer } from '@/lib/packer';
-import { fetchJobs, fetchProductsByJob, searchProducts, getDbConfig, updateDbConfig, updatePassword, fetchAllUsers, createUserAccount, updateUserAccount, deleteUserAccount, deleteMultipleUserAccounts, generateWorkReport, saveDailyWorkReport, getSavedDailyWorkReport, exportDatabaseDump, restoreDatabaseDump, triggerManualBackupAndSync, fetchTeams, createTeam, updateTeam, deleteTeam, fetchTeamWorkProgress, TeamWorkProgress, updateContainerWorkDuration, updateContainerAdminComment, resetTeamWorkProgress, deleteContainerResult, addManualReportEntry, deleteManualReportEntry } from '@/lib/actions';
+import { fetchJobs, fetchProductsByJob, searchProducts, getDbConfig, updateDbConfig, updatePassword, fetchAllUsers, createUserAccount, updateUserAccount, deleteUserAccount, deleteMultipleUserAccounts, generateWorkReport, saveDailyWorkReport, getSavedDailyWorkReport, exportDatabaseDump, restoreDatabaseDump, triggerManualBackupAndSync, fetchTeams, createTeam, updateTeam, deleteTeam, fetchTeamWorkProgress, TeamWorkProgress, updateContainerWorkDuration, updateContainerAdminComment, resetTeamWorkProgress, deleteContainerResult, addManualReportEntry, deleteManualReportEntry, updateManualReportEntry } from '@/lib/actions';
 import { SessionUser } from '@/lib/auth';
 import { calculateTeamTimeline } from '@/lib/timeline';
 
@@ -299,7 +299,7 @@ export default function Home({ user }: { user: SessionUser }) {
     const [isAddManualOpen, setIsAddManualOpen] = useState(false);
     const [isCancelManageOpen, setIsCancelManageOpen] = useState(false);
     const [manualTeamName, setManualTeamName] = useState('1조(BNI)');
-    const [editingReportItem, setEditingReportItem] = useState<{ teamName: string; cntrIdx: number; dateGroupIdx?: number } | null>(null);
+    const [editingReportItem, setEditingReportItem] = useState<{ teamName: string; cntrIdx: number; dateGroupIdx?: number; cntr?: any } | null>(null);
     const [manualInsertIndex, setManualInsertIndex] = useState<number | 'end'>('end');
     const [manualCntrNo, setManualCntrNo] = useState('');
     const [manualCategory, setManualCategory] = useState('');
@@ -534,7 +534,7 @@ export default function Home({ user }: { user: SessionUser }) {
             ? (manualCategory.trim() ? `${manualCategory.trim()} [작업취소]` : '[작업취소]')
             : manualCategory.trim();
 
-        const newRawContainer = {
+        let newRawContainer = {
             cntrNo: manualCntrNo.trim().toUpperCase(),
             isCompleted: true,
             isCancelled: isManualCancelled,
@@ -560,7 +560,8 @@ export default function Home({ user }: { user: SessionUser }) {
 
         let targetFirstUploadedAt: string | undefined = undefined;
 
-        setReportData((prevData: any[]) => {
+        const updateData = (prevData: any[]) => {
+
             let dateStr = reportStartDate || getLocalDateString(new Date());
             if (!prevData || prevData.length === 0) {
                 const timelineList = calculateTeamTimeline<any>([newRawContainer]).map(item => ({
@@ -598,19 +599,50 @@ export default function Home({ user }: { user: SessionUser }) {
             const existingCntrs = teamGroup.containers || [];
             
             if (editingReportItem) {
-                if (isSameTeam(editingReportItem.teamName, manualTeamName)) {
-                    existingCntrs[editingReportItem.cntrIdx] = { ...existingCntrs[editingReportItem.cntrIdx], ...newRawContainer };
-                } else {
-                    const oldTeamGroup = targetDateGroup.uploaders.find((u: any) => isSameTeam(u.teamName, editingReportItem.teamName));
-                    if (oldTeamGroup && oldTeamGroup.containers) {
-                        oldTeamGroup.containers.splice(editingReportItem.cntrIdx, 1);
+                // 1. Remove from old team
+                const oldTeamGroup = targetDateGroup.uploaders.find((u: any) => isSameTeam(u.teamName, editingReportItem.teamName));
+                let oldCntr = null;
+                if (oldTeamGroup && oldTeamGroup.containers) {
+                    oldCntr = oldTeamGroup.containers.splice(editingReportItem.cntrIdx, 1)[0];
+                    if (!isSameTeam(editingReportItem.teamName, manualTeamName)) {
                         oldTeamGroup.containers = calculateTeamTimeline<any>(oldTeamGroup.containers).map((item: any) => ({
                             ...item,
                             workTimeStr: `${item.durationMinutes}분 (${item.startTimeStr}~${item.endTimeStr}${item.hasBreak ? ' *휴식/식사포함*' : ''})`
                         }));
                     }
-                    existingCntrs.push(newRawContainer);
                 }
+                newRawContainer = { ...oldCntr, ...newRawContainer };
+
+                // 2. Determine new position in new team
+                let insertIdx = existingCntrs.length;
+                if (manualInsertIndex !== 'end' && typeof manualInsertIndex === 'number') {
+                    insertIdx = Math.min(Math.max(0, manualInsertIndex), existingCntrs.length);
+                }
+
+                // 3. Re-calculate firstUploadedAt if position changed or team changed
+                const isSamePosition = isSameTeam(editingReportItem.teamName, manualTeamName) && (insertIdx === editingReportItem.cntrIdx);
+                if (!isSamePosition) {
+                    if (existingCntrs.length > 0) {
+                        if (insertIdx === 0) {
+                            const firstTime = existingCntrs[0].firstUploadedAt ? new Date(existingCntrs[0].firstUploadedAt).getTime() : new Date().getTime();
+                            targetFirstUploadedAt = new Date(firstTime - 60000).toISOString();
+                        } else if (insertIdx >= existingCntrs.length) {
+                            const lastTime = existingCntrs[existingCntrs.length - 1].firstUploadedAt ? new Date(existingCntrs[existingCntrs.length - 1].firstUploadedAt).getTime() : new Date().getTime();
+                            targetFirstUploadedAt = new Date(lastTime + 60000).toISOString();
+                        } else {
+                            const prevTime = existingCntrs[insertIdx - 1].firstUploadedAt ? new Date(existingCntrs[insertIdx - 1].firstUploadedAt).getTime() : new Date().getTime();
+                            const nextTime = existingCntrs[insertIdx].firstUploadedAt ? new Date(existingCntrs[insertIdx].firstUploadedAt).getTime() : new Date().getTime();
+                            targetFirstUploadedAt = new Date((prevTime + nextTime) / 2).toISOString();
+                        }
+                    } else {
+                        targetFirstUploadedAt = new Date().toISOString();
+                    }
+                    if (targetFirstUploadedAt) {
+                        (newRawContainer as any).firstUploadedAt = targetFirstUploadedAt;
+                    }
+                }
+
+                existingCntrs.splice(insertIdx, 0, newRawContainer);
             } else {
                 let insertIdx = existingCntrs.length;
                 if (manualInsertIndex !== 'end' && typeof manualInsertIndex === 'number') {
@@ -657,7 +689,10 @@ export default function Home({ user }: { user: SessionUser }) {
             teamGroup.containers = recalculatedTimeline;
             setReportText(rebuildReportTextFromData(nextData));
             return nextData;
-        });
+        };
+        
+        const nextReportData = updateData(reportData);
+        setReportData(nextReportData);
 
         setIsAddManualOpen(false);
         setManualCntrNo('');
@@ -667,8 +702,20 @@ export default function Home({ user }: { user: SessionUser }) {
         setManualProducts([{ division: 'DFZ', name: '', qty: 0 }]);
         setIsManualCancelled(false);
 
-        if (!editingReportItem) {
+                if (!editingReportItem) {
             addManualReportEntry({
+                workDate: reportStartDate || getLocalDateString(new Date()),
+                teamName: manualTeamName,
+                cntrNo: manualCntrNo.trim().toUpperCase(),
+                category: adminCommentStr,
+                durationMinutes: duration,
+                remark: manualRemark.trim(),
+                products: validProducts,
+                emptyBoxes: manualEmptyBoxes.filter(e => e.name.trim() && e.qty > 0),
+                firstUploadedAt: targetFirstUploadedAt
+            }).catch(console.error);
+        } else if (editingReportItem.cntr && editingReportItem.cntr.manualEntryId) {
+            updateManualReportEntry(editingReportItem.cntr.manualEntryId, {
                 workDate: reportStartDate || getLocalDateString(new Date()),
                 teamName: manualTeamName,
                 cntrNo: manualCntrNo.trim().toUpperCase(),
@@ -681,8 +728,7 @@ export default function Home({ user }: { user: SessionUser }) {
             }).catch(console.error);
         }
     };
-
-    const handleSaveComment = async (cntrNo: string) => {
+const handleSaveComment = async (cntrNo: string) => {
         setEditingCommentCntr(null);
         if (!isAdmin) return;
         try {
@@ -1329,7 +1375,8 @@ export default function Home({ user }: { user: SessionUser }) {
     };
 
     const handleEditReportItem = (teamName: string, cntrIdx: number, cntr: any, dateGroupIdx?: number) => {
-        setEditingReportItem({ teamName, cntrIdx, dateGroupIdx });
+        setEditingReportItem({ teamName, cntrIdx, dateGroupIdx, cntr });
+        setManualInsertIndex(cntrIdx);
         setManualTeamName(teamName);
         setManualCntrNo(cntr.cntrNo || '');
         
