@@ -747,7 +747,7 @@ export async function fetchTeamWorkProgress(targetWorkDate?: string): Promise<Re
                           ELSE (p.uploaded_at AT TIME ZONE 'Asia/Seoul')::date
                         END
                       ) = $1::date
-                    GROUP BY COALESCE(t.name, '미지정 조'), COALESCE(p.cntr_no, j.job_name, '미지정')
+                    GROUP BY t.name, p.cntr_no, j.job_name
                     
                     UNION ALL
                     
@@ -759,12 +759,12 @@ export async function fetchTeamWorkProgress(targetWorkDate?: string): Promise<Re
                         true as is_manual,
                         id as manual_entry_id
                     FROM manual_report_entries
-                    WHERE work_date = $1
-                )
-                SELECT * FROM Combined ORDER BY first_uploaded_at ASC
-            `;
+                    WHERE work_date = $2
+                  )
+                  SELECT * FROM Combined ORDER BY first_uploaded_at ASC
+              `;
 
-            const res = await client.query(query, [workDate]);
+              const res = await client.query(query, [workDate, workDate]);
 
             const teamContainersMap = new Map<string, Map<string, { durationMinutes: number; firstUploadedAt: Date; isManual?: boolean; manualEntryId?: number }>>();
 
