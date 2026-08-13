@@ -944,10 +944,10 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
 
     useEffect(() => {
         if (typeof window !== 'undefined') {
-            const savedPath = localStorage.getItem('localCopyTargetPath') || '';
+            const savedPath = localStorage.getItem(`localCopyTargetPath_${selectedTeamId || 'all'}`) || '';
             setLocalCopyPath(savedPath);
         }
-    }, []);
+    }, [selectedTeamId]);
     
     // Load teams once on mount
     useEffect(() => {
@@ -1596,7 +1596,7 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
                                 skippedCount: event.skippedCount
                             });
                         } else if (event.type === 'done') {
-                            localStorage.setItem('localCopyTargetPath', localCopyPath.trim());
+                            localStorage.setItem(`localCopyTargetPath_${selectedTeamId || 'all'}`, localCopyPath.trim());
                             setCopyProgress(prev => ({
                                 ...prev,
                                 current: event.total,
