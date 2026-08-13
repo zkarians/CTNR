@@ -713,7 +713,8 @@ export default function Home({ user }: { user: SessionUser }) {
                 remark: manualRemark.trim(),
                 products: validProducts,
                 emptyBoxes: manualEmptyBoxes.filter(e => e.name.trim() && e.qty > 0),
-                firstUploadedAt: targetFirstUploadedAt
+                firstUploadedAt: targetFirstUploadedAt,
+                transporter: manualTransporter
             }).catch(console.error);
         } else if (editingReportItem.cntr && editingReportItem.cntr.manualEntryId) {
             updateManualReportEntry(editingReportItem.cntr.manualEntryId, {
@@ -725,7 +726,8 @@ export default function Home({ user }: { user: SessionUser }) {
                 remark: manualRemark.trim(),
                 products: validProducts,
                 emptyBoxes: manualEmptyBoxes.filter(e => e.name.trim() && e.qty > 0),
-                firstUploadedAt: targetFirstUploadedAt
+                firstUploadedAt: targetFirstUploadedAt,
+                transporter: manualTransporter
             }).catch(console.error);
         }
     };
