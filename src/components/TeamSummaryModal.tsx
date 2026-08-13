@@ -52,6 +52,13 @@ const CATEGORIES = ['오븐', '세탁기', '식기', '횡적', 'SK냉장고', '�
 export default function TeamSummaryModal({ isOpen, onClose, reportData }: TeamSummaryModalProps) {
     const [dayShiftCount, setDayShiftCount] = React.useState<string>('');
     const [isCopied, setIsCopied] = React.useState(false);
+    
+    React.useEffect(() => {
+        const savedCount = localStorage.getItem('dayShiftCount');
+        if (savedCount !== null) {
+            setDayShiftCount(savedCount);
+        }
+    }, []);
     const summary = useMemo(() => {
         const teamMap = new Map<string, Record<string, number>>();
 
@@ -349,7 +356,10 @@ const emptyBoxSummary = useMemo(() => {
                                             className="w-16 px-2 py-1 text-sm font-bold text-slate-800 border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500 text-right bg-white"
                                             placeholder="0"
                                             value={dayShiftCount}
-                                            onChange={e => setDayShiftCount(e.target.value)}
+                                            onChange={e => {
+                                                setDayShiftCount(e.target.value);
+                                                localStorage.setItem('dayShiftCount', e.target.value);
+                                            }}
                                         />
                                         <span className="text-sm font-bold text-slate-600">대</span>
                                     </div>
