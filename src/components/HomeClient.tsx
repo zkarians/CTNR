@@ -1532,10 +1532,10 @@ const handleSaveComment = async (cntrNo: string) => {
         }
 
         const parsedBoxes: { name: string, qty: number }[] = [];
-        if (useWorkerSavedBoxes && job.empty_boxes && job.empty_boxes.length > 0) {
+        if (useWorkerSavedBoxes && job.empty_boxes) {
             parsedBoxes.push(...job.empty_boxes);
         } else if (job.db_remark) {
-            const regex = /(MAY[A-Z0-9]+)\s*\*\s*([0-9]+)/gi;
+            const regex = /(MAY[A-Z0-9]+)\s*(?:\*\s*)?([0-9]+)/gi;
             let match;
             while ((match = regex.exec(job.db_remark)) !== null) {
                 parsedBoxes.push({

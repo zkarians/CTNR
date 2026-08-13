@@ -1,29 +1,17 @@
 const fs = require('fs');
-let code = fs.readFileSync('src/lib/packer/core_temp.ts', 'utf8');
+const path = 'C:/Program Files (x86)/CTNR/src/components/HomeClient.tsx';
 
-code = code.replace(
-    'const rowCount = Math.min(fitCount, combinedAvail);',
-    `const rowCount = Math.min(fitCount, combinedAvail);
-if (to.type === 'lay' && to.w === 935) console.log("lay w=935:", "fitCountW", fitCountW, "fitCountL", fitCountL, "combinedAvail", combinedAvail, "rowCount", rowCount);`
-);
+let content = fs.readFileSync(path, 'utf8');
 
-code = code.replace(
-    'if (!hasSupportAtZInTemp(targetX, targetYRel, to.w, to.l, curZ, tempItems)) {',
-    `let supp = hasSupportAtZInTemp(targetX, targetYRel, to.w, to.l, curZ, tempItems);
-if (to.type === 'lay' && to.w === 935) console.log("targetX:", targetX, "targetYRel:", targetYRel, "supp:", supp);
-if (!supp) {`
-);
+// Fix 1: Make the asterisk optional in the regex
+const oldRegexCode = `const regex = /(MAY[A-Z0-9]+)\\s*\\*\\s*([0-9]+)/gi;`;
+const newRegexCode = `const regex = /(MAY[A-Z0-9]+)\\s*(?:\\*\\s*)?([0-9]+)/gi;`;
+content = content.replace(oldRegexCode, newRegexCode);
 
-code = code.replace(
-    'if (stacked >= 10) {',
-    `if (to.type === 'lay' && to.w === 935) console.log("stacked:", stacked);
-if (stacked >= 10) {`
-);
+// Fix 2: Remove the `.length > 0` check so it doesn't fall back to db_remark if empty boxes were explicitly saved as empty
+const oldFallbackCode = `if (useWorkerSavedBoxes && job.empty_boxes && job.empty_boxes.length > 0) {`;
+const newFallbackCode = `if (useWorkerSavedBoxes && job.empty_boxes) {`;
+content = content.replace(oldFallbackCode, newFallbackCode);
 
-code = code.replace(
-    /if \(overlap\) \{\s*continue;\s*\}/g,
-    `if (to.type === 'lay' && to.w === 935) console.log("overlap:", overlap);
-if (overlap) continue;`
-);
-
-fs.writeFileSync('src/lib/packer/core_temp.ts', code);
+fs.writeFileSync(path, content, 'utf8');
+console.log('Patched HomeClient.tsx successfully!');
