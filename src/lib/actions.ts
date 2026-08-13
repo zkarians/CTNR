@@ -1400,8 +1400,8 @@ export async function addManualReportEntry(params: {
                 params.remark, 
                 JSON.stringify(params.products || []),
                 JSON.stringify(params.emptyBoxes || []),
-                  params.firstUploadedAt,
-                  params.transporter || '' ? new Date(params.firstUploadedAt) : new Date()
+                  params.firstUploadedAt || new Date().toISOString(),
+                  params.transporter || ''
             ]);
         } finally {
             client.release();
