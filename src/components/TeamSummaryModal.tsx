@@ -2,7 +2,7 @@
 
 import React, { useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, BarChart3 } from 'lucide-react';
+import { X, BarChart3, Copy, Check } from 'lucide-react';
 import { generateJobType } from '@/lib/utils/jobType';
 
 interface TeamSummaryModalProps {
@@ -50,6 +50,8 @@ function getJobCategory(cntr: any): string {
 const CATEGORIES = ['오븐', '세탁기', '식기', '횡적', 'SK냉장고', '냉장고', '콤프', '기타'];
 
 export default function TeamSummaryModal({ isOpen, onClose, reportData }: TeamSummaryModalProps) {
+    const [dayShiftCount, setDayShiftCount] = React.useState<string>('');
+    const [isCopied, setIsCopied] = React.useState(false);
     const summary = useMemo(() => {
         const teamMap = new Map<string, Record<string, number>>();
 
@@ -88,7 +90,35 @@ export default function TeamSummaryModal({ isOpen, onClose, reportData }: TeamSu
         return teamMap;
     }, [reportData]);
 
-    const emptyBoxSummary = useMemo(() => {
+    
+    const carrierSummary = useMemo(() => {
+        const counts: Record<string, number> = { '천마': 0, 'BNI': 0, '재작업': 0, '기타': 0 };
+        if (!reportData) return counts;
+
+        reportData.forEach((dateGroup: any) => {
+            if (!dateGroup.uploaders) return;
+            dateGroup.uploaders.forEach((team: any) => {
+                if (!team.containers) return;
+                team.containers.forEach((cntr: any) => {
+                    const isExcluded = cntr.adminComment?.includes('[작업제외]');
+                    const isCancelled = !isExcluded && (cntr.isCancelled || cntr.adminComment?.includes('[취소]') || cntr.adminComment?.includes('[작업취소]'));
+                    
+                    if (!isExcluded && !isCancelled) {
+                        let carrier = '기타';
+                        if (cntr.transporter?.includes('천마')) carrier = '천마';
+                        else if (cntr.transporter?.includes('BNI') || cntr.transporter?.includes('비엔아이')) carrier = 'BNI';
+                        else if (cntr.transporter?.includes('재작업')) carrier = '재작업';
+                        else if (!cntr.transporter && team.teamName.includes('천마')) carrier = '천마';
+                        else if (!cntr.transporter && (team.teamName.includes('BNI') || team.teamName.includes('비엔아이'))) carrier = 'BNI';
+                        
+                        counts[carrier]++;
+                    }
+                });
+            });
+        });
+        return counts;
+    }, [reportData]);
+const emptyBoxSummary = useMemo(() => {
         const boxMap = new Map<string, number>();
         
         if (!reportData) return boxMap;
@@ -136,6 +166,53 @@ export default function TeamSummaryModal({ isOpen, onClose, reportData }: TeamSu
 
     const emptyBoxEntries = Array.from(emptyBoxSummary.entries()).sort((a, b) => a[0].localeCompare(b[0]));
     const totalEmptyBoxes = emptyBoxEntries.reduce((sum, [_, qty]) => sum + qty, 0);
+
+    // Generate text report
+    let carrierStr = '';
+    ['천마', 'BNI', '재작업', '기타'].forEach(c => {
+        if (carrierSummary[c] > 0) carrierStr += `${c}${carrierSummary[c]} `;
+    });
+    carrierStr = carrierStr.trim();
+
+    let categoryStr = '';
+    CATEGORIES.forEach(cat => {
+        if (colTotals[cat] > 0) categoryStr += `${cat}${colTotals[cat]} `;
+    });
+    categoryStr = categoryStr.trim();
+
+    const nightTotal = colTotals['total'] || 0;
+    const dayTotal = parseInt(dayShiftCount, 10) || 0;
+    const generatedText = `웅동 야간출하\n\n${carrierStr}\n${categoryStr}\n주간${dayTotal} 야간${nightTotal} 장입 이상무`;
+
+    const handleCopyText = async () => {
+        try {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                await navigator.clipboard.writeText(generatedText);
+            } else {
+                // Fallback for non-HTTPS environments
+                const textArea = document.createElement('textarea');
+                textArea.value = generatedText;
+                
+                // Avoid scrolling to bottom
+                textArea.style.top = '0';
+                textArea.style.left = '0';
+                textArea.style.position = 'fixed';
+                
+                document.body.appendChild(textArea);
+                textArea.focus();
+                textArea.select();
+                
+                document.execCommand('copy');
+                document.body.removeChild(textArea);
+            }
+            setIsCopied(true);
+            setTimeout(() => setIsCopied(false), 2000);
+        } catch (err) {
+            console.error('Failed to copy', err);
+            alert('복사 중 오류가 발생했습니다. 수동으로 텍스트를 복사해주세요.');
+        }
+    };
+
 
     return (
         <AnimatePresence>
@@ -256,6 +333,44 @@ export default function TeamSummaryModal({ isOpen, onClose, reportData }: TeamSu
                                 </table>
                             </div>
                         </div>
+                        
+                        {/* 텍스트 보고서 생성 영역 */}
+                        <div className="mt-8 border-t border-slate-200 pt-6">
+                            <div className="flex flex-col gap-4">
+                                <div className="flex items-center justify-between">
+                                    <h3 className="text-md font-black text-slate-800 flex items-center gap-2">
+                                        <div className="w-1.5 h-4 bg-indigo-500 rounded-full"></div>
+                                        카톡 보고서 텍스트
+                                    </h3>
+                                    <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-lg shadow-sm">
+                                        <label className="text-sm font-bold text-slate-600">주간 작업수량:</label>
+                                        <input 
+                                            type="number" 
+                                            className="w-16 px-2 py-1 text-sm font-bold text-slate-800 border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500 text-right bg-white"
+                                            placeholder="0"
+                                            value={dayShiftCount}
+                                            onChange={e => setDayShiftCount(e.target.value)}
+                                        />
+                                        <span className="text-sm font-bold text-slate-600">대</span>
+                                    </div>
+                                </div>
+                                <div className="relative">
+                                    <textarea 
+                                        className="w-full h-36 p-4 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-800 focus:outline-none resize-none shadow-inner"
+                                        readOnly
+                                        value={generatedText}
+                                    />
+                                    <button
+                                        onClick={handleCopyText}
+                                        className="absolute bottom-4 right-4 flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg transition-all shadow-md active:scale-95"
+                                    >
+                                        {isCopied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                                        {isCopied ? '복사됨' : '복사하기'}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
                         <div className="mt-4 text-xs text-slate-500 bg-slate-50 p-3 rounded-lg border border-slate-200">
                             <strong>* 분류 우선순위:</strong> 오븐 &gt; 세탁기 &gt; 식기 &gt; 횡적 &gt; 콤프 &gt; SK냉장고 &gt; 냉장고<br/>
                             <span className="text-slate-400 mt-1 block">작업취소 및 작업제외 처리된 컨테이너는 수량에서 제외되었습니다.</span>
