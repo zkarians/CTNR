@@ -377,7 +377,7 @@ export default function ReportModal({
                                     dateGroup.uploaders.forEach((u: any) => {
                                         u.containers.forEach((c: any) => {
                                             if (c.isCancelled || c.adminComment?.includes('[취소]') || c.adminComment?.includes('[작업취소]') || c.adminComment?.includes('[작업제외]')) return;
-                                            const cName = c.transporter ? (c.transporter.includes("천마") ? "천마" : (c.transporter.includes("BNI") || c.transporter.includes("비엔아이") ? "BNI" : c.transporter.split('(')[0])) : "기타";
+                                            const cName = c.transporter ? (c.transporter.includes("천마") ? "천마" : (c.transporter.includes("BNI") || c.transporter.includes("비엔아이") ? "BNI" : c.transporter.includes("재작업") ? "재작업" : c.transporter.split('(')[0])) : "기타";
                                             activeCarrierCounts[cName] = (activeCarrierCounts[cName] || 0) + 1;
                                         });
                                     });

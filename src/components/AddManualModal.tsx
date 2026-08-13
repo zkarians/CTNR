@@ -14,6 +14,8 @@ interface AddManualModalProps {
     setManualCntrNo: (val: string) => void;
     manualCategory: string;
     setManualCategory: (val: string) => void;
+    manualTransporter: string;
+    setManualTransporter: (val: string) => void;
     manualInsertIndex: string | number;
     setManualInsertIndex: (val: string | number) => void;
     currentTeamContainers: any[];
@@ -43,6 +45,8 @@ export default function AddManualModal({
     setManualCntrNo,
     manualCategory,
     setManualCategory,
+    manualTransporter,
+    setManualTransporter,
     manualInsertIndex,
     setManualInsertIndex,
     currentTeamContainers,
@@ -94,7 +98,7 @@ export default function AddManualModal({
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-3 gap-2">
                         <div>
                             <label className="block font-black text-slate-700 mb-1">컨테이너 번호 *</label>
                             <input
@@ -104,6 +108,19 @@ export default function AddManualModal({
                                 onChange={e => setManualCntrNo(e.target.value)}
                                 className="w-full px-3 py-1.5 border border-slate-300 rounded-xl font-bold uppercase focus:outline-none focus:border-sky-500 bg-slate-50 focus:bg-white"
                             />
+                        </div>
+                        <div>
+                            <label className="block font-black text-slate-700 mb-1">운송사</label>
+                            <select
+                                value={manualTransporter}
+                                onChange={e => setManualTransporter(e.target.value)}
+                                className="w-full px-3 py-1.5 border border-slate-300 rounded-xl font-bold focus:outline-none focus:border-sky-500 bg-slate-50 focus:bg-white text-slate-900 cursor-pointer"
+                            >
+                                <option value="천마">천마 (빨강)</option>
+                                <option value="BNI">BNI (파랑)</option>
+                                <option value="재작업">재작업 (주황)</option>
+                                <option value="기타">기타 (회색)</option>
+                            </select>
                         </div>
                         <div>
                             <label className="block font-black text-slate-700 mb-1">품목 종류 (비고)</label>

@@ -522,7 +522,7 @@ export async function generateWorkReport(filters: JobFilters): Promise<{ success
                         durationMinutes: mRow.duration_minutes || 45, 
                         firstUploadedAt: mRow.first_uploaded_at ? new Date(mRow.first_uploaded_at) : new Date(), 
                         remark: mRow.remark || '', 
-                        transporter: '', 
+                        transporter: mRow.transporter || '',
                         adminComment: mRow.category || '', 
                         products: [], 
                         emptyBoxes: [],
@@ -750,15 +750,15 @@ export async function fetchTeamWorkProgress(targetWorkDate?: string): Promise<Re
                     GROUP BY t.name, p.cntr_no, j.job_name
                     
                     UNION ALL
-                    
-                    SELECT 
-                        team_name,
-                        cntr_no,
-                        duration_minutes,
-                        first_uploaded_at,
-                        true as is_manual,
-                        id as manual_entry_id
-                    FROM manual_report_entries
+                      
+                      SELECT 
+                          team_name,
+                          cntr_no,
+                          duration_minutes,
+                          first_uploaded_at,
+                          true as is_manual,
+                          id as manual_entry_id
+                      FROM manual_report_entries
                     WHERE work_date = $2
                   )
                   SELECT * FROM Combined ORDER BY first_uploaded_at ASC
@@ -1373,7 +1373,8 @@ export async function addManualReportEntry(params: {
     teamName: string;
     cntrNo: string;
     category: string;
-    durationMinutes: number;
+      transporter?: string;
+      durationMinutes: number;
     remark: string;
     products: any[];
     emptyBoxes: any[];
@@ -1388,8 +1389,8 @@ export async function addManualReportEntry(params: {
         try {
             await client.query(`
                 INSERT INTO manual_report_entries 
-                (work_date, team_name, cntr_no, category, duration_minutes, remark, products, empty_boxes, first_uploaded_at)
-                VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9)
+                  (work_date, team_name, cntr_no, category, duration_minutes, remark, products, empty_boxes, first_uploaded_at, transporter)
+                  VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9, $10)
             `, [
                 params.workDate, 
                 params.teamName, 
@@ -1399,7 +1400,8 @@ export async function addManualReportEntry(params: {
                 params.remark, 
                 JSON.stringify(params.products || []),
                 JSON.stringify(params.emptyBoxes || []),
-                params.firstUploadedAt ? new Date(params.firstUploadedAt) : new Date()
+                  params.firstUploadedAt,
+                  params.transporter || '' ? new Date(params.firstUploadedAt) : new Date()
             ]);
         } finally {
             client.release();
@@ -1436,7 +1438,8 @@ export async function updateManualReportEntry(id: number, params: {
     teamName: string;
     cntrNo: string;
     category: string;
-    durationMinutes: number;
+      transporter?: string;
+      durationMinutes: number;
     remark: string;
     products: any[];
     emptyBoxes: any[];
@@ -1452,8 +1455,8 @@ export async function updateManualReportEntry(id: number, params: {
             if (params.firstUploadedAt) {
                 await client.query(`
                     UPDATE manual_report_entries 
-                    SET work_date = $1, team_name = $2, cntr_no = $3, category = $4, duration_minutes = $5, remark = $6, products = $7::jsonb, empty_boxes = $8::jsonb, first_uploaded_at = $10
-                    WHERE id = $9
+                      SET work_date = $1, team_name = $2, cntr_no = $3, category = $4, duration_minutes = $5, remark = $6, products = $7::jsonb, empty_boxes = $8::jsonb, first_uploaded_at = $10, transporter = $11
+                      WHERE id = $9
                 `, [
                     params.workDate, 
                     params.teamName, 
@@ -1464,13 +1467,14 @@ export async function updateManualReportEntry(id: number, params: {
                     JSON.stringify(params.products || []),
                     JSON.stringify(params.emptyBoxes || []),
                     id,
-                    params.firstUploadedAt
-                ]);
+                      params.firstUploadedAt,
+                      params.transporter || ''
+                  ]);
             } else {
                 await client.query(`
                     UPDATE manual_report_entries 
-                    SET work_date = $1, team_name = $2, cntr_no = $3, category = $4, duration_minutes = $5, remark = $6, products = $7::jsonb, empty_boxes = $8::jsonb
-                    WHERE id = $9
+                      SET work_date = $1, team_name = $2, cntr_no = $3, category = $4, duration_minutes = $5, remark = $6, products = $7::jsonb, empty_boxes = $8::jsonb, transporter = $10
+                      WHERE id = $9
                 `, [
                     params.workDate, 
                     params.teamName, 
@@ -1479,9 +1483,10 @@ export async function updateManualReportEntry(id: number, params: {
                     params.durationMinutes, 
                     params.remark, 
                     JSON.stringify(params.products || []),
-                    JSON.stringify(params.emptyBoxes || []),
-                    id
-                ]);
+                      JSON.stringify(params.emptyBoxes || []),
+                      id,
+                      params.transporter || ''
+                  ]);
             }
             return { success: true };
         } finally {

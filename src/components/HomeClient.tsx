@@ -299,6 +299,7 @@ export default function Home({ user }: { user: SessionUser }) {
     const [isAddManualOpen, setIsAddManualOpen] = useState(false);
     const [isCancelManageOpen, setIsCancelManageOpen] = useState(false);
     const [manualTeamName, setManualTeamName] = useState('1조(BNI)');
+    const [manualTransporter, setManualTransporter] = useState('천마');
     const [editingReportItem, setEditingReportItem] = useState<{ teamName: string; cntrIdx: number; dateGroupIdx?: number; cntr?: any } | null>(null);
     const [manualInsertIndex, setManualInsertIndex] = useState<number | 'end'>('end');
     const [manualCntrNo, setManualCntrNo] = useState('');
@@ -333,7 +334,7 @@ export default function Home({ user }: { user: SessionUser }) {
             dateGroup.uploaders.forEach((u: any) => {
                 u.containers.forEach((c: any) => {
                     if (!c.isCancelled && !c.adminComment?.includes('[취소]') && !c.adminComment?.includes('[작업취소]') && !c.adminComment?.includes('[작업제외]')) {
-                        const cName = c.transporter ? (c.transporter.includes("천마") ? "천마" : (c.transporter.includes("BNI") || c.transporter.includes("비엔아이") ? "BNI" : c.transporter.split('(')[0])) : (u.teamName.includes("천마") ? "천마" : "BNI");
+                        const cName = c.transporter ? (c.transporter.includes("천마") ? "천마" : (c.transporter.includes("BNI") || c.transporter.includes("비엔아이") ? "BNI" : c.transporter.includes("재작업") ? "재작업" : c.transporter.split('(')[0])) : (u.teamName.includes("천마") ? "천마" : "BNI");
                         activeCarrierCounts[cName] = (activeCarrierCounts[cName] || 0) + 1;
                     }
                 });
@@ -545,7 +546,7 @@ export default function Home({ user }: { user: SessionUser }) {
             totalQty: totalQty,
             modelSummaryStr: `${validProducts.length}모델, ${totalQty.toLocaleString()}개${adminCommentStr ? ` ( ${adminCommentStr} )`: ''}`,
             lastRemark: manualRemark.trim() ? `지연사유: ${manualRemark.trim()}` : '',
-            transporter: manualTeamName.includes('천마') ? '천마' : 'BNI',
+            transporter: manualTransporter,
             adminComment: adminCommentStr,
             products: validProducts.map(p => ({
                 division: p.division.trim() || 'DFZ',
@@ -3342,6 +3343,8 @@ const handleSaveComment = async (cntrNo: string) => {
                                 user={user}
                                 manualTeamName={manualTeamName}
                                 setManualTeamName={setManualTeamName}
+                                  manualTransporter={manualTransporter}
+                                  setManualTransporter={setManualTransporter}
                                 manualCntrNo={manualCntrNo}
                                 setManualCntrNo={setManualCntrNo}
                                 manualCategory={manualCategory}
