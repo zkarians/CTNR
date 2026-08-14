@@ -246,6 +246,45 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
         }
     };
 
+    const handleRotatePhotos = async (degrees: number, singlePhotoId?: string) => {
+        const targetIds = singlePhotoId ? [singlePhotoId] : selectedPhotoIds;
+        if (targetIds.length === 0) return;
+        
+        setIsLoading(true);
+        try {
+            const res = await fetch('/api/photos', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    action: 'rotate',
+                    ids: targetIds,
+                    degrees
+                })
+            });
+            const data = await res.json();
+            if (data.success) {
+                // Update local photos to bust cache
+                setPhotos(prev => prev.map(p => {
+                    if (targetIds.includes(p.id)) {
+                        return { ...p, photo_path: p.photo_path.split('?')[0] + '?t=' + Date.now() };
+                    }
+                    return p;
+                }));
+                // Also clear selection if bulk
+                if (!singlePhotoId) {
+                    setSelectedPhotoIds([]);
+                }
+            } else {
+                alert(`회전 실패: ${data.error}`);
+            }
+        } catch (error) {
+            console.error("Rotate photos error:", error);
+            alert("사진 회전 중 오류가 발생했습니다.");
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
     const handleDeleteSelectedPhotosPermanently = async () => {
         if (selectedPhotoIds.length === 0) return;
         if (!confirm(`[영구 삭제 경고]\n\n선택한 사진 총 ${selectedPhotoIds.length}장을 완전히 영구 삭제하시겠습니까?\n이 작업은 복구할 수 없으며 파일이 영구히 삭제됩니다.`)) return;
@@ -3273,6 +3312,14 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
                                             <button onClick={() => setIsMoveModalOpen(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white transition-all text-xs font-black shrink-0 shadow-md shadow-indigo-500/20 cursor-pointer">
                                                 <Folder className="w-3.5 h-3.5" /> 이동
                                             </button>
+
+                                              <button onClick={() => handleRotatePhotos(-90)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-500/10 dark:hover:bg-slate-500 text-slate-700 dark:text-slate-400 dark:hover:text-white transition-all text-xs font-black shrink-0 cursor-pointer">
+                                                  <RotateCcw className="w-3.5 h-3.5" /> 좌회전
+                                              </button>
+                                              <button onClick={() => handleRotatePhotos(90)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-500/10 dark:hover:bg-slate-500 text-slate-700 dark:text-slate-400 dark:hover:text-white transition-all text-xs font-black shrink-0 cursor-pointer">
+                                                  <RotateCw className="w-3.5 h-3.5" /> 우회전
+                                              </button>
+
                                             <button onClick={handleDeleteSelectedPhotos} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-100 hover:bg-rose-200 dark:bg-rose-500/10 dark:hover:bg-rose-500 text-rose-700 dark:text-rose-400 dark:hover:text-white transition-all text-xs font-black shrink-0 cursor-pointer">
                                                 <Trash2 className="w-3.5 h-3.5" /> 삭제
                                             </button>

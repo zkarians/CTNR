@@ -671,10 +671,11 @@ export async function PATCH(req: NextRequest) {
 
         const action = body.action || searchParams.get('action');
         const isUploadGDriveAction = action === 'upload_gdrive';
+        const isRotateAction = action === 'rotate';
         const isMoveContainerAction = action === 'move_container';
 
         // Only admins or normal users with complete/move/gdrive actions
-        if (!isCompleteAction && !isUploadGDriveAction && !isMoveContainerAction && !isAdmin) {
+        if (!isCompleteAction && !isUploadGDriveAction && !isMoveContainerAction && !isRotateAction && !isAdmin) {
             return NextResponse.json({ error: '복구 권한이 없습니다. 관리자만 복구할 수 있습니다.' }, { status: 403 });
         }
 
@@ -692,6 +693,63 @@ export async function PATCH(req: NextRequest) {
         };
 
         try {
+if (isRotateAction) {
+                if (!ids || ids.length === 0) {
+                    return NextResponse.json({ error: '회전할 사진 ID가 제공되지 않았습니다.' }, { status: 400 });
+                }
+                const degrees = Number(body.degrees) || 90;
+
+                let targetIds = ids;
+                if (!isAdmin) {
+                    const ownerRes = await client.query('SELECT id FROM container_photos WHERE id = ANY($1::uuid[]) AND uploaded_by = $2', [ids, session.id]);
+                    targetIds = ownerRes.rows.map((r: any) => r.id);
+                    if (targetIds.length === 0) {
+                        return NextResponse.json({ error: '회전 권한이 있는 본인 소유의 사진이 없습니다.' }, { status: 403 });
+                    }
+                }
+
+                const res = await client.query('SELECT id, photo_path, gdrive_file_id FROM container_photos WHERE id = ANY($1::uuid[])', [targetIds]);
+                
+                const uploadsDir = process.env.UPLOAD_DIR || path.join(process.cwd(), 'uploads');
+                let rotatedCount = 0;
+                let skippedCount = 0;
+
+                for (const row of res.rows) {
+                    // Skip if backed up to GDrive (local file is likely deleted)
+                    if (row.gdrive_file_id) {
+                        skippedCount++;
+                        continue;
+                    }
+
+                    const localPath = path.resolve(uploadsDir, row.photo_path);
+                    if (fs.existsSync(localPath)) {
+                        try {
+                            const buffer = await sharp(localPath).rotate(degrees).toBuffer();
+                            fs.writeFileSync(localPath, buffer);
+                            rotatedCount++;
+                        } catch (err) {
+                            console.error(`[Rotate Error] Failed to rotate ${row.photo_path}:`, err);
+                            skippedCount++;
+                        }
+                    } else {
+                        skippedCount++;
+                    }
+                }
+
+                // Add random query param to photo_path to bust browser cache
+                // But wait, the file path in DB shouldn't change, we just need to append a query param in the frontend.
+                // However, updating updated_at will allow frontend to know it changed. We don't have updated_at column?
+                // We can just update uploaded_at to NOW() or add a dummy update to trigger something. But for now, we just return success.
+                // It's better to update a timestamp or just return success and let frontend append a query param like ?t=Date.now()
+
+                return NextResponse.json({
+                    success: true,
+                    rotatedCount,
+                    skippedCount,
+                    message: `${rotatedCount}장의 사진을 회전했습니다.` + (skippedCount > 0 ? ` (${skippedCount}장 건너뜀)` : '')
+                });
+            }
+
             if (isMoveContainerAction) {
                 const targetCntrNo = (body.targetCntrNo || body.newCntrNo || '').trim().toUpperCase();
                 if (!targetCntrNo) {
