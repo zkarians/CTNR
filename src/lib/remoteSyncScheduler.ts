@@ -175,6 +175,7 @@ export async function performBackupAndRemoteSync(): Promise<{ success: boolean; 
             ALTER TABLE container_photos ADD COLUMN IF NOT EXISTS uploader_name VARCHAR(100);
             ALTER TABLE container_photos ADD COLUMN IF NOT EXISTS team_id VARCHAR(100);
             ALTER TABLE container_photos ADD COLUMN IF NOT EXISTS team_name VARCHAR(100);
+            ALTER TABLE container_photos ADD COLUMN IF NOT EXISTS photo_type VARCHAR(20) DEFAULT 'normal';
 
             ALTER TABLE container_results ADD COLUMN IF NOT EXISTS transporter VARCHAR(100);
             ALTER TABLE container_results ADD COLUMN IF NOT EXISTS division VARCHAR(100);
@@ -213,7 +214,7 @@ export async function performBackupAndRemoteSync(): Promise<{ success: boolean; 
                     const rowPlaceholders: string[] = [];
                     columns.forEach(col => {
                         let val = row[col];
-                        if (val !== null && typeof val === 'object') {
+                        if (val !== null && typeof val === 'object' && !(val instanceof Date)) {
                             val = JSON.stringify(val);
                         }
                         values.push(val);
