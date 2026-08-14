@@ -16,12 +16,14 @@ export async function GET(req: NextRequest) {
         }
 
         const { searchParams } = new URL(req.url);
-        const filename = searchParams.get('filename');
+        const rawFilename = searchParams.get('filename');
         const isDownloadMode = searchParams.get('download') === '1';
 
-        if (!filename) {
+        if (!rawFilename) {
             return new NextResponse('Filename is required', { status: 400 });
         }
+
+        const filename = rawFilename.split('?')[0];
 
         // Prevent directory traversal by resolving the path and checking prefix
         const uploadsDir = path.resolve(process.env.UPLOAD_DIR || path.join(process.cwd(), 'uploads'));

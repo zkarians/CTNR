@@ -501,6 +501,13 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
         setIsDragging(false);
     };
 
+    const getPhotoViewUrl = (pathStr: string, download = false) => {
+        if (!pathStr) return '';
+        const rawPath = pathStr.split('?')[0];
+        const cacheQuery = pathStr.includes('?t=') ? '&t=' + pathStr.split('?t=')[1] : '';
+        return `/api/photos/view?filename=${encodeURIComponent(rawPath)}${cacheQuery}${download ? '&download=1' : ''}`;
+    };
+
     const getCarrierColor = (transporter: string | undefined) => {
         if (!transporter) return "text-slate-300";
         if (transporter.includes("천마")) return "text-rose-500 font-black";
@@ -1680,7 +1687,7 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
         const downloadFilename = `${cleanCntr}_${dateStr}_${timeStr}.jpg`;
 
         try {
-            const response = await fetch(`/api/photos/view?filename=${encodeURIComponent(photo.photo_path)}`);
+            const response = await fetch(getPhotoViewUrl(photo.photo_path));
             if (!response.ok) throw new Error("File not found");
             const blob = await response.blob();
             const url = window.URL.createObjectURL(blob);
@@ -1695,7 +1702,7 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
         } catch (error) {
             console.error('Download fetch error, falling back to direct download link:', error);
             try {
-                const directUrl = `/api/photos/view?filename=${encodeURIComponent(photo.photo_path)}&download=1`;
+                const directUrl = getPhotoViewUrl(photo.photo_path, true);
                 const a = document.createElement('a');
                 a.href = directUrl;
                 a.download = downloadFilename;
@@ -2364,7 +2371,7 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
                                                 </div>
                                             )}
                                             <img 
-                                                src={`/api/photos/view?filename=${encodeURIComponent(photo.photo_path)}`}
+                                                src={getPhotoViewUrl(photo.photo_path)}
                                                 alt={photo.cntr_no}
                                                 className={
                                                     viewMode === 'GRID'
@@ -2573,7 +2580,7 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
                                 <div className="space-y-2 pt-6 border-t border-white/5">
                                     <div className="grid grid-cols-2 gap-2">
                                         <a 
-                                            href={`/api/photos/view?filename=${encodeURIComponent(photos[activePhotoIdx].photo_path)}`}
+                                            href={getPhotoViewUrl(photos[activePhotoIdx].photo_path)}
                                             target="_blank"
                                             rel="noopener noreferrer"
                                             className="p-3 rounded-xl bg-[#12121a] border border-white/5 hover:border-white/10 text-sky-400 hover:bg-sky-500 hover:text-white transition-all flex items-center justify-center gap-1.5 text-xs font-black"
@@ -2668,7 +2675,7 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
                                         >
                                             <img 
                                                 ref={imageRefCallback}
-                                                src={`/api/photos/view?filename=${encodeURIComponent(photos[activePhotoIdx].photo_path)}`}
+                                                src={getPhotoViewUrl(photos[activePhotoIdx].photo_path)}
                                                 alt={photos[activePhotoIdx].cntr_no}
                                                 className="max-w-full max-h-[90vh] object-contain rounded-2xl border border-white/10 shadow-2xl select-none"
                                                 style={{
