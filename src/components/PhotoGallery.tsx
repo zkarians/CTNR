@@ -905,70 +905,6 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
                     </div>
                 </div>
             </div>
-            {/* Warning Modal */}
-            <AnimatePresence>
-                {warningModalInfo.isOpen && (
-                    <div 
-                        className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm"
-                        onClick={(e) => e.stopPropagation()}
-                    >
-                        <motion.div 
-                            initial={{ opacity: 0, scale: 0.95 }}
-                            animate={{ opacity: 1, scale: 1 }}
-                            exit={{ opacity: 0, scale: 0.95 }}
-                            className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden border border-slate-200 flex flex-col"
-                            onClick={(e) => e.stopPropagation()}
-                        >
-                            <div className="flex items-center gap-3 p-4 border-b border-slate-100 bg-rose-50/50 shrink-0">
-                                <div className="p-2 bg-rose-100 text-rose-600 rounded-lg shrink-0">
-                                    <AlertCircle className="w-6 h-6" />
-                                </div>
-                                <div>
-                                    <h2 className="text-lg font-black text-slate-800">씰(Seal) 사진 누락 경고</h2>
-                                    <p className="text-xs font-bold text-rose-500">주의: 일부 컨테이너에 씰 사진이 없습니다.</p>
-                                </div>
-                            </div>
-                            
-                            <div className="p-5 flex-1 overflow-y-auto max-h-[50vh]">
-                                <div className="text-sm font-bold text-slate-700 mb-2">누락된 컨테이너 목록:</div>
-                                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex flex-wrap gap-1.5 mb-4 max-h-32 overflow-y-auto">
-                                    {warningModalInfo.missingCntrs.map((cntr, idx) => (
-                                        <span key={idx} className="px-2 py-1 bg-white border border-rose-200 text-rose-600 font-black text-xs rounded-md shadow-sm">
-                                            {cntr}
-                                        </span>
-                                    ))}
-                                </div>
-                                <p className="text-sm text-slate-600 leading-relaxed font-bold">
-                                    위 컨테이너들의 씰(Seal) 사진이 업로드되지 않았습니다.<br/>
-                                    그래도 이대로 계속 진행하시겠습니까?
-                                </p>
-                            </div>
-
-                            <div className="p-4 border-t border-slate-100 bg-slate-50 flex gap-2 justify-end shrink-0">
-                                <button 
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        setWarningModalInfo({ isOpen: false, action: null, missingCntrs: [] });
-                                    }}
-                                    className="px-4 py-2 rounded-xl text-slate-600 hover:bg-slate-200 font-bold text-sm transition-colors cursor-pointer"
-                                >
-                                    취소
-                                </button>
-                                <button 
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        if (warningModalInfo.action) executeAction(warningModalInfo.action);
-                                        setWarningModalInfo({ isOpen: false, action: null, missingCntrs: [] });
-                                    }}
-                                    className="px-5 py-2 rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-black text-sm shadow-md shadow-rose-500/20 transition-all flex items-center gap-1.5 cursor-pointer"
-                                >
-                                    <Check className="w-4 h-4" /> 계속 진행
-                                </button>
-                            </div>
-                        </motion.div>
-                    </div>
-                )}
-            </AnimatePresence>
         </div>
     );
     };
@@ -3378,6 +3314,72 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
                                         className="px-5 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-400 font-bold text-xs transition-all cursor-pointer"
                                     >
                                         취소
+                                    </button>
+                                </div>
+                            </motion.div>
+                        </div>
+                    )}
+                </AnimatePresence>
+
+                {/* Seal Warning Modal (Root level single instance) */}
+                <AnimatePresence>
+                    {warningModalInfo.isOpen && (
+                        <div 
+                            className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm"
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            <motion.div 
+                                initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                                animate={{ opacity: 1, scale: 1, y: 0 }}
+                                exit={{ opacity: 0, scale: 0.95, y: 10 }}
+                                transition={{ duration: 0.15 }}
+                                className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden border border-slate-200 flex flex-col z-10"
+                                onClick={(e) => e.stopPropagation()}
+                            >
+                                <div className="flex items-center gap-3 p-4 border-b border-slate-100 bg-rose-50/70 shrink-0">
+                                    <div className="p-2.5 bg-rose-100 text-rose-600 rounded-xl shrink-0">
+                                        <AlertCircle className="w-6 h-6" />
+                                    </div>
+                                    <div>
+                                        <h2 className="text-lg font-black text-slate-800">씰(Seal) 사진 누락 경고</h2>
+                                        <p className="text-xs font-bold text-rose-500">주의: 일부 컨테이너에 씰 사진이 없습니다.</p>
+                                    </div>
+                                </div>
+                                
+                                <div className="p-5 flex-1 overflow-y-auto max-h-[50vh]">
+                                    <div className="text-sm font-bold text-slate-700 mb-2">누락된 컨테이너 목록:</div>
+                                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex flex-wrap gap-1.5 mb-4 max-h-32 overflow-y-auto">
+                                        {warningModalInfo.missingCntrs.map((cntr, idx) => (
+                                            <span key={idx} className="px-2 py-1 bg-white border border-rose-200 text-rose-600 font-black text-xs rounded-md shadow-sm">
+                                                {cntr}
+                                            </span>
+                                        ))}
+                                    </div>
+                                    <p className="text-sm text-slate-600 leading-relaxed font-bold">
+                                        위 컨테이너들의 씰(Seal) 사진이 업로드되지 않았습니다.<br/>
+                                        그래도 이대로 계속 진행하시겠습니까?
+                                    </p>
+                                </div>
+
+                                <div className="p-4 border-t border-slate-100 bg-slate-50 flex gap-2 justify-end shrink-0">
+                                    <button 
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            setWarningModalInfo({ isOpen: false, action: null, missingCntrs: [] });
+                                        }}
+                                        className="px-4 py-2.5 rounded-xl text-slate-600 hover:bg-slate-200 font-bold text-sm transition-colors cursor-pointer"
+                                    >
+                                        취소
+                                    </button>
+                                    <button 
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            if (warningModalInfo.action) executeAction(warningModalInfo.action);
+                                            setWarningModalInfo({ isOpen: false, action: null, missingCntrs: [] });
+                                        }}
+                                        className="px-5 py-2.5 rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-black text-sm shadow-md shadow-rose-500/20 transition-all flex items-center gap-1.5 cursor-pointer"
+                                    >
+                                        <Check className="w-4 h-4" /> 계속 진행
                                     </button>
                                 </div>
                             </motion.div>
