@@ -120,7 +120,9 @@ export async function POST(req: NextRequest) {
                 if (result && result.tags) {
                     const timestamp = result.tags.DateTimeOriginal || result.tags.CreateDate || result.tags.ModifyDate;
                     if (timestamp) {
-                        extractedDate = new Date(timestamp * 1000);
+                        const d = new Date(timestamp * 1000);
+                        // exif-parser parses EXIF local string into UTC seconds, so UTC methods yield the camera's original local time without timezone skew
+                        extractedDate = new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), d.getUTCHours(), d.getUTCMinutes(), d.getUTCSeconds());
                     }
                 }
             } catch (e) {
@@ -402,7 +404,8 @@ export async function GET(req: NextRequest) {
                             if (result && result.tags) {
                                 const timestamp = result.tags.DateTimeOriginal || result.tags.CreateDate || result.tags.ModifyDate;
                                 if (timestamp) {
-                                    fileCreatedAt = new Date(timestamp * 1000).toISOString();
+                                    const d = new Date(timestamp * 1000);
+                                    fileCreatedAt = new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), d.getUTCHours(), d.getUTCMinutes(), d.getUTCSeconds()).toISOString();
                                     parsedExif = true;
                                 }
                             }
