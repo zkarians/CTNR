@@ -609,7 +609,7 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
                 }))).join(', ')
             };
         }).sort((a, b) => b.lastUploadedAt.getTime() - a.lastUploadedAt.getTime());
-    }, [photos]);
+    }, [photos, sortBy]);
 
     const [folderViewMode, setFolderViewMode] = useState<'DATE_GROUP' | 'FLAT'>('DATE_GROUP');
     const [isTeamGroupEnabled, setIsTeamGroupEnabled] = useState<boolean>(true);
