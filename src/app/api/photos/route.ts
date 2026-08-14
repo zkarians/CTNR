@@ -389,9 +389,14 @@ export async function GET(req: NextRequest) {
             const uploadsDir = process.env.UPLOAD_DIR || path.join(process.cwd(), 'uploads');
             const photosWithStats = res.rows.map(row => {
                 let fileCreatedAt = row.uploaded_at;
+                let photoPathWithCacheBuster = row.photo_path;
                 try {
                     const filePath = path.join(/*turbopackIgnore: true*/ uploadsDir, row.photo_path);
                     if (fs.existsSync(filePath)) {
+                        const stats = fs.statSync(filePath);
+                        if (stats.mtimeMs) {
+                            photoPathWithCacheBuster = `${row.photo_path}?t=${Math.floor(stats.mtimeMs)}`;
+                        }
                         let parsedExif = false;
                         try {
                             const fd = fs.openSync(filePath, 'r');
@@ -414,7 +419,6 @@ export async function GET(req: NextRequest) {
                         }
 
                         if (!parsedExif) {
-                            const stats = fs.statSync(filePath);
                             fileCreatedAt = stats.mtime || stats.birthtime || row.uploaded_at;
                         }
                     }
@@ -423,6 +427,7 @@ export async function GET(req: NextRequest) {
                 }
                 return {
                     ...row,
+                    photo_path: photoPathWithCacheBuster,
                     file_created_at: fileCreatedAt
                 };
             });

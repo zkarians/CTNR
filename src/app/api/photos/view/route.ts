@@ -71,7 +71,7 @@ export async function GET(req: NextRequest) {
 
                             const headers: Record<string, string> = {
                                 'Content-Type': 'image/jpeg',
-                                'Cache-Control': 'public, max-age=31536000, immutable',
+                                'Cache-Control': 'no-cache, no-store, must-revalidate',
                             };
                             if (isDownloadMode) {
                                 headers['Content-Disposition'] = `attachment; filename="${encodeURIComponent(path.basename(filename))}"`;
@@ -157,7 +157,7 @@ export async function GET(req: NextRequest) {
                 return new NextResponse(remoteBuffer as any, {
                     headers: {
                         'Content-Type': fetchedContentType,
-                        'Cache-Control': 'public, max-age=31536000, immutable',
+                        'Cache-Control': 'no-cache, no-store, must-revalidate',
                     },
                 });
             }
@@ -174,7 +174,7 @@ export async function GET(req: NextRequest) {
 
         const headers: Record<string, string> = {
             'Content-Type': contentType,
-            'Cache-Control': 'public, max-age=31536000, immutable',
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
         };
         if (isDownloadMode) {
             headers['Content-Disposition'] = `attachment; filename="${encodeURIComponent(path.basename(filePath))}"`;
