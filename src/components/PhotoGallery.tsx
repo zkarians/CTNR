@@ -698,9 +698,9 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
                 const dateB = new Date((b as any).file_created_at || b.uploaded_at).getTime();
                 return dateA - dateB;
             } else if (sortBy === 'NAME_ASC') {
-                return a.photo_path.localeCompare(b.photo_path, undefined, { numeric: true, sensitivity: 'base' });
+                return a.photo_path.replace(/\\.[^/.]+$/, "").localeCompare(b.photo_path.replace(/\\.[^/.]+$/, ""), undefined, { numeric: true, sensitivity: 'base' });
             } else if (sortBy === 'NAME_DESC') {
-                return b.photo_path.localeCompare(a.photo_path, undefined, { numeric: true, sensitivity: 'base' });
+                return b.photo_path.replace(/\\.[^/.]+$/, "").localeCompare(a.photo_path.replace(/\\.[^/.]+$/, ""), undefined, { numeric: true, sensitivity: 'base' });
             }
             return 0;
         });
