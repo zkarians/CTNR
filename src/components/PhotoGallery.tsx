@@ -3355,9 +3355,7 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
                                                     <Trash2 className="w-3.5 h-3.5" /> 삭제
                                                 </button>
                                             )}
-                                            <button onClick={() => handleActionWithCheck('GDRIVE_BACKUP')} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white transition-all text-xs font-black shrink-0 shadow-md shadow-sky-500/20 cursor-pointer">
-                                                <Upload className="w-3.5 h-3.5" /> <span className="hidden sm:inline">GDrive </span>백업
-                                            </button>
+
                                             <button onClick={() => handleActionWithCheck('LOCAL_COPY')} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-white transition-all text-xs font-black shrink-0 shadow-md shadow-emerald-500/20 cursor-pointer">
                                                 <Folder className="w-3.5 h-3.5" /> 로컬 복사
                                             </button>
