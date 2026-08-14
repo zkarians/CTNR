@@ -127,6 +127,30 @@ export async function POST(req: NextRequest) {
                 // Ignore parser error
             }
 
+            // 1.5 Try to extract timestamp from original filename (e.g. IMG_20260815_143021.jpg)
+            if (originalName) {
+                // match YYYYMMDD_HHMMSS or similar
+                const nameMatch = originalName.match(/(?:20\d{2}[-_]?\d{2}[-_]?\d{2}[-_]?\d{2}[-_]?\d{2}[-_]?\d{2})/);
+                if (nameMatch) {
+                    const digits = nameMatch[0].replace(/[^0-9]/g, '');
+                    if (digits.length >= 14) {
+                        const year = parseInt(digits.substring(0, 4));
+                        const month = parseInt(digits.substring(4, 6)) - 1;
+                        const day = parseInt(digits.substring(6, 8));
+                        const hour = parseInt(digits.substring(8, 10));
+                        const min = parseInt(digits.substring(10, 12));
+                        const sec = parseInt(digits.substring(12, 14));
+                        const parsedDate = new Date(year, month, day, hour, min, sec);
+                        
+                        // If EXIF date is identical for many files, filename date is usually more accurate
+                        if (!extractedDate || (extractedDate && parsedDate.getTime() > 0)) {
+                            // Prefer filename date because it's guaranteed to be unique if it has seconds
+                            extractedDate = parsedDate;
+                        }
+                    }
+                }
+            }
+
             // 2. Try to use lastModified
             if (!extractedDate && lastModifiedStr) {
                 const lm = parseInt(lastModifiedStr, 10);
