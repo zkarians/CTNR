@@ -2672,20 +2672,30 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
                                         </button>
                                     </div>
 
-                                    <div className="grid grid-cols-2 gap-2">
+                                    <div className="grid grid-cols-3 gap-2">
                                         <button 
                                             onClick={(e) => { e.stopPropagation(); handleRotatePhotos(-90, photos[activePhotoIdx].id); }}
-                                            className="p-3 rounded-xl bg-white/5 border border-white/5 text-slate-300 hover:text-white hover:bg-white/10 transition-all flex items-center justify-center gap-1.5 text-xs font-black cursor-pointer"
+                                            className="p-3 rounded-xl bg-white/5 border border-white/5 text-slate-300 hover:text-white hover:bg-white/10 transition-all flex flex-col items-center justify-center gap-1 text-xs font-black cursor-pointer"
                                             title="좌측으로 90도 회전"
                                         >
-                                            <RotateCcw className="w-3.5 h-3.5 text-sky-400" /> 좌회전 (-90°)
+                                            <RotateCcw className="w-4 h-4 text-sky-400" />
+                                            <span>좌회전 (-90°)</span>
+                                        </button>
+                                        <button 
+                                            onClick={(e) => { e.stopPropagation(); handleRotatePhotos(180, photos[activePhotoIdx].id); }}
+                                            className="p-3 rounded-xl bg-white/5 border border-white/5 text-slate-300 hover:text-white hover:bg-white/10 transition-all flex flex-col items-center justify-center gap-1 text-xs font-black cursor-pointer"
+                                            title="180도 상하반전 회전"
+                                        >
+                                            <RotateCw className="w-4 h-4 text-amber-400" />
+                                            <span>180° 회전</span>
                                         </button>
                                         <button 
                                             onClick={(e) => { e.stopPropagation(); handleRotatePhotos(90, photos[activePhotoIdx].id); }}
-                                            className="p-3 rounded-xl bg-white/5 border border-white/5 text-slate-300 hover:text-white hover:bg-white/10 transition-all flex items-center justify-center gap-1.5 text-xs font-black cursor-pointer"
+                                            className="p-3 rounded-xl bg-white/5 border border-white/5 text-slate-300 hover:text-white hover:bg-white/10 transition-all flex flex-col items-center justify-center gap-1 text-xs font-black cursor-pointer"
                                             title="우측으로 90도 회전"
                                         >
-                                            <RotateCw className="w-3.5 h-3.5 text-sky-400" /> 우회전 (+90°)
+                                            <RotateCw className="w-4 h-4 text-sky-400" />
+                                            <span>우회전 (+90°)</span>
                                         </button>
                                     </div>
 
@@ -3376,6 +3386,9 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
                                             </button>
                                             <button onClick={() => handleRotatePhotos(-90)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-500/10 dark:hover:bg-slate-500 text-slate-700 dark:text-slate-400 dark:hover:text-white transition-all text-xs font-black shrink-0 cursor-pointer" title="선택한 사진들을 반시계방향 90도 회전">
                                                 <RotateCcw className="w-3.5 h-3.5" /> 좌회전
+                                            </button>
+                                            <button onClick={() => handleRotatePhotos(180)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-500/10 dark:hover:bg-slate-500 text-slate-700 dark:text-slate-400 dark:hover:text-white transition-all text-xs font-black shrink-0 cursor-pointer" title="선택한 사진들을 180도 회전">
+                                                <RotateCw className="w-3.5 h-3.5 text-amber-500" /> 180° 회전
                                             </button>
                                             <button onClick={() => handleRotatePhotos(90)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-500/10 dark:hover:bg-slate-500 text-slate-700 dark:text-slate-400 dark:hover:text-white transition-all text-xs font-black shrink-0 cursor-pointer" title="선택한 사진들을 시계방향 90도 회전">
                                                 <RotateCw className="w-3.5 h-3.5" /> 우회전
