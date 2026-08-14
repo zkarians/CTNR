@@ -93,6 +93,7 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
     const isCompletedView = tabState === 'COMPLETED';
     const [duplicatePhotoIds, setDuplicatePhotoIds] = useState<string[]>([]);
     const [selectedPhotoIds, setSelectedPhotoIds] = useState<string[]>([]);
+    const [rotationOffsets, setRotationOffsets] = useState<{ [photoId: string]: number }>({});
 
     const [isGDriveProgressOpen, setIsGDriveProgressOpen] = useState(false);
     const [isGDriveUploading, setIsGDriveUploading] = useState(false);
@@ -269,6 +270,76 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
             alert("사진 영구 삭제 중 오류가 발생했습니다.");
         } finally {
             setIsLoading(false);
+        }
+    };
+
+    const handleRotatePhotos = async (degrees: number, singlePhotoId?: string) => {
+        const targetIds = singlePhotoId ? [singlePhotoId] : selectedPhotoIds;
+        if (targetIds.length === 0) return;
+        
+        // 1. Immediately apply rotation offset to UI (0ms instant response without full-page spinner)
+        setRotationOffsets(prev => {
+            const next = { ...prev };
+            targetIds.forEach(id => {
+                next[id] = ((next[id] || 0) + degrees) % 360;
+            });
+            return next;
+        });
+
+        // 2. Perform background async rotation on server without blocking UI
+        try {
+            const res = await fetch('/api/photos', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    action: 'rotate',
+                    ids: targetIds,
+                    degrees
+                })
+            });
+            const data = await res.json();
+            if (data.success) {
+                const now = Date.now();
+                setPhotos(prev => prev.map(p => {
+                    if (targetIds.includes(p.id)) {
+                        return { ...p, photo_path: p.photo_path.split('?')[0] + '?t=' + now };
+                    }
+                    return p;
+                }));
+                // Clear temporary rotation offsets for saved photos
+                setRotationOffsets(prev => {
+                    const next = { ...prev };
+                    targetIds.forEach(id => {
+                        delete next[id];
+                    });
+                    return next;
+                });
+                if (!singlePhotoId) {
+                    setSelectedPhotoIds([]);
+                }
+            } else {
+                console.error("Rotate failed on server:", data.error);
+                // Rollback on server error
+                setRotationOffsets(prev => {
+                    const next = { ...prev };
+                    targetIds.forEach(id => {
+                        next[id] = ((next[id] || 0) - degrees) % 360;
+                    });
+                    return next;
+                });
+                alert(`회전 실패: ${data.error || '알 수 없는 오류'}`);
+            }
+        } catch (error) {
+            console.error("Rotate error:", error);
+            // Rollback on error
+            setRotationOffsets(prev => {
+                const next = { ...prev };
+                targetIds.forEach(id => {
+                    next[id] = ((next[id] || 0) - degrees) % 360;
+                });
+                return next;
+            });
+            alert("사진 회전 중 통신 오류가 발생했습니다.");
         }
     };
 
@@ -2373,6 +2444,10 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
                                             <img 
                                                 src={getPhotoViewUrl(photo.photo_path)}
                                                 alt={photo.cntr_no}
+                                                style={{
+                                                    transform: (rotationOffsets[photo.id] || 0) ? `rotate(${rotationOffsets[photo.id]}deg)` : undefined,
+                                                    transition: 'transform 0.2s ease-out'
+                                                }}
                                                 className={
                                                     viewMode === 'GRID'
                                                         ? "w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
@@ -2597,6 +2672,23 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
                                         </button>
                                     </div>
 
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <button 
+                                            onClick={(e) => { e.stopPropagation(); handleRotatePhotos(-90, photos[activePhotoIdx].id); }}
+                                            className="p-3 rounded-xl bg-white/5 border border-white/5 text-slate-300 hover:text-white hover:bg-white/10 transition-all flex items-center justify-center gap-1.5 text-xs font-black cursor-pointer"
+                                            title="좌측으로 90도 회전"
+                                        >
+                                            <RotateCcw className="w-3.5 h-3.5 text-sky-400" /> 좌회전 (-90°)
+                                        </button>
+                                        <button 
+                                            onClick={(e) => { e.stopPropagation(); handleRotatePhotos(90, photos[activePhotoIdx].id); }}
+                                            className="p-3 rounded-xl bg-white/5 border border-white/5 text-slate-300 hover:text-white hover:bg-white/10 transition-all flex items-center justify-center gap-1.5 text-xs font-black cursor-pointer"
+                                            title="우측으로 90도 회전"
+                                        >
+                                            <RotateCw className="w-3.5 h-3.5 text-sky-400" /> 우회전 (+90°)
+                                        </button>
+                                    </div>
+
                                     {isAdmin && (
                                         isTrashView ? (
                                             <div className="grid grid-cols-2 gap-2">
@@ -2679,10 +2771,10 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
                                                 alt={photos[activePhotoIdx].cntr_no}
                                                 className="max-w-full max-h-[90vh] object-contain rounded-2xl border border-white/10 shadow-2xl select-none"
                                                 style={{
-                                                    transform: `translate(${position.x}px, ${position.y}px) scale(${scale})`,
+                                                    transform: `translate(${position.x}px, ${position.y}px) scale(${scale}) rotate(${rotationOffsets[photos[activePhotoIdx].id] || 0}deg)`,
                                                     transformOrigin: 'center center',
                                                     cursor: scale > 1 ? (isDragging ? 'grabbing' : 'grab') : 'zoom-in',
-                                                    transition: isDragging ? 'none' : 'transform 0.15s ease-out'
+                                                    transition: isDragging ? 'none' : 'transform 0.2s ease-out'
                                                 }}
                                                 onClick={(e) => {
                                                     e.stopPropagation();
@@ -3281,6 +3373,12 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
                                         <>
                                             <button onClick={() => setIsMoveModalOpen(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white transition-all text-xs font-black shrink-0 shadow-md shadow-indigo-500/20 cursor-pointer">
                                                 <Folder className="w-3.5 h-3.5" /> 이동
+                                            </button>
+                                            <button onClick={() => handleRotatePhotos(-90)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-500/10 dark:hover:bg-slate-500 text-slate-700 dark:text-slate-400 dark:hover:text-white transition-all text-xs font-black shrink-0 cursor-pointer" title="선택한 사진들을 반시계방향 90도 회전">
+                                                <RotateCcw className="w-3.5 h-3.5" /> 좌회전
+                                            </button>
+                                            <button onClick={() => handleRotatePhotos(90)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-500/10 dark:hover:bg-slate-500 text-slate-700 dark:text-slate-400 dark:hover:text-white transition-all text-xs font-black shrink-0 cursor-pointer" title="선택한 사진들을 시계방향 90도 회전">
+                                                <RotateCw className="w-3.5 h-3.5" /> 우회전
                                             </button>
                                             <button onClick={handleDeleteSelectedPhotos} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-100 hover:bg-rose-200 dark:bg-rose-500/10 dark:hover:bg-rose-500 text-rose-700 dark:text-rose-400 dark:hover:text-white transition-all text-xs font-black shrink-0 cursor-pointer">
                                                 <Trash2 className="w-3.5 h-3.5" /> 삭제
