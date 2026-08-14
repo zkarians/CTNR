@@ -592,13 +592,33 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
         });
         
         return Object.entries(group).map(([groupKey, list]) => {
+            const sortedList = [...list].sort((a, b) => {
+                if (sortBy === 'UPLOAD_DESC') {
+                    return new Date(b.uploaded_at).getTime() - new Date(a.uploaded_at).getTime();
+                } else if (sortBy === 'UPLOAD_ASC') {
+                    return new Date(a.uploaded_at).getTime() - new Date(b.uploaded_at).getTime();
+                } else if (sortBy === 'CREATION_DESC') {
+                    const dateA = new Date((a).file_created_at || a.uploaded_at).getTime();
+                    const dateB = new Date((b).file_created_at || b.uploaded_at).getTime();
+                    return dateB - dateA;
+                } else if (sortBy === 'CREATION_ASC') {
+                    const dateA = new Date((a).file_created_at || a.uploaded_at).getTime();
+                    const dateB = new Date((b).file_created_at || b.uploaded_at).getTime();
+                    return dateA - dateB;
+                } else if (sortBy === 'NAME_ASC') {
+                    return a.photo_path.replace(/\.[^/.]+$/, "").localeCompare(b.photo_path.replace(/\.[^/.]+$/, ""), undefined, { numeric: true, sensitivity: 'base' });
+                } else if (sortBy === 'NAME_DESC') {
+                    return b.photo_path.replace(/\.[^/.]+$/, "").localeCompare(a.photo_path.replace(/\.[^/.]+$/, ""), undefined, { numeric: true, sensitivity: 'base' });
+                }
+                return 0;
+            });
             const lastUnderscore = groupKey.lastIndexOf('_');
             const cntrNo = groupKey.substring(0, lastUnderscore);
             const workDateStr = groupKey.substring(lastUnderscore + 1);
             return {
                 cntrNo,
                 workDateStr,
-                photos: list,
+                photos: sortedList,
                 transporter: list[0]?.transporter,
                 firstUploadedAt: new Date(Math.min(...list.map(p => new Date(p.uploaded_at).getTime()))),
                 lastUploadedAt: new Date(Math.max(...list.map(p => new Date(p.uploaded_at).getTime()))),
