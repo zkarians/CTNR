@@ -3310,7 +3310,7 @@ const handleSaveComment = async (cntrNo: string) => {
                 isLoadingSavedReport={isLoadingSavedReport}
                 setIsCancelManageOpen={setIsCancelManageOpen}
                 reportViewMode={reportViewMode}
-                setReportViewMode={setReportViewMode}
+                setReportViewMode={setReportViewMode as any}
                 handleOpenAddManual={handleOpenAddManual}
                 isReportGenerating={isReportGenerating}
                 isExportingImage={isExportingImage}
@@ -3336,48 +3336,48 @@ const handleSaveComment = async (cntrNo: string) => {
                 onOpenGallery={handleOpenGalleryFromReport}
                 isImageCopied={isImageCopied}
             />
-                            {/* Manual Entry Modal Popover */}
-                            <AddManualModal
-                                isOpen={isAddManualOpen}
-                                onClose={() => setIsAddManualOpen(false)}
-                                editingReportItem={editingReportItem}
-                                isAdmin={isAdmin}
-                                user={user}
-                                manualTeamName={manualTeamName}
-                                setManualTeamName={setManualTeamName}
-                                  manualTransporter={manualTransporter}
-                                  setManualTransporter={setManualTransporter}
-                                manualCntrNo={manualCntrNo}
-                                setManualCntrNo={setManualCntrNo}
-                                manualCategory={manualCategory}
-                                setManualCategory={setManualCategory}
-                                manualInsertIndex={manualInsertIndex}
-                                setManualInsertIndex={setManualInsertIndex}
-                                currentTeamContainers={currentTeamContainers}
-                                manualDuration={manualDuration}
-                                setManualDuration={setManualDuration}
-                                manualRemark={manualRemark}
-                                setManualRemark={setManualRemark}
-                                isManualCancelled={isManualCancelled}
-                                setIsManualCancelled={setIsManualCancelled}
-                                manualProducts={manualProducts}
-                                setManualProducts={setManualProducts}
-                                manualEmptyBoxes={manualEmptyBoxes}
-                                setManualEmptyBoxes={setManualEmptyBoxes}
-                                handlePasteExcel={handlePasteExcel}
-                                handleAddManualSubmit={handleAddManualSubmit}
-                            />
+            {/* Manual Entry Modal Popover */}
+            <AddManualModal
+                isOpen={isAddManualOpen}
+                onClose={() => setIsAddManualOpen(false)}
+                editingReportItem={editingReportItem}
+                isAdmin={isAdmin}
+                user={user}
+                manualTeamName={manualTeamName}
+                setManualTeamName={setManualTeamName}
+                manualTransporter={manualTransporter}
+                setManualTransporter={setManualTransporter}
+                manualCntrNo={manualCntrNo}
+                setManualCntrNo={setManualCntrNo}
+                manualCategory={manualCategory}
+                setManualCategory={setManualCategory}
+                manualInsertIndex={manualInsertIndex}
+                setManualInsertIndex={setManualInsertIndex as any}
+                currentTeamContainers={currentTeamContainers}
+                manualDuration={manualDuration}
+                setManualDuration={setManualDuration}
+                manualRemark={manualRemark}
+                setManualRemark={setManualRemark}
+                isManualCancelled={isManualCancelled}
+                setIsManualCancelled={setIsManualCancelled}
+                manualProducts={manualProducts}
+                setManualProducts={setManualProducts}
+                manualEmptyBoxes={manualEmptyBoxes}
+                setManualEmptyBoxes={setManualEmptyBoxes}
+                handlePasteExcel={handlePasteExcel}
+                handleAddManualSubmit={handleAddManualSubmit}
+            />
 
-                            {/* 작업취소 / 작업제외 관리 팝업 모달 */}
-                            <CancelManageModal
-                                isOpen={isCancelManageOpen}
-                                onClose={() => setIsCancelManageOpen(false)}
-                                cancelMode={cancelMode}
-                                setCancelMode={setCancelMode}
-                                reportData={reportData}
-                                handleToggleCancelCntr={handleToggleCancelCntr}
-                                handleSetCancelType={handleSetCancelType}
-                            />
+            {/* 작업취소 / 작업제외 관리 팝업 모달 */}
+            <CancelManageModal
+                isOpen={isCancelManageOpen}
+                onClose={() => setIsCancelManageOpen(false)}
+                cancelMode={cancelMode}
+                setCancelMode={setCancelMode as any}
+                reportData={reportData}
+                handleToggleCancelCntr={handleToggleCancelCntr as any}
+                handleSetCancelType={handleSetCancelType}
+            />
             
 
             <PhotoGallery user={user} isOpen={isGalleryOpen} initialSearchCntrNo={gallerySearchCntrNo} onClose={() => { setIsGalleryOpen(false); setGallerySearchCntrNo(''); refreshJobs(); loadTeamProgress(); }} onOpenReport={handleOpenReportFromGallery} />

@@ -39,6 +39,8 @@
     "node_modules",
     "debug-packer.ts",
     "scratch/**/*",
+    "archive/**/*",
+    "backups/**/*",
     "src/lib/backup_*/**/*"
   ]
 }

@@ -399,8 +399,8 @@ export default function ReportModal({
                                                     {dateGroup.dateStr} 작업 분량
                                                 </h3>
                                                 {(() => {
-                                                    const finalCarrierCounts = dateGroup.customCarrierCounts || activeCarrierCounts;
-                                                    const displayTotal = Object.values(finalCarrierCounts).reduce((a: any, b: any) => a + b, 0);
+                                                    const finalCarrierCounts = (dateGroup.customCarrierCounts || activeCarrierCounts) as Record<string, number>;
+                                                    const displayTotal = Object.values(finalCarrierCounts).reduce((a: number, b: any) => a + (Number(b) || 0), 0);
 
                                                     if (editingHeaderDate === dateGroup.dateStr) {
                                                         return (

@@ -457,7 +457,9 @@ export async function generateWorkReport(filters: JobFilters): Promise<{ success
                 remark: string;
                 transporter: string;
                 adminComment: string;
-                products: { name: string; qty: number; division: string; height?: number }[], emptyBoxes?: any[] 
+                products: { name: string; qty: number; division: string; height?: number }[];
+                emptyBoxes: any[];
+                manualEntryId?: number;
             }>>>();
 
             for (const row of rows) {
@@ -511,9 +513,9 @@ export async function generateWorkReport(filters: JobFilters): Promise<{ success
                 const cntrNo = mRow.cntr_no;
                 
                 if (!dateMap.has(workDateStr)) dateMap.set(workDateStr, new Map());
-                const teamMap = dateMap.get(workDateStr);
+                const teamMap = dateMap.get(workDateStr)!;
                 if (!teamMap.has(teamName)) teamMap.set(teamName, new Map());
-                const cntrMap = teamMap.get(teamName);
+                const cntrMap = teamMap.get(teamName)!;
                 
                 if (!cntrMap.has(cntrNo)) {
                     cntrMap.set(cntrNo, { 
@@ -530,7 +532,7 @@ export async function generateWorkReport(filters: JobFilters): Promise<{ success
                     });
                 }
                 
-                const cntrData = cntrMap.get(cntrNo);
+                const cntrData = cntrMap.get(cntrNo)!;
                 
                 const mProducts = mRow.products || [];
                 for (const p of mProducts) {

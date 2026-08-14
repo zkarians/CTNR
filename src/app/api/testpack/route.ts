@@ -4,35 +4,21 @@ import { packContainer } from '@/lib/packer/core';
 export async function GET() {
     const p = {
         id: "DFB335HM.ABMPEIL",
-        name: "DFB335HM.ABMPEIL",
+        model_name: "DFB335HM.ABMPEIL",
         width: 680,
         length: 665,
         height: 935,
-        weight: 45,
-        max_stack: 3,
-        allow_lay_down: true,
-        group: "",
-        priority: 1
+        quantity: 135,
+        allow_rotate: true,
+        allow_lay_down: true
     };
 
-    const c = {
-        name: "40ft High Cube",
-        width: 2352,
-        length: 12032,
-        height: 2698,
-        max_weight: 26000,
-        margin_w: 0,
-        margin_l: 0,
-        margin_h: 0
-    };
-
-    const unpacked = new Map();
-    unpacked.set(p.id, 135);
+    const c = (await import('@/lib/types')).CONTAINER_DATA['40hc'];
 
     const result = packContainer(c, [p], 1, false);
 
     return NextResponse.json({
-        packedCount: result.packed.length,
-        packed: result.packed
+        packedCount: result.items.length,
+        packed: result.items
     });
 }

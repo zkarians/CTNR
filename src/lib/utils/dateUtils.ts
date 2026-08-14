@@ -15,3 +15,15 @@ export function getWorkDateString(d: Date = new Date()): string {
     const day = String(workDate.getDate()).padStart(2, '0');
     return `${year}-${month}-${day}`;
 }
+
+export function formatKoreanDate(dateStr: string): string {
+    try {
+        const [y, m, d] = dateStr.split('-').map(Number);
+        const dateObj = new Date(y, m - 1, d);
+        const dayNames = ['일', '월', '화', '수', '목', '금', '토'];
+        const dayName = dayNames[dateObj.getDay()];
+        return `${y}년 ${String(m).padStart(2, '0')}월 ${String(d).padStart(2, '0')}일 (${dayName})`;
+    } catch (e) {
+        return dateStr;
+    }
+}
