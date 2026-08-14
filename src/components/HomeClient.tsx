@@ -1914,9 +1914,9 @@ const handleSaveComment = async (cntrNo: string) => {
                                         <p className="text-xs md:text-[10px] font-medium italic">조회 결과가 없습니다.</p>
                                     </div>
                                 ) : (
-                                    filteredJobs.map((job) => (
+                                    filteredJobs.map((job, idx) => (
                                         <JobCard
-                                            key={job.id}
+                                            key={`${job.id}_${idx}`}
                                             job={job}
                                             isSelected={selectedJobId === job.id}
                                             onSelect={handleJobSelect}
