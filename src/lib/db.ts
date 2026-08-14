@@ -339,6 +339,7 @@ export async function getProductsForJob(jobId: number): Promise<Product[]> {
                 return {
                     id: row.id,
                     model_name: row.model_name,
+                    division: row.division || '',
                     width: Number(row.width) || 0,
                     length: Number(row.length) || 0,
                     height: Number(row.height) || 0,

@@ -105,9 +105,10 @@ function hasSupportAtZ(
     l: number,
     z: number,
     placedItems: PackedItem[],
-    threshold: number = 0.75
+    threshold: number = 0.75,
+    topperDivision?: string
 ): boolean {
-    if (z === 0) return true; // 바닥은 항상 지탱됨
+    if (z === 0) return true;
     
     const targetArea = w * l;
     let supportArea = 0;
@@ -126,6 +127,12 @@ function hasSupportAtZ(
         const xOverlap = Math.min(xMax, item.x + item.w) - Math.max(x, item.x);
         const yOverlap = Math.min(yMax, item.y + item.l) - Math.max(y, item.y);
         
+        if (xOverlap > 0 && yOverlap > 0) {
+            if (topperDivision && item.product.division && topperDivision !== item.product.division) {
+                return false;
+            }
+        }
+        
         supportArea += xOverlap * yOverlap;
     }
     
@@ -139,21 +146,25 @@ function hasSupportAtZInTemp(
     w: number,
     l: number,
     z: number,
-    tempItems: any[]
+    tempItems: any[],
+    topperDivision?: string
 ): boolean {
-    if (z === 0) return true; // 바닥은 지탱 검사 불요
+    if (z === 0) return true;
     
     const targetArea = w * l;
     let supportArea = 0;
     
     for (const item of tempItems) {
         const itemTop = item.z + item.h;
-        // z축 방향으로 바로 아래에 맞닿아 있는지 확인 (5mm 내외의 오차 허용)
         if (Math.abs(itemTop - z) <= 5) {
-            // X축 방향으로 겹치는 길이 계산
             const xOverlap = Math.max(0, Math.min(x + w, item.x + item.w) - Math.max(x, item.x));
-            // YRel축 방향으로 겹치는 길이 계산
             const yOverlap = Math.max(0, Math.min(yRel + l, item.yRel + item.l) - Math.max(yRel, item.yRel));
+            
+            if (xOverlap > 0 && yOverlap > 0) {
+                if (topperDivision && item.product.division && topperDivision !== item.product.division) {
+                    return false;
+                }
+            }
             
             supportArea += xOverlap * yOverlap;
         }
@@ -557,7 +568,7 @@ function doTwoPhasePacking(container: any, normalProducts: Product[], smallProdu
                     // 2. 해당 후보 위치에서 안정적인 지탱이 가능한지 검사 (최종 안착 가능 여부) - 슬라이딩 시에는 100% 지탱만 허용하여 계단식 돌출 적재 방지
                     const candidateZ = getTopZAt(targetX, candidateY, wi.w, wi.l, xOverlapCandidates);
                     const isHeightMatch = candidateZ === targetZ;
-                    const isSupported = hasSupportAtZ(targetX, candidateY, wi.w, wi.l, targetZ, xOverlapCandidates, 0.99);
+                    const isSupported = hasSupportAtZ(targetX, candidateY, wi.w, wi.l, targetZ, xOverlapCandidates, 0.99, wi.product.division);
 
                     if (isHeightMatch && isSupported) {
                         bestY = candidateY; // 지탱 가능하고 단차가 맞다면 이 위치를 최선으로 저장
@@ -702,7 +713,7 @@ function doTwoPhasePacking(container: any, normalProducts: Product[], smallProdu
                                     break; // 높이가 다르면 단차가 발생하므로 슬라이딩 불가
                                 }
                                 // 슬라이딩 시에는 100% 지탱만 허용하여 계단식 돌출 적재 방지
-                                if (!hasSupportAtZ(targetX, candidateY, to.w, to.l, targetZ, xOverlapCandidates, 0.99)) {
+                                if (!hasSupportAtZ(targetX, candidateY, to.w, to.l, targetZ, xOverlapCandidates, 0.99, sp.division)) {
                                     break; // 지탱 공간이 확보되지 않으면 슬라이딩 불가
                                 }
                                 let overlap = false;
@@ -728,7 +739,7 @@ function doTwoPhasePacking(container: any, normalProducts: Product[], smallProdu
                             }
                         
                             // 1. 공중 부양 방지 지탱면 검사
-                            if (!hasSupportAtZ(targetX, targetY, to.w, to.l, targetZ, placed)) {
+                            if (!hasSupportAtZ(targetX, targetY, to.w, to.l, targetZ, placed, 0.75, sp.division)) {
                                 continue;
                             }
 
@@ -990,7 +1001,7 @@ function doTwoPhasePacking(container: any, normalProducts: Product[], smallProdu
                             }
                             
                             // 1. 공중 부양 방지 지탱면 검사
-                            if (!hasSupportAtZ(targetX, targetY, to.w, to.l, targetZ, placed)) {
+                            if (!hasSupportAtZ(targetX, targetY, to.w, to.l, targetZ, placed, 0.75, sp.division)) {
                                 continue;
                             }
 
@@ -1391,7 +1402,7 @@ function blockPackShelf(W: number, H: number, D: number, allProducts: Product[],
                                                 }
                                                 
                                                 // 1. 공중 부양 방지 지탱면 검사
-                                                if (!hasSupportAtZInTemp(targetX, targetYRel, to.w, to.l, curZ, tempItems)) {
+                                                if (!hasSupportAtZInTemp(targetX, targetYRel, to.w, to.l, curZ, tempItems, sp.division)) {
                                                     continue;
                                                 }
 

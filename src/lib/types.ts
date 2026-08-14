@@ -41,6 +41,7 @@ export interface Product {
     quantity: number;
     allow_rotate: boolean;  // 기본값: true (가로/세로 회전)
     allow_lay_down: boolean; // 선택값: false (눕히기 - 가로x높이 등)
+    division?: string;
 }
 
 export interface PackedItem {
