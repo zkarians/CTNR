@@ -1743,6 +1743,41 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
         }
     };
 
+    const handleDownloadSelectedPhotos = async () => {
+        if (selectedPhotoIds.length === 0) return;
+
+        if (selectedPhotoIds.length === 1) {
+            const targetPhoto = photos.find(p => p.id === selectedPhotoIds[0]);
+            if (targetPhoto) {
+                await handleDownload(targetPhoto);
+                return;
+            }
+        }
+
+        // Multiple photos: download as ZIP
+        setIsLoading(true);
+        try {
+            const params = new URLSearchParams();
+            params.append('ids', selectedPhotoIds.join(','));
+
+            const downloadUrl = `/api/photos/download?${params.toString()}`;
+            const a = document.createElement('a');
+            a.href = downloadUrl;
+            
+            const todayStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+            a.download = `selected_photos_${todayStr}.zip`;
+            
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+        } catch (error) {
+            console.error("Download failed:", error);
+            alert("사진 다운로드 중 오류가 발생했습니다.");
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
     const handleDownload = async (photo: Photo, e?: React.MouseEvent) => {
         if (e) e.stopPropagation();
         const cleanCntr = (photo.cntr_no || "CNTR").replace(/[^a-zA-Z0-9]/g, '_');
@@ -3376,6 +3411,9 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
                                         <>
                                             <button onClick={() => setIsMoveModalOpen(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white transition-all text-xs font-black shrink-0 shadow-md shadow-indigo-500/20 cursor-pointer">
                                                 <Folder className="w-3.5 h-3.5" /> 이동
+                                            </button>
+                                            <button onClick={handleDownloadSelectedPhotos} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white transition-all text-xs font-black shrink-0 shadow-md shadow-sky-500/20 cursor-pointer" title={selectedPhotoIds.length > 1 ? "선택한 사진들을 압축(ZIP)하여 다운로드" : "선택한 사진 다운로드"}>
+                                                <Download className="w-3.5 h-3.5" /> 다운로드
                                             </button>
                                             <button onClick={() => handleRotatePhotos(-90)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-500/10 dark:hover:bg-slate-500 text-slate-700 dark:text-slate-400 dark:hover:text-white transition-all text-xs font-black shrink-0 cursor-pointer" title="선택한 사진들을 반시계방향 90도 회전">
                                                 <RotateCcw className="w-3.5 h-3.5" /> 좌회전
