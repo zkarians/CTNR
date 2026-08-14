@@ -1952,12 +1952,7 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
                                             <span>뒤로가기</span>
                                         </button>
                                     )}
-                                    <button onClick={onClose}
-                                        className="flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-rose-500/10 hover:bg-rose-500 text-rose-600 hover:text-white border border-rose-500/30 font-black text-xs transition-all cursor-pointer h-[38px] shadow-2xs"
-                                        title="사진 보관함 창 닫기">
-                                            <X className="w-3.5 h-3.5" />
-                                        <span>닫기</span>
-                                    </button>
+
                                 </div>
                             </div>
                         </div>
