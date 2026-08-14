@@ -1402,7 +1402,7 @@ function blockPackShelf(W: number, H: number, D: number, allProducts: Product[],
                                                 }
                                                 
                                                 // 1. 공중 부양 방지 지탱면 검사
-                                                if (!hasSupportAtZInTemp(targetX, targetYRel, to.w, to.l, curZ, tempItems, sp.division)) {
+                                                if (!hasSupportAtZInTemp(targetX, targetYRel, to.w, to.l, curZ, tempItems, currentItem.p.division)) {
                                                     continue;
                                                 }
 
