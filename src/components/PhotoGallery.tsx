@@ -1022,12 +1022,54 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
     });
     const abortControllerRef = React.useRef<AbortController | null>(null);
 
+    // Helper to determine the target team key for saving/loading local copy path
+    const getActiveTeamStorageInfo = () => {
+        if (selectedFolders.length > 0) {
+            const selectedFolderObjs = folders.filter(f => selectedFolders.includes(f.cntrNo + '|' + f.workDateStr));
+            const teamName = selectedFolderObjs.find(f => f.photos[0]?.team_name)?.photos[0]?.team_name;
+            if (teamName && teamName.trim()) {
+                const cleanName = teamName.trim();
+                return {
+                    teamKey: `team_${cleanName}`,
+                    teamName: cleanName
+                };
+            }
+        }
+        if (selectedTeamId) {
+            const team = teams.find(t => String(t.id) === String(selectedTeamId));
+            const teamName = team ? team.name.trim() : selectedTeamId;
+            return {
+                teamKey: `team_${teamName}`,
+                teamName
+            };
+        }
+        return {
+            teamKey: 'all',
+            teamName: '전체'
+        };
+    };
+
+    const saveLocalCopyPathToStorage = (path: string) => {
+        if (typeof window === 'undefined' || !path.trim()) return;
+        const { teamKey } = getActiveTeamStorageInfo();
+        const trimmed = path.trim();
+        localStorage.setItem(`localCopyTargetPath_${teamKey}`, trimmed);
+        localStorage.setItem(`localCopyTargetPath_${selectedTeamId || 'all'}`, trimmed);
+        localStorage.setItem('localCopyTargetPath_last', trimmed);
+    };
+
     useEffect(() => {
         if (typeof window !== 'undefined') {
-            const savedPath = localStorage.getItem(`localCopyTargetPath_${selectedTeamId || 'all'}`) || '';
-            setLocalCopyPath(savedPath);
+            const { teamKey } = getActiveTeamStorageInfo();
+            const savedPath = localStorage.getItem(`localCopyTargetPath_${teamKey}`) 
+                           || localStorage.getItem(`localCopyTargetPath_${selectedTeamId || 'all'}`)
+                           || localStorage.getItem('localCopyTargetPath_last') 
+                           || '';
+            if (savedPath) {
+                setLocalCopyPath(savedPath);
+            }
         }
-    }, [selectedTeamId]);
+    }, [isLocalCopyOpen, selectedTeamId, selectedFolders]);
     
     // Load teams once on mount
     useEffect(() => {
@@ -1583,6 +1625,7 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
             if (response.ok && data.success) {
                 if (!data.cancelled && data.path) {
                     setLocalCopyPath(data.path);
+                    saveLocalCopyPathToStorage(data.path);
                 }
             } else {
                 alert(`폴더 선택 실패: ${data.error || '알 수 없는 오류가 발생했습니다.'}`);
@@ -1676,7 +1719,7 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
                                 skippedCount: event.skippedCount
                             });
                         } else if (event.type === 'done') {
-                            localStorage.setItem(`localCopyTargetPath_${selectedTeamId || 'all'}`, localCopyPath.trim());
+                            saveLocalCopyPathToStorage(localCopyPath);
                             setCopyProgress(prev => ({
                                 ...prev,
                                 current: event.total,
@@ -3169,6 +3212,11 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
                                 <div className="space-y-4">
                                     <p className="text-xs text-slate-400 leading-relaxed">
                                         선택한 <strong className="text-emerald-400">{selectedFolders.length}개</strong> 컨테이너 폴더를 지정한 로컬 디렉토리로 압축 없이 즉시 복사합니다.
+                                        {getActiveTeamStorageInfo().teamName !== '전체' && (
+                                            <span className="block mt-1 text-[11px] text-emerald-400 font-black">
+                                                🏷️ [{getActiveTeamStorageInfo().teamName}] 전용 마지막 저장 경로가 자동 적용됩니다.
+                                            </span>
+                                        )}
                                     </p>
                                     
                                     <div className="space-y-2">
