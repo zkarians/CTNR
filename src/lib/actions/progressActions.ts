@@ -3,24 +3,7 @@
 import { pool } from '@/lib/db';
 import { getWorkDateString } from '@/lib/utils/dateUtils';
 import { calculateTeamTimeline } from '@/lib/timeline';
-
-export interface TeamWorkProgress {
-    teamName: string;
-    completedCount: number;
-    totalDurationMinutes: number;
-    startTimeStr: string;
-    endTimeStr: string;
-    lastCntrNo?: string;
-    containers: {
-        cntrNo: string;
-        durationMinutes: number;
-        startTimeStr: string;
-        endTimeStr: string;
-        isManual?: boolean;
-        manualEntryId?: number;
-        firstUploadedAt?: string;
-    }[];
-}
+import { TeamWorkProgress } from '@/lib/types';
 
 export async function fetchTeamWorkProgress(targetWorkDate?: string): Promise<Record<string, TeamWorkProgress>> {
     try {

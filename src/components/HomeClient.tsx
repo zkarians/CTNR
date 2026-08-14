@@ -27,10 +27,10 @@ import { getLocalDateString, getWorkDateString } from '@/lib/utils/dateUtils';
 import { isSameTeam } from '@/lib/utils/teamUtils';
 import { getCarrierColor } from '@/lib/utils/colorUtils';
 import {
-    Product, PackingResult, ContainerType, CONTAINER_DATA, Job, JobFilters, DbConfig, UserAccount, Team
+    Product, PackingResult, ContainerType, CONTAINER_DATA, Job, JobFilters, DbConfig, UserAccount, Team, TeamWorkProgress
 } from '@/lib/types';
 import { packContainer } from '@/lib/packer';
-import { fetchJobs, fetchProductsByJob, searchProducts, getDbConfig, updateDbConfig, updatePassword, fetchAllUsers, createUserAccount, updateUserAccount, deleteUserAccount, deleteMultipleUserAccounts, generateWorkReport, saveDailyWorkReport, getSavedDailyWorkReport, exportDatabaseDump, restoreDatabaseDump, triggerManualBackupAndSync, fetchTeams, createTeam, updateTeam, deleteTeam, fetchTeamWorkProgress, TeamWorkProgress, updateContainerWorkDuration, updateContainerAdminComment, resetTeamWorkProgress, deleteContainerResult, addManualReportEntry, deleteManualReportEntry, updateManualReportEntry } from '@/lib/actions';
+import { fetchJobs, fetchProductsByJob, searchProducts, getDbConfig, updateDbConfig, updatePassword, fetchAllUsers, createUserAccount, updateUserAccount, deleteUserAccount, deleteMultipleUserAccounts, generateWorkReport, saveDailyWorkReport, getSavedDailyWorkReport, exportDatabaseDump, restoreDatabaseDump, triggerManualBackupAndSync, fetchTeams, createTeam, updateTeam, deleteTeam, fetchTeamWorkProgress, updateContainerWorkDuration, updateContainerAdminComment, resetTeamWorkProgress, deleteContainerResult, addManualReportEntry, deleteManualReportEntry, updateManualReportEntry } from '@/lib/actions';
 import { SessionUser } from '@/lib/auth';
 import { calculateTeamTimeline } from '@/lib/timeline';
 

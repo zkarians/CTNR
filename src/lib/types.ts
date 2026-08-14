@@ -113,3 +113,21 @@ export interface Team {
     name: string;
 }
 
+export interface TeamWorkProgress {
+    teamName: string;
+    completedCount: number;
+    totalDurationMinutes: number;
+    startTimeStr: string;
+    endTimeStr: string;
+    lastCntrNo?: string;
+    containers: {
+        cntrNo: string;
+        durationMinutes: number;
+        startTimeStr: string;
+        endTimeStr: string;
+        isManual?: boolean;
+        manualEntryId?: number;
+        firstUploadedAt?: string;
+    }[];
+}
+

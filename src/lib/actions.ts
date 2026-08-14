@@ -7,8 +7,6 @@ import * as userActions from './actions/userActions';
 import * as syncActions from './actions/syncActions';
 import * as reportActions from './actions/reportActions';
 
-export type { TeamWorkProgress } from './actions/progressActions';
-
 // Team Actions
 export async function fetchTeams() { return teamActions.fetchTeams(); }
 export async function createTeam(name: string) { return teamActions.createTeam(name); }
