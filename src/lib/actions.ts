@@ -457,7 +457,7 @@ export async function generateWorkReport(filters: JobFilters): Promise<{ success
                 remark: string;
                 transporter: string;
                 adminComment: string;
-                products: { name: string; qty: number; division: string; height?: number }[] 
+                products: { name: string; qty: number; division: string; height?: number }[], emptyBoxes?: any[] 
             }>>>();
 
             for (const row of rows) {

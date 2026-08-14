@@ -698,9 +698,9 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
                 const dateB = new Date((b as any).file_created_at || b.uploaded_at).getTime();
                 return dateA - dateB;
             } else if (sortBy === 'NAME_ASC') {
-                return a.photo_path.localeCompare(b.photo_path);
+                return a.photo_path.localeCompare(b.photo_path, undefined, { numeric: true, sensitivity: 'base' });
             } else if (sortBy === 'NAME_DESC') {
-                return b.photo_path.localeCompare(a.photo_path);
+                return b.photo_path.localeCompare(a.photo_path, undefined, { numeric: true, sensitivity: 'base' });
             }
             return 0;
         });
@@ -1524,7 +1524,7 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
         }
     };
 
-    const handleToggleTeamFolders = (teamFolders: ContainerFolder[]) => {
+    const handleToggleTeamFolders = (teamFolders: any[]) => {
         const teamFolderKeys = teamFolders.map(f => f.cntrNo + '|' + f.workDateStr);
         const allSelected = teamFolderKeys.length > 0 && teamFolderKeys.every(key => selectedFolders.includes(key));
         if (allSelected) {
@@ -1717,7 +1717,7 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
         const downloadFilename = `${cleanCntr}_${dateStr}_${timeStr}.jpg`;
 
         try {
-            const response = await fetch(`/api/photos/view?filename=${encodeURIComponent(photo.photo_path)}`);
+            const response = await fetch(`/api/photos/view?filename=${encodeURIComponent(photo.photo_path.split('?')[0]) + (photo.photo_path.includes('?t=') ? '&t=' + photo.photo_path.split('?t=')[1] : '')}`);
             if (!response.ok) throw new Error("File not found");
             const blob = await response.blob();
             const url = window.URL.createObjectURL(blob);
@@ -1732,7 +1732,7 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
         } catch (error) {
             console.error('Download fetch error, falling back to direct download link:', error);
             try {
-                const directUrl = `/api/photos/view?filename=${encodeURIComponent(photo.photo_path)}&download=1`;
+                const directUrl = `/api/photos/view?filename=${encodeURIComponent(photo.photo_path.split('?')[0]) + (photo.photo_path.includes('?t=') ? '&t=' + photo.photo_path.split('?t=')[1] : '')}&download=1`;
                 const a = document.createElement('a');
                 a.href = directUrl;
                 a.download = downloadFilename;
@@ -2401,7 +2401,7 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
                                                 </div>
                                             )}
                                             <img 
-                                                src={`/api/photos/view?filename=${encodeURIComponent(photo.photo_path)}`}
+                                                src={`/api/photos/view?filename=${encodeURIComponent(photo.photo_path.split('?')[0]) + (photo.photo_path.includes('?t=') ? '&t=' + photo.photo_path.split('?t=')[1] : '')}`}
                                                 alt={photo.cntr_no}
                                                 className={
                                                     viewMode === 'GRID'
@@ -2610,7 +2610,7 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
                                 <div className="space-y-2 pt-6 border-t border-white/5">
                                     <div className="grid grid-cols-2 gap-2">
                                         <a 
-                                            href={`/api/photos/view?filename=${encodeURIComponent(photos[activePhotoIdx].photo_path)}`}
+                                            href={`/api/photos/view?filename=${encodeURIComponent(photos[activePhotoIdx].photo_path.split('?')[0]) + (photos[activePhotoIdx].photo_path.includes('?t=') ? '&t=' + photos[activePhotoIdx].photo_path.split('?t=')[1] : '')}`}
                                             target="_blank"
                                             rel="noopener noreferrer"
                                             className="p-3 rounded-xl bg-[#12121a] border border-white/5 hover:border-white/10 text-sky-400 hover:bg-sky-500 hover:text-white transition-all flex items-center justify-center gap-1.5 text-xs font-black"
@@ -2705,7 +2705,7 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
                                         >
                                             <img 
                                                 ref={imageRefCallback}
-                                                src={`/api/photos/view?filename=${encodeURIComponent(photos[activePhotoIdx].photo_path)}`}
+                                                src={`/api/photos/view?filename=${encodeURIComponent(photos[activePhotoIdx].photo_path.split('?')[0]) + (photos[activePhotoIdx].photo_path.includes('?t=') ? '&t=' + photos[activePhotoIdx].photo_path.split('?t=')[1] : '')}`}
                                                 alt={photos[activePhotoIdx].cntr_no}
                                                 className="max-w-full max-h-[90vh] object-contain rounded-2xl border border-white/10 shadow-2xl select-none"
                                                 style={{

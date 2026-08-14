@@ -115,20 +115,16 @@ export async function POST(req: NextRequest) {
 
             // 1. Try to extract EXIF DateTimeOriginal
             try {
-                const metadata = await sharp(inputBuffer).metadata();
-                if (metadata.exif) {
-                    const exifStr = metadata.exif.toString('utf8');
-                    // Look for standard EXIF format YYYY:MM:DD HH:MM:SS
-                    const match = exifStr.match(/(\d{4}):(\d{2}):(\d{2}) (\d{2}):(\d{2}):(\d{2})/);
-                    if (match) {
-                        extractedDate = new Date(
-                            parseInt(match[1]), parseInt(match[2]) - 1, parseInt(match[3]),
-                            parseInt(match[4]), parseInt(match[5]), parseInt(match[6])
-                        );
+                const parser = ExifParser.create(inputBuffer);
+                const result = parser.parse();
+                if (result && result.tags) {
+                    const timestamp = result.tags.DateTimeOriginal || result.tags.CreateDate || result.tags.ModifyDate;
+                    if (timestamp) {
+                        extractedDate = new Date(timestamp * 1000);
                     }
                 }
             } catch (e) {
-                // Ignore sharp metadata error
+                // Ignore parser error
             }
 
             // 2. Try to use lastModified
