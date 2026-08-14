@@ -2584,7 +2584,20 @@ const handleSaveComment = async (cntrNo: string) => {
             />
             
 
-            <PhotoGallery user={user} isOpen={isGalleryOpen} initialSearchCntrNo={gallerySearchCntrNo} onClose={() => { setIsGalleryOpen(false); setGallerySearchCntrNo(''); refreshJobs(); loadTeamProgress(); }} onOpenReport={handleOpenReportFromGallery} />
+            {isGalleryOpen && (
+                <PhotoGallery
+                    user={user}
+                    isOpen={isGalleryOpen}
+                    initialSearchCntrNo={gallerySearchCntrNo}
+                    onClose={() => {
+                        setIsGalleryOpen(false);
+                        setGallerySearchCntrNo('');
+                        refreshJobs();
+                        loadTeamProgress();
+                    }}
+                    onOpenReport={handleOpenReportFromGallery}
+                />
+            )}
         </div>
     );
 }
