@@ -701,10 +701,11 @@ export async function PATCH(req: NextRequest) {
         const isUploadGDriveAction = action === 'upload_gdrive';
         const isRotateAction = action === 'rotate';
         const isMoveContainerAction = action === 'move_container';
+        const isUpdatePhotoTypeAction = action === 'update_photo_type';
 
-        // Only admins or normal users with complete/move/gdrive actions
-        if (!isCompleteAction && !isUploadGDriveAction && !isMoveContainerAction && !isRotateAction && !isAdmin) {
-            return NextResponse.json({ error: '복구 권한이 없습니다. 관리자만 복구할 수 있습니다.' }, { status: 403 });
+        // Only admins or normal users with complete/move/gdrive/rotate/update_photo_type actions
+        if (!isCompleteAction && !isUploadGDriveAction && !isMoveContainerAction && !isRotateAction && !isUpdatePhotoTypeAction && !isAdmin) {
+            return NextResponse.json({ error: '권한이 없습니다.' }, { status: 403 });
         }
 
         const client = await pool.connect();
@@ -837,6 +838,27 @@ if (isRotateAction) {
                 return NextResponse.json({
                     success: true,
                     message: `사진 ${movedCount}장이 컨테이너 '${targetCntrNo}'(으)로 이동되었습니다.`
+                });
+            }
+
+            if (isUpdatePhotoTypeAction) {
+                const targetId = body.id || (ids && ids[0]) || id;
+                if (!targetId) {
+                    releaseClient();
+                    return NextResponse.json({ error: '사진 ID가 제공되지 않았습니다.' }, { status: 400 });
+                }
+                const photoType = body.photo_type === 'seal' ? 'seal' : 'normal';
+                
+                await client.query(
+                    `UPDATE container_photos SET photo_type = $1 WHERE id = $2`,
+                    [photoType, targetId]
+                );
+
+                releaseClient();
+                return NextResponse.json({
+                    success: true,
+                    photo_type: photoType,
+                    message: photoType === 'seal' ? '씰(Seal) 사진으로 지정되었습니다.' : '일반 사진으로 변경되었습니다.'
                 });
             }
 

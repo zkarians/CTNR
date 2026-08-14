@@ -343,6 +343,37 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
         }
     };
 
+    const handleToggleSealPhoto = async (photo: Photo) => {
+        const newType = photo.photo_type === 'seal' ? 'normal' : 'seal';
+        const confirmMsg = newType === 'seal' 
+            ? '이 사진을 정식 [씰(Seal) 사진]으로 지정하시겠습니까?\n\n지정 시 해당 컨테이너 폴더의 씰 누락 빨간색 깜빡임이 해제되고, 보고서에도 씰 사진으로 정상 반영됩니다.'
+            : '이 사진의 씰(Seal) 지정을 해제하고 [일반 사진]으로 변경하시겠습니까?';
+        
+        if (!confirm(confirmMsg)) return;
+
+        try {
+            const res = await fetch('/api/photos', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    action: 'update_photo_type',
+                    id: photo.id,
+                    photo_type: newType
+                })
+            });
+            const data = await res.json();
+            if (data.success) {
+                setPhotos(prev => prev.map(p => p.id === photo.id ? { ...p, photo_type: newType } : p));
+                alert(data.message || '사진 구분이 성공적으로 변경되었습니다.');
+            } else {
+                alert(`변경 실패: ${data.error || '알 수 없는 오류'}`);
+            }
+        } catch (error) {
+            console.error("Update photo type error:", error);
+            alert("사진 구분 변경 중 오류가 발생했습니다.");
+        }
+    };
+
     const handleRestoreSelectedPhotos = async () => {
         if (selectedPhotoIds.length === 0) return;
         if (!confirm(`선택한 사진 총 ${selectedPhotoIds.length}장을 복구하시겠습니까?`)) return;
@@ -2450,6 +2481,13 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
                                                     중복
                                                 </div>
                                             )}
+
+                                            {/* Seal Badge */}
+                                            {photo.photo_type === 'seal' && (
+                                                <div className="absolute top-2.5 right-9 z-10 px-2 py-1 rounded-lg bg-rose-600/90 border border-rose-400/40 text-white font-black text-[9px] uppercase tracking-wider shadow-md backdrop-blur-md flex items-center gap-1">
+                                                    <Camera className="w-2.5 h-2.5 text-white" /> 씰
+                                                </div>
+                                            )}
                                             <img 
                                                 src={getPhotoViewUrl(photo.photo_path)}
                                                 alt={photo.cntr_no}
@@ -2618,6 +2656,36 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
                                                 }`}>
                                                     {currentPhotoIndex + 1} / {folderPhotos.length} 장
                                                 </span>
+                                            )}
+                                        </div>
+
+                                        {/* Photo Type (Seal) Section */}
+                                        <div className="flex items-center justify-between pt-2 border-t border-white/5">
+                                            <div className="flex items-center gap-1.5">
+                                                <span className="text-[11px] font-bold text-slate-400">구분:</span>
+                                                {photos[activePhotoIdx].photo_type === 'seal' ? (
+                                                    <span className="px-2 py-0.5 rounded-md bg-rose-500/20 text-rose-400 border border-rose-500/30 text-[10px] font-black flex items-center gap-1">
+                                                        <Camera className="w-3 h-3 text-rose-400" /> 씰(Seal) 사진
+                                                    </span>
+                                                ) : (
+                                                    <span className="px-2 py-0.5 rounded-md bg-slate-500/10 text-slate-400 border border-slate-500/20 text-[10px] font-bold">
+                                                        일반 적재 사진
+                                                    </span>
+                                                )}
+                                            </div>
+                                            {isAdmin && (
+                                                <button
+                                                    onClick={(e) => { e.stopPropagation(); handleToggleSealPhoto(photos[activePhotoIdx]); }}
+                                                    className={`px-2.5 py-1 rounded-lg text-xs font-black transition-all cursor-pointer flex items-center gap-1 shadow-sm ${
+                                                        photos[activePhotoIdx].photo_type === 'seal'
+                                                            ? 'bg-slate-700 hover:bg-slate-600 text-slate-300'
+                                                            : 'bg-rose-600 hover:bg-rose-500 text-white shadow-rose-600/30'
+                                                    }`}
+                                                    title={photos[activePhotoIdx].photo_type === 'seal' ? '씰 지정을 해제하고 일반 사진으로 변경' : '이 사진을 정식 씰(Seal) 사진으로 지정'}
+                                                >
+                                                    <Camera className="w-3.5 h-3.5" />
+                                                    <span>{photos[activePhotoIdx].photo_type === 'seal' ? '씰 해제' : '씰 사진 지정'}</span>
+                                                </button>
                                             )}
                                         </div>
                                     </div>
