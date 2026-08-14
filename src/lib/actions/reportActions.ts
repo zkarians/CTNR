@@ -4,6 +4,7 @@ import { pool } from '@/lib/db';
 import { JobFilters } from '@/lib/types';
 import { getWorkDateString } from '@/lib/utils/dateUtils';
 import { generateJobType } from '@/lib/utils/jobType';
+import { getNormalizedCarrier } from '@/lib/utils/carrierUtils';
 import { calculateTeamTimeline } from '@/lib/timeline';
 import { getSession } from '@/lib/auth';
 
@@ -325,12 +326,7 @@ export async function generateWorkReport(filters: JobFilters): Promise<{ success
                     const timelineList = calculateTeamTimeline(cntrList);
 
                     const containersList = timelineList.map((cntrData) => {
-                        const transporter = cntrData.transporter || '기타';
-                        let carrierKey = '기타';
-                        if (transporter.includes('천마')) carrierKey = '천마';
-                        else if (transporter.includes('BNI') || transporter.includes('비엔아이')) carrierKey = 'BNI';
-                        else if (transporter.trim()) carrierKey = transporter.split('(')[0].trim();
-
+                        const carrierKey = getNormalizedCarrier(cntrData.transporter);
                         carrierCounts[carrierKey] = (carrierCounts[carrierKey] || 0) + 1;
 
                         return {
