@@ -1588,20 +1588,42 @@ const handleSaveComment = async (cntrNo: string) => {
                 formData.append('durationMinutes', (uploadDurationMinutes === '' ? 45 : uploadDurationMinutes).toString());
                 formData.append('photoType', uploadPhotoType);
 
-                const res = await fetch('/api/photos', {
-                    method: 'POST',
-                    body: formData,
-                });
+                let res: Response | null = null;
+                let data: any = null;
+                let uploadAttempts = 0;
+                const maxAttempts = 3;
 
-                const data = await res.json();
-                if (data.success) {
+                while (uploadAttempts < maxAttempts) {
+                    uploadAttempts++;
+                    try {
+                        res = await fetch('/api/photos', {
+                            method: 'POST',
+                            body: formData,
+                        });
+                        if (res.ok) {
+                            data = await res.json();
+                            if (data && data.success) break;
+                        } else {
+                            data = await res.json().catch(() => null);
+                        }
+                    } catch (netErr) {
+                        console.warn(`[Upload Attempt ${uploadAttempts} Failed for ${file.name}]:`, netErr);
+                    }
+
+                    if (uploadAttempts < maxAttempts && (!data || !data.success)) {
+                        setUploadProgressText(`불안정 네트워크 재전송 시도 (${uploadAttempts}/${maxAttempts})... (${i + 1}/${uploadFiles.length})`);
+                        await new Promise(r => setTimeout(r, 1000 * uploadAttempts));
+                    }
+                }
+
+                if (data && data.success) {
                     successCount++;
                     if (data.isDuplicate && data.photo) {
                         duplicatesUploaded.push({ id: data.photo.id, name: file.name });
                     }
                 } else {
-                    console.error(`Failed to upload file ${file.name}:`, data.error);
-                    alert(`사진 업로드 실패 (${file.name}): ${data.error || '알 수 없는 오류가 발생했습니다.'}`);
+                    console.error(`Failed to upload file ${file.name} after ${uploadAttempts} attempts:`, data?.error);
+                    alert(`사진 업로드 실패 (${file.name}): ${data?.error || '네트워크 연결이 불안정하여 업로드하지 못했습니다.'}`);
                 }
             }
 

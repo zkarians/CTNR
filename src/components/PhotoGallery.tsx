@@ -94,6 +94,8 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
     const [duplicatePhotoIds, setDuplicatePhotoIds] = useState<string[]>([]);
     const [selectedPhotoIds, setSelectedPhotoIds] = useState<string[]>([]);
     const [rotationOffsets, setRotationOffsets] = useState<{ [photoId: string]: number }>({});
+    const touchStartXRef = React.useRef<number | null>(null);
+    const touchStartYRef = React.useRef<number | null>(null);
 
     const [isGDriveProgressOpen, setIsGDriveProgressOpen] = useState(false);
     const [isGDriveUploading, setIsGDriveUploading] = useState(false);
@@ -205,8 +207,25 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
         }
     };
 
-    const toggleSelectPhoto = (photoId: string, e?: React.MouseEvent) => {
+    const lastSelectedPhotoIdRef = React.useRef<string | null>(null);
+
+    const toggleSelectPhoto = (photoId: string, e?: React.MouseEvent, currentList?: Photo[]) => {
         if (e) e.stopPropagation();
+
+        if (e?.shiftKey && lastSelectedPhotoIdRef.current && currentList && currentList.length > 0) {
+            const lastIdx = currentList.findIndex(p => p.id === lastSelectedPhotoIdRef.current);
+            const currentIdx = currentList.findIndex(p => p.id === photoId);
+            if (lastIdx !== -1 && currentIdx !== -1) {
+                const start = Math.min(lastIdx, currentIdx);
+                const end = Math.max(lastIdx, currentIdx);
+                const rangeIds = currentList.slice(start, end + 1).map(p => p.id);
+                setSelectedPhotoIds(prev => Array.from(new Set([...prev, ...rangeIds])));
+                lastSelectedPhotoIdRef.current = photoId;
+                return;
+            }
+        }
+
+        lastSelectedPhotoIdRef.current = photoId;
         setSelectedPhotoIds(prev => 
             prev.includes(photoId) ? prev.filter(id => id !== photoId) : [...prev, photoId]
         );
@@ -1832,8 +1851,8 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
         }
     };
 
-    const handlePrevPhoto = (e: React.MouseEvent) => {
-        e.stopPropagation();
+    const handlePrevPhoto = (e?: React.MouseEvent | React.TouchEvent | React.SyntheticEvent) => {
+        if (e) e.stopPropagation();
         resetZoom();
         if (activePhotoIdx === null || photos.length === 0) return;
         
@@ -1850,8 +1869,8 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
         }
     };
 
-    const handleNextPhoto = (e: React.MouseEvent) => {
-        e.stopPropagation();
+    const handleNextPhoto = (e?: React.MouseEvent | React.TouchEvent | React.SyntheticEvent) => {
+        if (e) e.stopPropagation();
         resetZoom();
         if (activePhotoIdx === null || photos.length === 0) return;
         
@@ -2435,6 +2454,7 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
                                 {folderPhotos.map((photo) => (
                                     <div 
                                         key={photo.id}
+                                        style={{ contentVisibility: 'auto', containIntrinsicSize: '240px' }}
                                         onClick={() => {
                                             const globalIdx = photos.findIndex(p => p.id === photo.id);
                                             if (globalIdx !== -1) {
@@ -2455,9 +2475,9 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
                                         }>
                                             {/* Selection Checkbox */}
                                             <div 
-                                                onClick={(e) => toggleSelectPhoto(photo.id, e)}
+                                                onClick={(e) => toggleSelectPhoto(photo.id, e, folderPhotos)}
                                                 className="absolute top-2.5 left-2.5 z-20 flex items-center justify-center p-0.5 cursor-pointer"
-                                                title={selectedPhotoIds.includes(photo.id) ? "선택 해제" : "사진 선택"}
+                                                title={selectedPhotoIds.includes(photo.id) ? "선택 해제" : "사진 선택 (Shift+클릭으로 연속 선택 가능)"}
                                             >
                                                 <div className={`w-5 h-5 rounded-lg border flex items-center justify-center transition-all shadow-md ${
                                                     selectedPhotoIds.includes(photo.id)
@@ -2842,8 +2862,29 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
                                         <ChevronLeft className="w-6 h-6" />
                                     </button>
 
-                                    {/* Image Wrapper */}
-                                    <div className="max-w-full max-h-[92vh] flex items-center justify-center relative overflow-hidden select-none">
+                                    {/* Image Wrapper with Mobile Swipe Support */}
+                                    <div 
+                                        onTouchStart={(e) => {
+                                            if (scale > 1) return;
+                                            touchStartXRef.current = e.touches[0].clientX;
+                                            touchStartYRef.current = e.touches[0].clientY;
+                                        }}
+                                        onTouchEnd={(e) => {
+                                            if (scale > 1 || touchStartXRef.current === null || touchStartYRef.current === null) return;
+                                            const diffX = e.changedTouches[0].clientX - touchStartXRef.current;
+                                            const diffY = e.changedTouches[0].clientY - touchStartYRef.current;
+                                            if (Math.abs(diffX) > 40 && Math.abs(diffX) > Math.abs(diffY) * 1.2) {
+                                                if (diffX > 0) {
+                                                    handlePrevPhoto();
+                                                } else {
+                                                    handleNextPhoto();
+                                                }
+                                            }
+                                            touchStartXRef.current = null;
+                                            touchStartYRef.current = null;
+                                        }}
+                                        className="max-w-full max-h-[92vh] flex items-center justify-center relative overflow-hidden select-none touch-pan-y"
+                                    >
                                         <motion.div
                                             key={photos[activePhotoIdx].id}
                                             initial={{ scale: 0.98, opacity: 0 }}

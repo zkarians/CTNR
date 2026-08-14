@@ -5,6 +5,7 @@ import { getCarrierColor } from '@/lib/utils/colorUtils';
 import { getWorkDateString } from '@/lib/utils/dateUtils';
 import { generateJobType } from '@/lib/utils/jobType';
 import { getNormalizedCarrier } from '@/lib/utils/carrierUtils';
+import { buildReportTextFromData, ReportPresetType } from '@/lib/utils/reportUtils';
 import TeamSummaryModal from './TeamSummaryModal';
 
 interface ReportModalProps {
@@ -65,6 +66,22 @@ export default function ReportModal({
     const [editingHeaderDate, setEditingHeaderDate] = React.useState<string | null>(null);
     const [editCarrierCounts, setEditCarrierCounts] = React.useState<Record<string, number>>({});
     const [editRemarkVal, setEditRemarkVal] = React.useState<string>('');
+    const [copiedPreset, setCopiedPreset] = React.useState<string | null>(null);
+
+    const handleCopyPresetText = (preset: ReportPresetType) => {
+        if (!reportData || reportData.length === 0) return;
+        const text = buildReportTextFromData(reportData, preset);
+        if (navigator.clipboard && window.isSecureContext) {
+            navigator.clipboard.writeText(text).then(() => {
+                setCopiedPreset(preset);
+                setTimeout(() => setCopiedPreset(null), 2000);
+            }).catch(() => {
+                handleCopyReport();
+            });
+        } else {
+            handleCopyReport();
+        }
+    };
 
     if (!isReportOpen) return null;
 
@@ -755,18 +772,49 @@ export default function ReportModal({
                                 </button>
 
                             {isAdmin && (
-                                <button
-                                    onClick={handleCopyReport}
-                                    disabled={isReportGenerating || !reportText}
-                                    className={`py-2 px-1 sm:py-2.5 sm:px-4 rounded-xl font-bold text-[11px] sm:text-xs md:text-sm transition-all shadow-sm flex items-center justify-center gap-1 sm:gap-1.5 cursor-pointer disabled:opacity-50 whitespace-nowrap ${
-                                        isCopied
-                                            ? 'bg-emerald-600 text-white'
-                                            : 'bg-slate-100 border border-slate-300 text-slate-700 hover:bg-slate-200'
-                                    }`}
-                                >
-                                    {isCopied ? <Check className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-100 shrink-0" /> : <Copy className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-500 shrink-0" />}
-                                    <span>{isCopied ? '복사 완료!' : '텍스트 복사'}</span>
-                                </button>
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                    <button
+                                        onClick={handleCopyReport}
+                                        disabled={isReportGenerating || !reportText}
+                                        className={`py-2 px-2.5 sm:py-2.5 sm:px-3 rounded-xl font-bold text-[11px] sm:text-xs md:text-sm transition-all shadow-sm flex items-center justify-center gap-1 sm:gap-1.5 cursor-pointer disabled:opacity-50 whitespace-nowrap ${
+                                            isCopied
+                                                ? 'bg-emerald-600 text-white'
+                                                : 'bg-slate-100 border border-slate-300 text-slate-700 hover:bg-slate-200'
+                                        }`}
+                                        title="기본 상세 형식으로 텍스트 복사"
+                                    >
+                                        {isCopied ? <Check className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-100 shrink-0" /> : <Copy className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-500 shrink-0" />}
+                                        <span>{isCopied ? '복사 완료!' : '📋 상세 복사'}</span>
+                                    </button>
+
+                                    <button
+                                        onClick={() => handleCopyPresetText('summary')}
+                                        disabled={isReportGenerating || !reportData || reportData.length === 0}
+                                        className={`py-2 px-2.5 sm:py-2.5 sm:px-3 rounded-xl font-bold text-[11px] sm:text-xs md:text-sm transition-all shadow-sm flex items-center justify-center gap-1 sm:gap-1.5 cursor-pointer disabled:opacity-50 whitespace-nowrap ${
+                                            copiedPreset === 'summary'
+                                                ? 'bg-emerald-600 text-white'
+                                                : 'bg-slate-100 border border-slate-300 text-slate-700 hover:bg-slate-200'
+                                        }`}
+                                        title="컨테이너 번호와 수량만 간략하게 요약 복사"
+                                    >
+                                        {copiedPreset === 'summary' ? <Check className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-100 shrink-0" /> : <Copy className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-500 shrink-0" />}
+                                        <span>{copiedPreset === 'summary' ? '요약 복사 완료!' : '⚡ 요약 복사'}</span>
+                                    </button>
+
+                                    <button
+                                        onClick={() => handleCopyPresetText('anomaly')}
+                                        disabled={isReportGenerating || !reportData || reportData.length === 0}
+                                        className={`py-2 px-2.5 sm:py-2.5 sm:px-3 rounded-xl font-bold text-[11px] sm:text-xs md:text-sm transition-all shadow-sm flex items-center justify-center gap-1 sm:gap-1.5 cursor-pointer disabled:opacity-50 whitespace-nowrap ${
+                                            copiedPreset === 'anomaly'
+                                                ? 'bg-rose-600 text-white'
+                                                : 'bg-slate-100 border border-slate-300 text-rose-700 hover:bg-rose-50'
+                                        }`}
+                                        title="취소, 제외, 지연사유 등 특이사항만 집중 복사"
+                                    >
+                                        {copiedPreset === 'anomaly' ? <Check className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-rose-100 shrink-0" /> : <Copy className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-rose-500 shrink-0" />}
+                                        <span>{copiedPreset === 'anomaly' ? '특이사항 복사 완료!' : '🚨 특이사항 복사'}</span>
+                                    </button>
+                                </div>
                             )}
 
                             {isAdmin && (
