@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Package, Users, CheckCircle2, AlertCircle, LogOut } from "lucide-react";
-import { fetchTeams, selectTeam } from "@/lib/actions";
+import { fetchTeams, selectTeam } from "@/lib/actions/teamActions";
 import { logout, getSession } from "@/lib/auth";
 import type { Team } from "@/lib/types";
 

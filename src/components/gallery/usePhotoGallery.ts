@@ -3,7 +3,7 @@ import { SessionUser } from '@/lib/auth';
 import { Team } from '@/lib/types';
 import { Photo, ContainerFolder, SortOption, TabState } from './PhotoGalleryTypes';
 import { getWorkDateString, getLocalDateString } from '@/lib/utils/dateUtils';
-import { fetchTeams } from '@/lib/actions';
+import { fetchTeams } from '@/lib/actions/teamActions';
 
 export function usePhotoGallery(user: SessionUser, initialSearchCntrNo?: string) {
     const isAdmin = user && (user.role.toUpperCase() === 'ADMIN' || user.role.toUpperCase() === 'MANAGER');

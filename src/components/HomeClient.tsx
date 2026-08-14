@@ -30,7 +30,12 @@ import {
     Product, PackingResult, ContainerType, CONTAINER_DATA, Job, JobFilters, DbConfig, UserAccount, Team, TeamWorkProgress
 } from '@/lib/types';
 import { packContainer } from '@/lib/packer';
-import { fetchJobs, fetchProductsByJob, searchProducts, getDbConfig, updateDbConfig, updatePassword, fetchAllUsers, createUserAccount, updateUserAccount, deleteUserAccount, deleteMultipleUserAccounts, generateWorkReport, saveDailyWorkReport, getSavedDailyWorkReport, exportDatabaseDump, restoreDatabaseDump, triggerManualBackupAndSync, fetchTeams, createTeam, updateTeam, deleteTeam, fetchTeamWorkProgress, updateContainerWorkDuration, updateContainerAdminComment, resetTeamWorkProgress, deleteContainerResult, addManualReportEntry, deleteManualReportEntry, updateManualReportEntry } from '@/lib/actions';
+import { fetchTeams, createTeam, updateTeam, deleteTeam } from '@/lib/actions/teamActions';
+import { fetchJobs, fetchProductsByJob, searchProducts, deleteContainerResult } from '@/lib/actions/jobActions';
+import { fetchTeamWorkProgress, updateContainerWorkDuration, updateContainerAdminComment, resetTeamWorkProgress } from '@/lib/actions/progressActions';
+import { getDbConfig, updateDbConfig, updatePassword, fetchAllUsers, createUserAccount, updateUserAccount, deleteUserAccount, deleteMultipleUserAccounts } from '@/lib/actions/userActions';
+import { exportDatabaseDump, restoreDatabaseDump, triggerManualBackupAndSync } from '@/lib/actions/syncActions';
+import { generateWorkReport, saveDailyWorkReport, getSavedDailyWorkReport, addManualReportEntry, deleteManualReportEntry, updateManualReportEntry } from '@/lib/actions/reportActions';
 import { SessionUser } from '@/lib/auth';
 import { calculateTeamTimeline } from '@/lib/timeline';
 
