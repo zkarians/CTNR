@@ -74,6 +74,7 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
     const [photos, setPhotos] = useState<Photo[]>([]);
     const [teams, setTeams] = useState<Team[]>([]);
     const [isLoading, setIsLoading] = useState(false);
+    const [isRotating, setIsRotating] = useState(false);
     
     // Sort State
     const [sortBy, setSortBy] = useState<'UPLOAD_DESC' | 'UPLOAD_ASC' | 'CREATION_DESC' | 'CREATION_ASC' | 'NAME_ASC' | 'NAME_DESC'>('NAME_ASC');
@@ -248,9 +249,9 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
 
     const handleRotatePhotos = async (degrees: number, singlePhotoId?: string) => {
         const targetIds = singlePhotoId ? [singlePhotoId] : selectedPhotoIds;
-        if (targetIds.length === 0) return;
+        if (targetIds.length === 0 || isRotating) return;
         
-        setIsLoading(true);
+        setIsRotating(true);
         try {
             const res = await fetch('/api/photos', {
                 method: 'PATCH',
@@ -263,17 +264,14 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
             });
             const data = await res.json();
             if (data.success) {
-                // Update local photos to bust cache
+                const now = Date.now();
+                // Update local photos in-place without triggering full screen reload or scroll reset
                 setPhotos(prev => prev.map(p => {
                     if (targetIds.includes(p.id)) {
-                        return { ...p, photo_path: p.photo_path.split('?')[0] + '?t=' + Date.now() };
+                        return { ...p, photo_path: p.photo_path.split('?')[0] + '?t=' + now };
                     }
                     return p;
                 }));
-                // Also clear selection if bulk
-                if (!singlePhotoId) {
-                    setSelectedPhotoIds([]);
-                }
             } else {
                 alert(`회전 실패: ${data.error}`);
             }
@@ -281,7 +279,7 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
             console.error("Rotate photos error:", error);
             alert("사진 회전 중 오류가 발생했습니다.");
         } finally {
-            setIsLoading(false);
+            setIsRotating(false);
         }
     };
 
