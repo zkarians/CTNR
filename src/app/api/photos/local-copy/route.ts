@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
         }
 
         const body = await req.json();
-        const { cntrNos: cntrNosParam, ids: idsParam, targetPath, conflictAction = 'overwrite' } = body;
+        const { cntrNos: cntrNosParam, ids: idsParam, targetPath, conflictAction = 'overwrite', autoTeamSubfolder = true } = body;
 
         if ((!cntrNosParam && !idsParam) || !targetPath) {
             return NextResponse.json({ error: '필수 매개변수가 누락되었습니다.' }, { status: 400 });
@@ -38,12 +38,12 @@ export async function POST(req: NextRequest) {
 
         // 1. Fetch photo paths from the database for the selected containers
         const client = await pool.connect();
-        let photos: { cntr_no: string; photo_path: string; gdrive_file_id?: string; gdrive_url?: string }[] = [];
+        let photos: { cntr_no: string; photo_path: string; gdrive_file_id?: string; gdrive_url?: string; team_name?: string }[] = [];
         try {
             if (idsParam) {
                 const ids = (Array.isArray(idsParam) ? idsParam : String(idsParam).split(',')).map((s: any) => String(s).trim()).filter(Boolean);
                 const res = await client.query(
-                    `SELECT cntr_no, photo_path, gdrive_file_id, gdrive_url 
+                    `SELECT cntr_no, photo_path, gdrive_file_id, gdrive_url, team_name 
                      FROM container_photos 
                      WHERE id = ANY($1) AND (is_deleted IS NULL OR is_deleted = false)`,
                     [ids]
@@ -61,7 +61,7 @@ export async function POST(req: NextRequest) {
                 }
 
                 const query = `
-                    SELECT cntr_no, photo_path, gdrive_file_id, gdrive_url 
+                    SELECT cntr_no, photo_path, gdrive_file_id, gdrive_url, team_name 
                     FROM container_photos 
                     WHERE UPPER(TRIM(cntr_no)) = ANY($1)
                       AND (is_deleted IS NULL OR is_deleted = false)
@@ -165,8 +165,27 @@ export async function POST(req: NextRequest) {
                     }
 
                     if (sourceBuffer) {
+                        const rawTeamName = (photo.team_name || '').trim();
+                        let cleanTeam = '기타조';
+                        if (rawTeamName.includes('1조')) cleanTeam = '1조';
+                        else if (rawTeamName.includes('2조')) cleanTeam = '2조';
+                        else if (rawTeamName.includes('3조')) cleanTeam = '3조';
+                        else if (rawTeamName.includes('4조')) cleanTeam = '4조';
+                        else if (rawTeamName.includes('5조')) cleanTeam = '5조';
+                        else if (rawTeamName) cleanTeam = rawTeamName.split('(')[0].trim() || rawTeamName;
+
+                        let baseDir = resolvedTargetDir;
+                        if (autoTeamSubfolder) {
+                            const baseName = path.basename(baseDir);
+                            if (/^[1-9]조/.test(baseName) || baseName.endsWith('조')) {
+                                baseDir = path.dirname(baseDir);
+                            }
+                        }
+
                         const containerFolder = photo.cntr_no.replace(/[^a-zA-Z0-9]/g, '_').toUpperCase();
-                        const destContainerDir = path.join(resolvedTargetDir, containerFolder);
+                        const destContainerDir = autoTeamSubfolder 
+                            ? path.join(baseDir, cleanTeam, containerFolder)
+                            : path.join(resolvedTargetDir, containerFolder);
                         
                         if (!fs.existsSync(destContainerDir)) {
                             fs.mkdirSync(destContainerDir, { recursive: true });

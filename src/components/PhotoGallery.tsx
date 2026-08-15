@@ -997,6 +997,13 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
     const [isLocalCopyOpen, setIsLocalCopyOpen] = useState(false);
     const [isConflictModalOpen, setIsConflictModalOpen] = useState(false);
     const [localCopyPath, setLocalCopyPath] = useState('');
+    const [autoTeamSubfolder, setAutoTeamSubfolder] = useState<boolean>(() => {
+        if (typeof window !== 'undefined') {
+            const saved = localStorage.getItem('ctnr_auto_team_subfolder');
+            return saved !== null ? saved === 'true' : true;
+        }
+        return true;
+    });
     const [isCopying, setIsCopying] = useState(false);
     const [copyProgress, setCopyProgress] = useState<{ current: number; total: number; percent: number; currentFile: string; copiedCount: number; skippedCount: number }>({
         current: 0,
@@ -1007,6 +1014,29 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
         skippedCount: 0
     });
     const abortControllerRef = React.useRef<AbortController | null>(null);
+
+    // Helper to summarize selected folders by team
+    const selectedTeamSummary = React.useMemo(() => {
+        const summary: Record<string, { count: number; containers: string[] }> = {};
+        selectedFolders.forEach(key => {
+            const folder = folders.find(f => (f.cntrNo + '|' + f.workDateStr) === key);
+            const rawTeam = folder?.photos[0]?.team_name || folder?.teamNames || '';
+            let cleanTeam = '기타조';
+            if (rawTeam.includes('1조')) cleanTeam = '1조';
+            else if (rawTeam.includes('2조')) cleanTeam = '2조';
+            else if (rawTeam.includes('3조')) cleanTeam = '3조';
+            else if (rawTeam.includes('4조')) cleanTeam = '4조';
+            else if (rawTeam.includes('5조')) cleanTeam = '5조';
+            else if (rawTeam) cleanTeam = rawTeam.split('(')[0].trim() || rawTeam;
+            
+            if (!summary[cleanTeam]) {
+                summary[cleanTeam] = { count: 0, containers: [] };
+            }
+            summary[cleanTeam].count++;
+            summary[cleanTeam].containers.push(folder?.cntrNo || key.split('|')[0]);
+        });
+        return summary;
+    }, [selectedFolders, folders]);
 
     // Helper to determine the target team key for saving/loading local copy path
     const getActiveTeamStorageInfo = () => {
@@ -1660,7 +1690,8 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
                 body: JSON.stringify({
                     ids: folders.filter(f => selectedFolders.includes(f.cntrNo + '|' + f.workDateStr)).flatMap(f => f.photos.map(p => p.id)),
                     targetPath: localCopyPath.trim(),
-                    conflictAction
+                    conflictAction,
+                    autoTeamSubfolder
                 }),
                 signal: controller.signal
             });
@@ -3265,13 +3296,13 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
                                     </p>
                                     
                                     <div className="space-y-2">
-                                        <label className="text-[11px] font-black text-slate-500 ml-1">대상 폴더 경로 (PC 경로)</label>
+                                        <label className="text-[11px] font-black text-slate-500 ml-1">대상 폴더 기준 경로 (PC 경로)</label>
                                         <div className="flex gap-2">
                                             <input 
                                                 value={localCopyPath} 
                                                 onChange={e => setLocalCopyPath(e.target.value)}
-                                                className="flex-1 bg-black/40 border border-white/10 rounded-2xl px-4 py-3 text-sm focus:border-emerald-500 outline-none text-slate-200 transition-all placeholder:text-slate-600" 
-                                                placeholder="예: D:\MyDownloads 또는 C:\Users\Downloads" 
+                                                className="flex-1 bg-black/40 border border-white/10 rounded-2xl px-4 py-3 text-xs md:text-sm focus:border-emerald-500 outline-none text-slate-200 transition-all placeholder:text-slate-600 font-mono" 
+                                                placeholder="예: X:\26.08\15\야간 또는 D:\Downloads" 
                                                 autoFocus
                                                 onKeyDown={(e) => {
                                                     if (e.key === 'Enter') {
@@ -3289,6 +3320,58 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
                                             </button>
                                         </div>
                                     </div>
+
+                                    {/* Auto Team Subfolder Option */}
+                                    <label className="flex items-start gap-2.5 p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl cursor-pointer select-none hover:bg-emerald-500/15 transition-all">
+                                        <input 
+                                            type="checkbox"
+                                            checked={autoTeamSubfolder}
+                                            onChange={(e) => {
+                                                setAutoTeamSubfolder(e.target.checked);
+                                                if (typeof window !== 'undefined') {
+                                                    localStorage.setItem('ctnr_auto_team_subfolder', String(e.target.checked));
+                                                }
+                                            }}
+                                            className="w-4 h-4 mt-0.5 rounded text-emerald-500 accent-emerald-500 cursor-pointer shrink-0"
+                                        />
+                                        <div className="flex flex-col">
+                                            <span className="text-xs font-bold text-emerald-300">작업 조(1조, 2조, 3조...)별 하위 폴더 자동 분류 복사</span>
+                                            <span className="text-[10px] text-slate-400 mt-0.5 leading-relaxed">
+                                                기준 경로 아래에 각 조 폴더(1조, 2조...)를 자동 인식/생성하여 해당 조의 컨테이너를 쏙쏙 분류 저장합니다.
+                                            </span>
+                                        </div>
+                                    </label>
+
+                                    {/* Live Team Routing Preview */}
+                                    {autoTeamSubfolder && Object.keys(selectedTeamSummary).length > 0 && (
+                                        <div className="space-y-1.5 p-3.5 bg-black/40 border border-white/10 rounded-2xl">
+                                            <div className="flex items-center justify-between text-xs font-bold text-slate-300">
+                                                <span className="flex items-center gap-1.5 text-emerald-400">
+                                                    <Folder className="w-3.5 h-3.5" />
+                                                    조별 자동 분류 미리보기 ({Object.keys(selectedTeamSummary).length}개 조 / 총 {selectedFolders.length}개 컨테이너)
+                                                </span>
+                                            </div>
+                                            <div className="space-y-1.5 mt-2 text-[11px] font-mono max-h-36 overflow-y-auto pr-1">
+                                                {Object.entries(selectedTeamSummary).map(([team, data]) => {
+                                                    let baseDir = localCopyPath.trim() || 'X:\\26.08\\15\\야간';
+                                                    const baseParts = baseDir.split(/[\\/]/);
+                                                    const lastPart = baseParts[baseParts.length - 1] || '';
+                                                    if (/^[1-9]조/.test(lastPart) || lastPart.endsWith('조')) {
+                                                        baseParts.pop();
+                                                        baseDir = baseParts.join('\\');
+                                                    }
+                                                    const previewPath = `${baseDir}\\${team}\\`;
+                                                    return (
+                                                        <div key={team} className="flex items-center justify-between text-slate-300 bg-white/5 px-2.5 py-1.5 rounded-xl border border-white/5 gap-2">
+                                                            <span className="font-bold text-emerald-300 shrink-0">🏷️ {team} ({data.count}개)</span>
+                                                            <span className="text-slate-400 truncate text-[10px]" title={previewPath}>{previewPath}</span>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    )}
+
                                     {/* Progress Bar Display when copying */}
                                     {isCopying && (
                                         <div className="space-y-2 p-3 bg-black/40 border border-emerald-500/30 rounded-2xl">
