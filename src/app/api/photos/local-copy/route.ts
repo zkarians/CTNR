@@ -43,9 +43,10 @@ export async function POST(req: NextRequest) {
             if (idsParam) {
                 const ids = (Array.isArray(idsParam) ? idsParam : String(idsParam).split(',')).map((s: any) => String(s).trim()).filter(Boolean);
                 const res = await client.query(
-                    `SELECT cntr_no, photo_path, gdrive_file_id, gdrive_url, team_name 
-                     FROM container_photos 
-                     WHERE id = ANY($1::uuid[]) AND (is_deleted IS NULL OR is_deleted = false)`,
+                    `SELECT cp.cntr_no, cp.photo_path, cp.gdrive_file_id, cp.gdrive_url, t.name as team_name 
+                     FROM container_photos cp
+                     LEFT JOIN teams t ON cp.team_id = t.id
+                     WHERE cp.id = ANY($1::uuid[]) AND (cp.is_deleted IS NULL OR cp.is_deleted = false)`,
                     [ids]
                 );
                 photos = res.rows;
@@ -61,10 +62,11 @@ export async function POST(req: NextRequest) {
                 }
 
                 const query = `
-                    SELECT cntr_no, photo_path, gdrive_file_id, gdrive_url, team_name 
-                    FROM container_photos 
-                    WHERE UPPER(TRIM(cntr_no)) = ANY($1::text[])
-                      AND (is_deleted IS NULL OR is_deleted = false)
+                    SELECT cp.cntr_no, cp.photo_path, cp.gdrive_file_id, cp.gdrive_url, t.name as team_name 
+                    FROM container_photos cp
+                    LEFT JOIN teams t ON cp.team_id = t.id
+                    WHERE UPPER(TRIM(cp.cntr_no)) = ANY($1::text[])
+                      AND (cp.is_deleted IS NULL OR cp.is_deleted = false)
                 `;
                 const res = await client.query(query, [cntrNos]);
                 photos = res.rows;
