@@ -393,6 +393,56 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
         }
     };
 
+    const handleBatchToggleSealPhoto = async (targetType: 'seal' | 'normal') => {
+        if (selectedPhotoIds.length === 0) return;
+
+        const currentSelectedPhotos = photos.filter(p => selectedPhotoIds.includes(p.id));
+        const targetPhotos = currentSelectedPhotos.filter(p => targetType === 'seal' ? p.photo_type !== 'seal' : p.photo_type === 'seal');
+        const targetIds = (targetPhotos.length > 0 ? targetPhotos : currentSelectedPhotos).map(p => p.id);
+
+        if (targetIds.length === 0) return;
+
+        const count = targetIds.length;
+        let confirmMsg = '';
+        if (targetType === 'seal') {
+            confirmMsg = count === 1
+                ? '선택한 사진을 정식 [씰(Seal) 사진]으로 지정하시겠습니까?\n\n지정 시 해당 컨테이너 폴더의 씰 누락 빨간색 깜빡임이 해제되고, 보고서에도 씰 사진으로 정상 반영됩니다.'
+                : (targetPhotos.length < selectedPhotoIds.length
+                    ? `선택한 사진 중 일반 사진 ${count}장을 [씰(Seal) 사진]으로 일괄 지정하시겠습니까?`
+                    : `선택한 사진 ${count}장을 [씰(Seal) 사진]으로 일괄 지정하시겠습니까?`);
+        } else {
+            confirmMsg = count === 1
+                ? '선택한 사진의 씰(Seal) 지정을 해제하고 [일반 사진]으로 변경하시겠습니까?'
+                : (targetPhotos.length < selectedPhotoIds.length
+                    ? `선택한 사진 중 씰 사진 ${count}장의 지정을 해제하고 [일반 사진]으로 변경하시겠습니까?`
+                    : `선택한 사진 ${count}장의 씰 지정을 해제하고 [일반 사진]으로 변경하시겠습니까?`);
+        }
+
+        if (!confirm(confirmMsg)) return;
+
+        try {
+            const res = await fetch('/api/photos', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    action: 'update_photo_type',
+                    ids: targetIds,
+                    photo_type: targetType
+                })
+            });
+            const data = await res.json();
+            if (data.success) {
+                setPhotos(prev => prev.map(p => targetIds.includes(p.id) ? { ...p, photo_type: targetType } : p));
+                alert(data.message || '사진 구분이 성공적으로 변경되었습니다.');
+            } else {
+                alert(`변경 실패: ${data.error || '알 수 없는 오류'}`);
+            }
+        } catch (error) {
+            console.error("Batch update photo type error:", error);
+            alert("사진 구분 변경 중 오류가 발생했습니다.");
+        }
+    };
+
     const handleRestoreSelectedPhotos = async () => {
         if (selectedPhotoIds.length === 0) return;
         if (!confirm(`선택한 사진 총 ${selectedPhotoIds.length}장을 복구하시겠습니까?`)) return;
@@ -1037,6 +1087,20 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
         });
         return summary;
     }, [selectedFolders, folders]);
+
+    // Helper to summarize selected photos
+    const selectedPhotoObjects = React.useMemo(() => {
+        if (!selectedPhotoIds || selectedPhotoIds.length === 0) return [];
+        return photos.filter(p => selectedPhotoIds.includes(p.id));
+    }, [photos, selectedPhotoIds]);
+
+    const hasNormalInSelection = React.useMemo(() => {
+        return selectedPhotoObjects.some(p => p.photo_type !== 'seal');
+    }, [selectedPhotoObjects]);
+
+    const hasSealInSelection = React.useMemo(() => {
+        return selectedPhotoObjects.some(p => p.photo_type === 'seal');
+    }, [selectedPhotoObjects]);
 
     // Helper to determine the target team key for saving/loading local copy path
     const getActiveTeamStorageInfo = () => {
@@ -3679,6 +3743,24 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
                                             <button onClick={() => setIsLocalCopyOpen(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-white transition-all text-xs font-black shrink-0 shadow-md shadow-emerald-500/20 cursor-pointer" title="선택한 사진들을 지정한 로컬 폴더로 직접 복사">
                                                 <Folder className="w-3.5 h-3.5" /> 로컬 복사
                                             </button>
+                                            {hasNormalInSelection && (
+                                                <button 
+                                                    onClick={() => handleBatchToggleSealPhoto('seal')} 
+                                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-500 hover:bg-rose-600 text-white transition-all text-xs font-black shrink-0 shadow-md shadow-rose-500/20 cursor-pointer" 
+                                                    title={selectedPhotoIds.length > 1 ? "선택한 사진을 씰(Seal) 사진으로 지정" : "선택한 사진을 정식 씰(Seal) 사진으로 지정"}
+                                                >
+                                                    <Camera className="w-3.5 h-3.5" /> 씰 지정
+                                                </button>
+                                            )}
+                                            {hasSealInSelection && (
+                                                <button 
+                                                    onClick={() => handleBatchToggleSealPhoto('normal')} 
+                                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-100 hover:bg-rose-200 dark:bg-rose-950/50 dark:hover:bg-rose-900/80 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-800 transition-all text-xs font-black shrink-0 cursor-pointer" 
+                                                    title={selectedPhotoIds.length > 1 ? "선택한 사진 중 씰(Seal) 지정 해제" : "씰(Seal) 지정 해제 (일반 사진으로 변경)"}
+                                                >
+                                                    <Camera className="w-3.5 h-3.5 text-rose-500" /> 씰 해제
+                                                </button>
+                                            )}
                                             <button onClick={() => handleRotatePhotos(-90)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-500/10 dark:hover:bg-slate-500 text-slate-700 dark:text-slate-400 dark:hover:text-white transition-all text-xs font-black shrink-0 cursor-pointer" title="선택한 사진들을 반시계방향 90도 회전">
                                                 <RotateCcw className="w-3.5 h-3.5" /> 좌회전
                                             </button>

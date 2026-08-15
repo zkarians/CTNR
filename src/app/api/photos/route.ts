@@ -842,23 +842,26 @@ if (isRotateAction) {
             }
 
             if (isUpdatePhotoTypeAction) {
-                const targetId = body.id || (ids && ids[0]) || id;
-                if (!targetId) {
+                const targetIds = (ids && ids.length > 0) ? ids : (body.id ? [body.id] : (id ? [id] : []));
+                if (targetIds.length === 0) {
                     releaseClient();
                     return NextResponse.json({ error: '사진 ID가 제공되지 않았습니다.' }, { status: 400 });
                 }
                 const photoType = body.photo_type === 'seal' ? 'seal' : 'normal';
                 
                 await client.query(
-                    `UPDATE container_photos SET photo_type = $1 WHERE id = $2`,
-                    [photoType, targetId]
+                    `UPDATE container_photos SET photo_type = $1 WHERE id = ANY($2::uuid[])`,
+                    [photoType, targetIds]
                 );
 
                 releaseClient();
                 return NextResponse.json({
                     success: true,
                     photo_type: photoType,
-                    message: photoType === 'seal' ? '씰(Seal) 사진으로 지정되었습니다.' : '일반 사진으로 변경되었습니다.'
+                    updated_ids: targetIds,
+                    message: photoType === 'seal'
+                        ? (targetIds.length > 1 ? `사진 ${targetIds.length}장이 씰(Seal) 사진으로 지정되었습니다.` : '씰(Seal) 사진으로 지정되었습니다.')
+                        : (targetIds.length > 1 ? `사진 ${targetIds.length}장의 씰 지정이 해제되었습니다.` : '일반 사진으로 변경되었습니다.')
                 });
             }
 
