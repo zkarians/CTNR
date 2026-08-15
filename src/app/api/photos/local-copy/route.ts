@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
         }
 
         const body = await req.json();
-        const { cntrNos: cntrNosParam, ids: idsParam, targetPath, conflictAction = 'overwrite', autoTeamSubfolder = true } = body;
+        const { cntrNos: cntrNosParam, ids: idsParam, targetPath, conflictAction = 'overwrite', autoTeamSubfolder = true, isDirectPhotoCopy = false } = body;
 
         if ((!cntrNosParam && !idsParam) || !targetPath) {
             return NextResponse.json({ error: '필수 매개변수가 누락되었습니다.' }, { status: 400 });
@@ -183,9 +183,15 @@ export async function POST(req: NextRequest) {
                         }
 
                         const containerFolder = photo.cntr_no.replace(/[^a-zA-Z0-9]/g, '_').toUpperCase();
-                        const destContainerDir = autoTeamSubfolder 
-                            ? path.join(baseDir, cleanTeam, containerFolder)
-                            : path.join(resolvedTargetDir, containerFolder);
+                        let destContainerDir = resolvedTargetDir;
+
+                        if (isDirectPhotoCopy) {
+                            destContainerDir = resolvedTargetDir;
+                        } else if (autoTeamSubfolder) {
+                            destContainerDir = path.join(baseDir, cleanTeam, containerFolder);
+                        } else {
+                            destContainerDir = path.join(resolvedTargetDir, containerFolder);
+                        }
                         
                         if (!fs.existsSync(destContainerDir)) {
                             fs.mkdirSync(destContainerDir, { recursive: true });

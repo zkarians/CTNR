@@ -1655,8 +1655,9 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
     };
 
     const handleLocalCopy = () => {
-        if (selectedFolders.length === 0) {
-            alert("복사할 폴더를 하나 이상 선택해 주세요.");
+        const hasSelection = selectedFolders.length > 0 || (selectedPhotoIds && selectedPhotoIds.length > 0);
+        if (!hasSelection) {
+            alert("복사할 항목을 하나 이상 선택해 주세요.");
             return;
         }
         if (!localCopyPath.trim()) {
@@ -1681,6 +1682,11 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
         const controller = new AbortController();
         abortControllerRef.current = controller;
 
+        const isPhotoSelection = selectedFolders.length === 0 && selectedPhotoIds && selectedPhotoIds.length > 0;
+        const targetIds = isPhotoSelection
+            ? selectedPhotoIds
+            : folders.filter(f => selectedFolders.includes(f.cntrNo + '|' + f.workDateStr)).flatMap(f => f.photos.map(p => p.id));
+
         try {
             const response = await fetch('/api/photos/local-copy', {
                 method: 'POST',
@@ -1688,10 +1694,11 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                    ids: folders.filter(f => selectedFolders.includes(f.cntrNo + '|' + f.workDateStr)).flatMap(f => f.photos.map(p => p.id)),
+                    ids: targetIds,
                     targetPath: localCopyPath.trim(),
                     conflictAction,
-                    autoTeamSubfolder
+                    autoTeamSubfolder: isPhotoSelection ? false : autoTeamSubfolder,
+                    isDirectPhotoCopy: isPhotoSelection
                 }),
                 signal: controller.signal
             });
@@ -3287,22 +3294,32 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
 
                                 <div className="space-y-4">
                                     <p className="text-xs text-slate-400 leading-relaxed">
-                                        선택한 <strong className="text-emerald-400">{selectedFolders.length}개</strong> 컨테이너 폴더를 지정한 로컬 디렉토리로 압축 없이 즉시 복사합니다.
-                                        {getActiveTeamStorageInfo().teamName !== '전체' && (
-                                            <span className="block mt-1 text-[11px] text-emerald-400 font-black">
-                                                🏷️ [{getActiveTeamStorageInfo().teamName}] 전용 마지막 저장 경로가 자동 적용됩니다.
-                                            </span>
+                                        {selectedFolders.length > 0 ? (
+                                            <>
+                                                선택한 <strong className="text-emerald-400">{selectedFolders.length}개</strong> 컨테이너 폴더를 지정한 로컬 디렉토리로 압축 없이 즉시 복사합니다.
+                                                {getActiveTeamStorageInfo().teamName !== '전체' && (
+                                                    <span className="block mt-1 text-[11px] text-emerald-400 font-black">
+                                                        🏷️ [{getActiveTeamStorageInfo().teamName}] 전용 마지막 저장 경로가 자동 적용됩니다.
+                                                    </span>
+                                                )}
+                                            </>
+                                        ) : (
+                                            <>
+                                                선택한 <strong className="text-emerald-400">{selectedPhotoIds.length}장</strong>의 사진을 지정한 대상 로컬 폴더로 직접 복사합니다.
+                                            </>
                                         )}
                                     </p>
                                     
                                     <div className="space-y-2">
-                                        <label className="text-[11px] font-black text-slate-500 ml-1">대상 폴더 기준 경로 (PC 경로)</label>
+                                        <label className="text-[11px] font-black text-slate-500 ml-1">
+                                            {selectedFolders.length > 0 ? "대상 폴더 기준 경로 (PC 경로)" : "복사할 대상 로컬 폴더 경로"}
+                                        </label>
                                         <div className="flex gap-2">
                                             <input 
                                                 value={localCopyPath} 
                                                 onChange={e => setLocalCopyPath(e.target.value)}
                                                 className="flex-1 bg-black/40 border border-white/10 rounded-2xl px-4 py-3 text-xs md:text-sm focus:border-emerald-500 outline-none text-slate-200 transition-all placeholder:text-slate-600 font-mono" 
-                                                placeholder="예: X:\26.08\15\야간 또는 D:\Downloads" 
+                                                placeholder={selectedFolders.length > 0 ? "예: X:\\26.08\\15\\야간 또는 D:\\Downloads" : "예: X:\\26.08\\15\\야간\\1조\\TSSU1234567 또는 D:\\사진"} 
                                                 autoFocus
                                                 onKeyDown={(e) => {
                                                     if (e.key === 'Enter') {
@@ -3321,29 +3338,31 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
                                         </div>
                                     </div>
 
-                                    {/* Auto Team Subfolder Option */}
-                                    <label className="flex items-start gap-2.5 p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl cursor-pointer select-none hover:bg-emerald-500/15 transition-all">
-                                        <input 
-                                            type="checkbox"
-                                            checked={autoTeamSubfolder}
-                                            onChange={(e) => {
-                                                setAutoTeamSubfolder(e.target.checked);
-                                                if (typeof window !== 'undefined') {
-                                                    localStorage.setItem('ctnr_auto_team_subfolder', String(e.target.checked));
-                                                }
-                                            }}
-                                            className="w-4 h-4 mt-0.5 rounded text-emerald-500 accent-emerald-500 cursor-pointer shrink-0"
-                                        />
-                                        <div className="flex flex-col">
-                                            <span className="text-xs font-bold text-emerald-300">작업 조(1조, 2조, 3조...)별 하위 폴더 자동 분류 복사</span>
-                                            <span className="text-[10px] text-slate-400 mt-0.5 leading-relaxed">
-                                                기준 경로 아래에 각 조 폴더(1조, 2조...)를 자동 인식/생성하여 해당 조의 컨테이너를 쏙쏙 분류 저장합니다.
-                                            </span>
-                                        </div>
-                                    </label>
+                                    {/* Auto Team Subfolder Option - Only for Folder Copy */}
+                                    {selectedFolders.length > 0 && (
+                                        <label className="flex items-start gap-2.5 p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl cursor-pointer select-none hover:bg-emerald-500/15 transition-all">
+                                            <input 
+                                                type="checkbox"
+                                                checked={autoTeamSubfolder}
+                                                onChange={(e) => {
+                                                    setAutoTeamSubfolder(e.target.checked);
+                                                    if (typeof window !== 'undefined') {
+                                                        localStorage.setItem('ctnr_auto_team_subfolder', String(e.target.checked));
+                                                    }
+                                                }}
+                                                className="w-4 h-4 mt-0.5 rounded text-emerald-500 accent-emerald-500 cursor-pointer shrink-0"
+                                            />
+                                            <div className="flex flex-col">
+                                                <span className="text-xs font-bold text-emerald-300">작업 조(1조, 2조, 3조...)별 하위 폴더 자동 분류 복사</span>
+                                                <span className="text-[10px] text-slate-400 mt-0.5 leading-relaxed">
+                                                    기준 경로 아래에 각 조 폴더(1조, 2조...)를 자동 인식/생성하여 해당 조의 컨테이너를 쏙쏙 분류 저장합니다.
+                                                </span>
+                                            </div>
+                                        </label>
+                                    )}
 
-                                    {/* Live Team Routing Preview */}
-                                    {autoTeamSubfolder && Object.keys(selectedTeamSummary).length > 0 && (
+                                    {/* Live Team Routing Preview - Only for Folder Copy */}
+                                    {selectedFolders.length > 0 && autoTeamSubfolder && Object.keys(selectedTeamSummary).length > 0 && (
                                         <div className="space-y-1.5 p-3.5 bg-black/40 border border-white/10 rounded-2xl">
                                             <div className="flex items-center justify-between text-xs font-bold text-slate-300">
                                                 <span className="flex items-center gap-1.5 text-emerald-400">
@@ -3656,6 +3675,9 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
                                             </button>
                                             <button onClick={handleDownloadSelectedPhotos} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white transition-all text-xs font-black shrink-0 shadow-md shadow-sky-500/20 cursor-pointer" title={selectedPhotoIds.length > 1 ? "선택한 사진들을 압축(ZIP)하여 다운로드" : "선택한 사진 다운로드"}>
                                                 <Download className="w-3.5 h-3.5" /> 다운로드
+                                            </button>
+                                            <button onClick={() => setIsLocalCopyOpen(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-white transition-all text-xs font-black shrink-0 shadow-md shadow-emerald-500/20 cursor-pointer" title="선택한 사진들을 지정한 로컬 폴더로 직접 복사">
+                                                <Folder className="w-3.5 h-3.5" /> 로컬 복사
                                             </button>
                                             <button onClick={() => handleRotatePhotos(-90)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-500/10 dark:hover:bg-slate-500 text-slate-700 dark:text-slate-400 dark:hover:text-white transition-all text-xs font-black shrink-0 cursor-pointer" title="선택한 사진들을 반시계방향 90도 회전">
                                                 <RotateCcw className="w-3.5 h-3.5" /> 좌회전
