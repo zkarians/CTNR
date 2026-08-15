@@ -44,9 +44,12 @@ export default function SelectTeamPage() {
     };
 
     const handleLogout = async () => {
-        await logout();
-        router.push("/login");
-        router.refresh();
+        try {
+            await logout();
+        } catch (err) {
+            console.error("Logout error:", err);
+        }
+        window.location.href = "/login";
     };
 
     return (

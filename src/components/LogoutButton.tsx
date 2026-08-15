@@ -14,9 +14,12 @@ export default function LogoutButton({ username, name, role }: LogoutButtonProps
     const router = useRouter();
 
     const handleLogout = async () => {
-        await logout();
-        router.push("/login");
-        router.refresh();
+        try {
+            await logout();
+        } catch (err) {
+            console.error("Logout error:", err);
+        }
+        window.location.href = "/login";
     };
 
     const roleLabel = role === "ADMIN" ? "관리자" : role === "MANAGER" ? "매니저" : "작업자";
