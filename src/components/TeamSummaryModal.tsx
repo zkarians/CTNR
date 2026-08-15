@@ -2,8 +2,9 @@
 
 import React, { useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, BarChart3, Copy, Check } from 'lucide-react';
+import { X, BarChart3, Copy, Check, Loader2 } from 'lucide-react';
 import { generateJobType } from '@/lib/utils/jobType';
+import { getUpcoming3DaysRosterStatus } from '@/lib/actions/rosterActions';
 
 interface TeamSummaryModalProps {
     isOpen: boolean;
@@ -52,6 +53,11 @@ const CATEGORIES = ['오븐', '세탁기', '식기', '횡적', 'SK냉장고', '�
 export default function TeamSummaryModal({ isOpen, onClose, reportData }: TeamSummaryModalProps) {
     const [dayShiftCount, setDayShiftCount] = React.useState<string>('');
     const [isCopied, setIsCopied] = React.useState(false);
+    const [rosterMessages, setRosterMessages] = React.useState<string[]>([]);
+    const [isLoadingRoster, setIsLoadingRoster] = React.useState(false);
+
+    // Target date extracted from reportData
+    const targetDate = reportData?.[0]?.dateStr || reportData?.[0]?.date;
     
     React.useEffect(() => {
         const savedCount = localStorage.getItem('dayShiftCount');
@@ -59,6 +65,35 @@ export default function TeamSummaryModal({ isOpen, onClose, reportData }: TeamSu
             setDayShiftCount(savedCount);
         }
     }, []);
+
+    React.useEffect(() => {
+        if (!isOpen) return;
+        let isMounted = true;
+
+        const fetchRoster = async () => {
+            const dateToQuery = targetDate || new Date().toISOString().split('T')[0];
+            setIsLoadingRoster(true);
+            try {
+                const res = await getUpcoming3DaysRosterStatus(dateToQuery);
+                if (isMounted && res.success) {
+                    setRosterMessages(res.messages || []);
+                } else if (isMounted) {
+                    setRosterMessages([]);
+                }
+            } catch (err) {
+                console.error('Failed to fetch upcoming 3-day roster status:', err);
+                if (isMounted) setRosterMessages([]);
+            } finally {
+                if (isMounted) setIsLoadingRoster(false);
+            }
+        };
+
+        fetchRoster();
+
+        return () => {
+            isMounted = false;
+        };
+    }, [isOpen, targetDate]);
     const summary = useMemo(() => {
         const teamMap = new Map<string, Record<string, number>>();
 
@@ -189,7 +224,8 @@ const emptyBoxSummary = useMemo(() => {
 
     const nightTotal = colTotals['total'] || 0;
     const dayTotal = parseInt(dayShiftCount, 10) || 0;
-    const generatedText = `웅동 야간출하\n\n${carrierStr}\n${categoryStr}\n주간${dayTotal} 야간${nightTotal} 장입 이상무`;
+    const rosterSuffix = rosterMessages.length > 0 ? `\n\n${rosterMessages.join('\n')}` : '';
+    const generatedText = `웅동 야간출하\n\n${carrierStr}\n${categoryStr}\n주간${dayTotal} 야간${nightTotal} 장입 이상무${rosterSuffix}`;
 
     const handleCopyText = async () => {
         try {
@@ -345,10 +381,18 @@ const emptyBoxSummary = useMemo(() => {
                         <div className="mt-8 border-t border-slate-200 pt-6">
                             <div className="flex flex-col gap-4">
                                 <div className="flex items-center justify-between">
-                                    <h3 className="text-md font-black text-slate-800 flex items-center gap-2">
-                                        <div className="w-1.5 h-4 bg-indigo-500 rounded-full"></div>
-                                        카톡 보고서 텍스트
-                                    </h3>
+                                    <div className="flex items-center gap-2">
+                                        <h3 className="text-md font-black text-slate-800 flex items-center gap-2">
+                                            <div className="w-1.5 h-4 bg-indigo-500 rounded-full"></div>
+                                            카톡 보고서 텍스트
+                                        </h3>
+                                        {isLoadingRoster && (
+                                            <span className="flex items-center gap-1 text-xs text-indigo-500 font-medium ml-2">
+                                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                                근무편성 확인 중...
+                                            </span>
+                                        )}
+                                    </div>
                                     <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-lg shadow-sm">
                                         <label className="text-sm font-bold text-slate-600">주간 작업수량:</label>
                                         <input 
@@ -366,7 +410,7 @@ const emptyBoxSummary = useMemo(() => {
                                 </div>
                                 <div className="relative">
                                     <textarea 
-                                        className="w-full h-36 p-4 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-800 focus:outline-none resize-none shadow-inner"
+                                        className="w-full h-44 p-4 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-800 focus:outline-none resize-none shadow-inner leading-relaxed"
                                         readOnly
                                         value={generatedText}
                                     />

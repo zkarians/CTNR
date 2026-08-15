@@ -69,6 +69,7 @@ get*.js
 /backup_src_20260724/
 src_backup_*/
 archive/
+/backups/
 
 
 dist-electron/
