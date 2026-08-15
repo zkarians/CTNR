@@ -3664,7 +3664,7 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
 
                 {/* Floating Action Bar (FAB) */}
                 {(selectedFolders.length > 0 || (selectedPhotoIds && selectedPhotoIds.length > 0)) && (
-                    <div className="fixed bottom-[66px] md:bottom-8 left-1/2 -translate-x-1/2 z-[100] w-[96vw] sm:w-auto max-w-[96vw] md:max-w-[90vw] animate-in slide-in-from-bottom-5 fade-in duration-300 pointer-events-auto">
+                    <div className="fixed bottom-[48px] md:bottom-8 left-1/2 -translate-x-1/2 z-[100] w-[96vw] sm:w-auto max-w-[96vw] md:max-w-[90vw] animate-in slide-in-from-bottom-5 fade-in duration-300 pointer-events-auto">
                         <div className="flex items-center justify-between gap-1.5 md:gap-3 px-2 py-1 md:px-4 md:py-2.5 rounded-xl md:rounded-2xl bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl border border-slate-200 dark:border-slate-700/50 shadow-xl shadow-slate-900/20 text-slate-800 dark:text-slate-200 w-full sm:w-max">
                             <div className="flex items-center gap-1 md:gap-1.5 pr-1.5 md:pr-3 border-r border-slate-300 dark:border-slate-700 shrink-0">
                                 <span className="flex items-center justify-center min-w-[18px] h-4.5 px-1 rounded-full bg-sky-500/10 text-sky-600 dark:text-sky-400 font-bold text-[10px] md:text-xs md:min-w-[24px] md:h-6 md:px-1.5">
@@ -3768,10 +3768,10 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
                                                 <RotateCcw className="w-3 h-3 md:w-3.5 md:h-3.5" /> 좌회전
                                             </button>
                                             <button onClick={() => handleRotatePhotos(180)} className="flex items-center gap-1 md:gap-1.5 px-2 py-1 md:px-3 md:py-1.5 rounded-lg md:rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-500/10 dark:hover:bg-slate-500 text-slate-700 dark:text-slate-400 dark:hover:text-white transition-all text-[11px] md:text-xs font-black shrink-0 cursor-pointer" title="선택한 사진들을 180도 회전">
-                                                <RotateCw className="w-3 h-3 md:w-3.5 md:h-3.5 text-amber-500" /> 180°
+                                                <RotateCw className="w-3.5 h-3.5 text-amber-500" /> 180°
                                             </button>
                                             <button onClick={() => handleRotatePhotos(90)} className="flex items-center gap-1 md:gap-1.5 px-2 py-1 md:px-3 md:py-1.5 rounded-lg md:rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-500/10 dark:hover:bg-slate-500 text-slate-700 dark:text-slate-400 dark:hover:text-white transition-all text-[11px] md:text-xs font-black shrink-0 cursor-pointer" title="선택한 사진들을 시계방향 90도 회전">
-                                                <RotateCw className="w-3 h-3 md:w-3.5 md:h-3.5" /> 우회전
+                                                <RotateCw className="w-3.5 h-3.5" /> 우회전
                                             </button>
                                         </>
                                     )
@@ -3787,32 +3787,41 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
                     </div>
                 )}
 
-                {/* Mobile Bottom Tab Bar */}
-                <div className="flex md:hidden fixed bottom-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-md border-t border-slate-200 shadow-lg text-slate-700">
+                {/* Mobile Bottom Tab Bar (Ultra-Compact) */}
+                <div className="flex md:hidden fixed bottom-0 left-0 right-0 z-50 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 shadow-lg px-2 py-1 items-center justify-around gap-1.5 h-9">
                     <button
                         onClick={() => { setTabState('ACTIVE'); setSelectedFolders([]); setSelectedContainerFolder(null); }}
-                        className={`flex-1 flex flex-col items-center justify-center py-2 gap-0.5 transition-all ${tabState === 'ACTIVE' ? 'text-sky-600' : 'text-slate-400 hover:text-slate-700'}`}
+                        className={`flex-1 flex items-center justify-center gap-1.5 py-1 px-1.5 rounded-lg transition-all text-xs font-black cursor-pointer ${
+                            tabState === 'ACTIVE' 
+                                ? 'bg-sky-50 dark:bg-sky-950/60 text-sky-600 dark:text-sky-400 shadow-xs' 
+                                : 'text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+                        }`}
                     >
-                        <div className={`w-6 h-0.5 rounded-full transition-all mb-0.5 ${tabState === 'ACTIVE' ? 'bg-sky-600' : 'bg-transparent'}`} />
-                        <Folder className="w-5 h-5" />
-                        <span className="text-[10px] font-black tracking-tight">진행중인 작업</span>
+                        <Folder className="w-3.5 h-3.5 shrink-0" />
+                        <span className="text-[11px] tracking-tight whitespace-nowrap">진행중</span>
                     </button>
                     <button
                         onClick={() => { setTabState('COMPLETED'); setSelectedFolders([]); setSelectedContainerFolder(null); }}
-                        className={`flex-1 flex flex-col items-center justify-center py-2 gap-0.5 transition-all ${tabState === 'COMPLETED' ? 'text-emerald-600' : 'text-slate-400 hover:text-slate-700'}`}
+                        className={`flex-1 flex items-center justify-center gap-1.5 py-1 px-1.5 rounded-lg transition-all text-xs font-black cursor-pointer ${
+                            tabState === 'COMPLETED' 
+                                ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 shadow-xs' 
+                                : 'text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+                        }`}
                     >
-                        <div className={`w-6 h-0.5 rounded-full transition-all mb-0.5 ${tabState === 'COMPLETED' ? 'bg-emerald-600' : 'bg-transparent'}`} />
-                        <Check className="w-5 h-5" />
-                        <span className="text-[10px] font-black tracking-tight">완료된 작업</span>
+                        <Check className="w-3.5 h-3.5 shrink-0" />
+                        <span className="text-[11px] tracking-tight whitespace-nowrap">완료</span>
                     </button>
                     {isAdmin && (
                         <button
                             onClick={() => { setTabState('TRASH'); setSelectedFolders([]); setSelectedContainerFolder(null); }}
-                            className={`flex-1 flex flex-col items-center justify-center py-2 gap-0.5 transition-all ${tabState === 'TRASH' ? 'text-purple-600' : 'text-slate-400 hover:text-slate-700'}`}
+                            className={`flex-1 flex items-center justify-center gap-1.5 py-1 px-1.5 rounded-lg transition-all text-xs font-black cursor-pointer ${
+                                tabState === 'TRASH' 
+                                ? 'bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400 shadow-xs' 
+                                : 'text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+                            }`}
                         >
-                            <div className={`w-6 h-0.5 rounded-full transition-all mb-0.5 ${tabState === 'TRASH' ? 'bg-purple-600' : 'bg-transparent'}`} />
-                            <Trash2 className="w-5 h-5" />
-                            <span className="text-[10px] font-black tracking-tight">휴지통</span>
+                            <Trash2 className="w-3.5 h-3.5 shrink-0" />
+                            <span className="text-[11px] tracking-tight whitespace-nowrap">휴지통</span>
                         </button>
                     )}
                 </div>
