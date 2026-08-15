@@ -81,7 +81,6 @@ export async function deleteTeam(id: number): Promise<{ success: boolean; error?
 
         const client = await pool.connect();
         try {
-            await client.query('UPDATE "User" SET "teamId" = NULL WHERE "teamId" = $1', [id]);
             await client.query('UPDATE container_photos SET team_id = NULL WHERE team_id = $1', [id]);
             await client.query('DELETE FROM teams WHERE id = $1', [id]);
             revalidatePath('/');
@@ -95,22 +94,9 @@ export async function deleteTeam(id: number): Promise<{ success: boolean; error?
     }
 }
 
-export async function selectTeam(teamId: number): Promise<{ success: boolean; error?: string }> {
-    try {
-        const session = await getSession();
-        if (!session) {
-            return { success: false, error: '로그인이 필요합니다.' };
-        }
+import { selectTeam as authSelectTeam } from '@/lib/auth';
 
-        const client = await pool.connect();
-        try {
-            await client.query('UPDATE "User" SET "teamId" = $1 WHERE id = $2', [teamId, session.id]);
-            return { success: true };
-        } finally {
-            client.release();
-        }
-    } catch (error: any) {
-        console.error('selectTeam error:', error);
-        return { success: false, error: error.message || '조 선택 실패' };
-    }
+export async function selectTeam(teamId: number): Promise<{ success: boolean; error?: string }> {
+    return await authSelectTeam(teamId);
 }
+
