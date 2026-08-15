@@ -3664,10 +3664,10 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
 
                 {/* Floating Action Bar (FAB) */}
                 {(selectedFolders.length > 0 || (selectedPhotoIds && selectedPhotoIds.length > 0)) && (
-                    <div className="fixed bottom-[72px] md:bottom-8 left-1/2 -translate-x-1/2 z-[100] w-[96vw] sm:w-auto max-w-[96vw] md:max-w-[90vw] animate-in slide-in-from-bottom-5 fade-in duration-300 pointer-events-auto">
-                        <div className="flex items-center justify-between gap-2 px-3 py-2 md:px-4 md:py-2.5 rounded-2xl bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl border border-slate-200 dark:border-slate-700/50 shadow-2xl shadow-slate-900/20 text-slate-800 dark:text-slate-200 w-full sm:w-max">
-                            <div className="flex items-center gap-1.5 pr-2 md:pr-3 border-r border-slate-300 dark:border-slate-700 shrink-0">
-                                <span className="flex items-center justify-center min-w-[22px] h-5.5 px-1.5 rounded-full bg-sky-500/10 text-sky-600 dark:text-sky-400 font-bold text-xs">
+                    <div className="fixed bottom-[66px] md:bottom-8 left-1/2 -translate-x-1/2 z-[100] w-[96vw] sm:w-auto max-w-[96vw] md:max-w-[90vw] animate-in slide-in-from-bottom-5 fade-in duration-300 pointer-events-auto">
+                        <div className="flex items-center justify-between gap-1.5 md:gap-3 px-2 py-1 md:px-4 md:py-2.5 rounded-xl md:rounded-2xl bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl border border-slate-200 dark:border-slate-700/50 shadow-xl shadow-slate-900/20 text-slate-800 dark:text-slate-200 w-full sm:w-max">
+                            <div className="flex items-center gap-1 md:gap-1.5 pr-1.5 md:pr-3 border-r border-slate-300 dark:border-slate-700 shrink-0">
+                                <span className="flex items-center justify-center min-w-[18px] h-4.5 px-1 rounded-full bg-sky-500/10 text-sky-600 dark:text-sky-400 font-bold text-[10px] md:text-xs md:min-w-[24px] md:h-6 md:px-1.5">
                                     {selectedFolders.length > 0 ? selectedFolders.length : selectedPhotoIds.length}
                                 </span>
                                 <span className="text-xs md:text-sm font-black tracking-tight whitespace-nowrap hidden sm:inline">
@@ -3675,47 +3675,47 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
                                 </span>
                             </div>
 
-                            <div className="flex-1 min-w-0 flex items-center gap-1.5 overflow-x-auto touch-pan-x py-0.5 px-0.5">
+                            <div className="flex-1 min-w-0 flex items-center gap-1 md:gap-1.5 overflow-x-auto touch-pan-x py-0.5 px-0.5">
                                 {selectedFolders.length > 0 ? (
                                     /* Folder Actions */
                                     isTrashView ? (
                                         isAdmin && (
                                             <>
-                                                <button onClick={handleRestoreSelectedFolders} className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-purple-100 hover:bg-purple-200 dark:bg-purple-500/10 dark:hover:bg-purple-500 text-purple-700 dark:text-purple-400 dark:hover:text-white transition-all text-xs font-black shrink-0 cursor-pointer">
-                                                    <RotateCw className="w-3.5 h-3.5" /> 복구
+                                                <button onClick={handleRestoreSelectedFolders} className="flex items-center gap-1 md:gap-1.5 px-2 py-1 md:px-3 md:py-1.5 rounded-lg md:rounded-xl bg-purple-100 hover:bg-purple-200 dark:bg-purple-500/10 dark:hover:bg-purple-500 text-purple-700 dark:text-purple-400 dark:hover:text-white transition-all text-[11px] md:text-xs font-black shrink-0 cursor-pointer">
+                                                    <RotateCw className="w-3 h-3 md:w-3.5 md:h-3.5" /> 복구
                                                 </button>
-                                                <button onClick={handleDeleteSelectedFolders} className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-rose-100 hover:bg-rose-200 dark:bg-rose-500/10 dark:hover:bg-rose-500 text-rose-700 dark:text-rose-400 dark:hover:text-white transition-all text-xs font-black shrink-0 cursor-pointer">
-                                                    <Trash2 className="w-3.5 h-3.5" /> 영구 삭제
+                                                <button onClick={handleDeleteSelectedFolders} className="flex items-center gap-1 md:gap-1.5 px-2 py-1 md:px-3 md:py-1.5 rounded-lg md:rounded-xl bg-rose-100 hover:bg-rose-200 dark:bg-rose-500/10 dark:hover:bg-rose-500 text-rose-700 dark:text-rose-400 dark:hover:text-white transition-all text-[11px] md:text-xs font-black shrink-0 cursor-pointer">
+                                                    <Trash2 className="w-3 h-3 md:w-3.5 md:h-3.5" /> 영구 삭제
                                                 </button>
                                             </>
                                         )
                                     ) : (
                                         <>
                                             {isAdmin && (
-                                                <button onClick={handleDeleteSelectedFolders} className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-rose-100 hover:bg-rose-200 dark:bg-rose-500/10 dark:hover:bg-rose-500 text-rose-700 dark:text-rose-400 dark:hover:text-white transition-all text-xs font-black shrink-0 cursor-pointer">
-                                                    <Trash2 className="w-3.5 h-3.5" /> 삭제
+                                                <button onClick={handleDeleteSelectedFolders} className="flex items-center gap-1 md:gap-1.5 px-2 py-1 md:px-3 md:py-1.5 rounded-lg md:rounded-xl bg-rose-100 hover:bg-rose-200 dark:bg-rose-500/10 dark:hover:bg-rose-500 text-rose-700 dark:text-rose-400 dark:hover:text-white transition-all text-[11px] md:text-xs font-black shrink-0 cursor-pointer">
+                                                    <Trash2 className="w-3 h-3 md:w-3.5 md:h-3.5" /> 삭제
                                                 </button>
                                             )}
                                             {isCompletedView ? (
-                                                <button onClick={() => handleToggleSelectedFoldersCompletion(true)} className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-amber-100 hover:bg-amber-200 dark:bg-amber-500/10 dark:hover:bg-amber-500 text-amber-700 dark:text-amber-400 dark:hover:text-white transition-all text-xs font-black shrink-0 cursor-pointer">
-                                                    <Undo className="w-3.5 h-3.5" /> 완료 취소
+                                                <button onClick={() => handleToggleSelectedFoldersCompletion(true)} className="flex items-center gap-1 md:gap-1.5 px-2 py-1 md:px-3 md:py-1.5 rounded-lg md:rounded-xl bg-amber-100 hover:bg-amber-200 dark:bg-amber-500/10 dark:hover:bg-amber-500 text-amber-700 dark:text-amber-400 dark:hover:text-white transition-all text-[11px] md:text-xs font-black shrink-0 cursor-pointer">
+                                                    <Undo className="w-3 h-3 md:w-3.5 md:h-3.5" /> 완료 취소
                                                 </button>
                                             ) : (
                                                 <>
-                                                    <button onClick={() => handleToggleSelectedFoldersCompletion(false)} className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-emerald-100 hover:bg-emerald-200 dark:bg-emerald-500/10 dark:hover:bg-emerald-500 text-emerald-700 dark:text-emerald-400 dark:hover:text-white transition-all text-xs font-black shrink-0 cursor-pointer">
-                                                        <Check className="w-3.5 h-3.5" /> 완료 처리
+                                                    <button onClick={() => handleToggleSelectedFoldersCompletion(false)} className="flex items-center gap-1 md:gap-1.5 px-2 py-1 md:px-3 md:py-1.5 rounded-lg md:rounded-xl bg-emerald-100 hover:bg-emerald-200 dark:bg-emerald-500/10 dark:hover:bg-emerald-500 text-emerald-700 dark:text-emerald-400 dark:hover:text-white transition-all text-[11px] md:text-xs font-black shrink-0 cursor-pointer">
+                                                        <Check className="w-3 h-3 md:w-3.5 md:h-3.5" /> 완료 처리
                                                     </button>
-                                                    <button onClick={handleCleanupSelectedFoldersDuplicates} className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-amber-100 hover:bg-amber-200 dark:bg-amber-500/10 dark:hover:bg-amber-500 text-amber-700 dark:text-amber-400 dark:hover:text-white transition-all text-xs font-black shrink-0 cursor-pointer">
-                                                        <ImageIcon className="w-3.5 h-3.5" /> 중복 정리
+                                                    <button onClick={handleCleanupSelectedFoldersDuplicates} className="flex items-center gap-1 md:gap-1.5 px-2 py-1 md:px-3 md:py-1.5 rounded-lg md:rounded-xl bg-amber-100 hover:bg-amber-200 dark:bg-amber-500/10 dark:hover:bg-amber-500 text-amber-700 dark:text-amber-400 dark:hover:text-white transition-all text-[11px] md:text-xs font-black shrink-0 cursor-pointer">
+                                                        <ImageIcon className="w-3 h-3 md:w-3.5 md:h-3.5" /> 중복 정리
                                                     </button>
                                                 </>
                                             )}
 
-                                            <button onClick={() => handleActionWithCheck('LOCAL_COPY')} className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-white transition-all text-xs font-black shrink-0 shadow-md shadow-emerald-500/20 cursor-pointer">
-                                                <Folder className="w-3.5 h-3.5" /> 로컬 복사
+                                            <button onClick={() => handleActionWithCheck('LOCAL_COPY')} className="flex items-center gap-1 md:gap-1.5 px-2 py-1 md:px-3 md:py-1.5 rounded-lg md:rounded-xl bg-emerald-500 hover:bg-emerald-400 text-white transition-all text-[11px] md:text-xs font-black shrink-0 shadow-md shadow-emerald-500/20 cursor-pointer">
+                                                <Folder className="w-3 h-3 md:w-3.5 md:h-3.5" /> 로컬 복사
                                             </button>
-                                            <button onClick={() => handleActionWithCheck('ZIP_DOWNLOAD')} className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-sky-500 hover:bg-sky-400 border border-sky-600 text-white transition-all text-xs font-black shrink-0 shadow-md shadow-indigo-500/20 cursor-pointer">
-                                                <Download className="w-3.5 h-3.5" /> ZIP
+                                            <button onClick={() => handleActionWithCheck('ZIP_DOWNLOAD')} className="flex items-center gap-1 md:gap-1.5 px-2 py-1 md:px-3 md:py-1.5 rounded-lg md:rounded-xl bg-sky-500 hover:bg-sky-400 border border-sky-600 text-white transition-all text-[11px] md:text-xs font-black shrink-0 shadow-md shadow-indigo-500/20 cursor-pointer">
+                                                <Download className="w-3 h-3 md:w-3.5 md:h-3.5" /> ZIP
                                             </button>
                                         </>
                                     )
@@ -3724,63 +3724,63 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
                                     isTrashView ? (
                                         isAdmin && (
                                             <>
-                                                <button onClick={handleRestoreSelectedPhotos} className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-sky-100 hover:bg-sky-200 dark:bg-sky-500/10 dark:hover:bg-sky-500 text-sky-700 dark:text-sky-400 dark:hover:text-white transition-all text-xs font-black shrink-0 cursor-pointer">
-                                                    <RotateCw className="w-3.5 h-3.5" /> 복구
+                                                <button onClick={handleRestoreSelectedPhotos} className="flex items-center gap-1 md:gap-1.5 px-2 py-1 md:px-3 md:py-1.5 rounded-lg md:rounded-xl bg-sky-100 hover:bg-sky-200 dark:bg-sky-500/10 dark:hover:bg-sky-500 text-sky-700 dark:text-sky-400 dark:hover:text-white transition-all text-[11px] md:text-xs font-black shrink-0 cursor-pointer">
+                                                    <RotateCw className="w-3 h-3 md:w-3.5 md:h-3.5" /> 복구
                                                 </button>
-                                                <button onClick={handleDeleteSelectedPhotosPermanently} className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-rose-100 hover:bg-rose-200 dark:bg-rose-500/10 dark:hover:bg-rose-500 text-rose-700 dark:text-rose-400 dark:hover:text-white transition-all text-xs font-black shrink-0 cursor-pointer">
-                                                    <Trash2 className="w-3.5 h-3.5" /> 영구 삭제
+                                                <button onClick={handleDeleteSelectedPhotosPermanently} className="flex items-center gap-1 md:gap-1.5 px-2 py-1 md:px-3 md:py-1.5 rounded-lg md:rounded-xl bg-rose-100 hover:bg-rose-200 dark:bg-rose-500/10 dark:hover:bg-rose-500 text-rose-700 dark:text-rose-400 dark:hover:text-white transition-all text-[11px] md:text-xs font-black shrink-0 cursor-pointer">
+                                                    <Trash2 className="w-3 h-3 md:w-3.5 md:h-3.5" /> 영구 삭제
                                                 </button>
                                             </>
                                         )
                                     ) : (
                                         <>
-                                            <button onClick={handleDeleteSelectedPhotos} className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-rose-100 hover:bg-rose-200 dark:bg-rose-500/10 dark:hover:bg-rose-500 text-rose-700 dark:text-rose-400 dark:hover:text-white transition-all text-xs font-black shrink-0 cursor-pointer" title="선택한 사진 삭제 (휴지통 이동)">
-                                                <Trash2 className="w-3.5 h-3.5" /> 삭제
+                                            <button onClick={handleDeleteSelectedPhotos} className="flex items-center gap-1 md:gap-1.5 px-2 py-1 md:px-3 md:py-1.5 rounded-lg md:rounded-xl bg-rose-100 hover:bg-rose-200 dark:bg-rose-500/10 dark:hover:bg-rose-500 text-rose-700 dark:text-rose-400 dark:hover:text-white transition-all text-[11px] md:text-xs font-black shrink-0 cursor-pointer" title="선택한 사진 삭제 (휴지통 이동)">
+                                                <Trash2 className="w-3 h-3 md:w-3.5 md:h-3.5" /> 삭제
                                             </button>
                                             {hasNormalInSelection && (
                                                 <button 
                                                     onClick={() => handleBatchToggleSealPhoto('seal')} 
-                                                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-rose-500 hover:bg-rose-600 text-white transition-all text-xs font-black shrink-0 shadow-md shadow-rose-500/20 cursor-pointer" 
+                                                    className="flex items-center gap-1 md:gap-1.5 px-2 py-1 md:px-3 md:py-1.5 rounded-lg md:rounded-xl bg-rose-500 hover:bg-rose-600 text-white transition-all text-[11px] md:text-xs font-black shrink-0 shadow-md shadow-rose-500/20 cursor-pointer" 
                                                     title={selectedPhotoIds.length > 1 ? "선택한 사진을 씰(Seal) 사진으로 지정" : "선택한 사진을 정식 씰(Seal) 사진으로 지정"}
                                                 >
-                                                    <Camera className="w-3.5 h-3.5" /> 씰 지정
+                                                    <Camera className="w-3 h-3 md:w-3.5 md:h-3.5" /> 씰 지정
                                                 </button>
                                             )}
                                             {hasSealInSelection && (
                                                 <button 
                                                     onClick={() => handleBatchToggleSealPhoto('normal')} 
-                                                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-rose-100 hover:bg-rose-200 dark:bg-rose-950/50 dark:hover:bg-rose-900/80 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-800 transition-all text-xs font-black shrink-0 cursor-pointer" 
+                                                    className="flex items-center gap-1 md:gap-1.5 px-2 py-1 md:px-3 md:py-1.5 rounded-lg md:rounded-xl bg-rose-100 hover:bg-rose-200 dark:bg-rose-950/50 dark:hover:bg-rose-900/80 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-800 transition-all text-[11px] md:text-xs font-black shrink-0 cursor-pointer" 
                                                     title={selectedPhotoIds.length > 1 ? "선택한 사진 중 씰(Seal) 지정 해제" : "씰(Seal) 지정 해제 (일반 사진으로 변경)"}
                                                 >
-                                                    <Camera className="w-3.5 h-3.5 text-rose-500" /> 씰 해제
+                                                    <Camera className="w-3 h-3 md:w-3.5 md:h-3.5 text-rose-500" /> 씰 해제
                                                 </button>
                                             )}
-                                            <button onClick={() => setIsMoveModalOpen(true)} className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white transition-all text-xs font-black shrink-0 shadow-md shadow-indigo-500/20 cursor-pointer">
-                                                <Folder className="w-3.5 h-3.5" /> 이동
+                                            <button onClick={() => setIsMoveModalOpen(true)} className="flex items-center gap-1 md:gap-1.5 px-2 py-1 md:px-3 md:py-1.5 rounded-lg md:rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white transition-all text-[11px] md:text-xs font-black shrink-0 shadow-md shadow-indigo-500/20 cursor-pointer">
+                                                <Folder className="w-3 h-3 md:w-3.5 md:h-3.5" /> 이동
                                             </button>
-                                            <button onClick={handleDownloadSelectedPhotos} className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white transition-all text-xs font-black shrink-0 shadow-md shadow-sky-500/20 cursor-pointer" title={selectedPhotoIds.length > 1 ? "선택한 사진들을 압축(ZIP)하여 다운로드" : "선택한 사진 다운로드"}>
-                                                <Download className="w-3.5 h-3.5" /> 다운로드
+                                            <button onClick={handleDownloadSelectedPhotos} className="flex items-center gap-1 md:gap-1.5 px-2 py-1 md:px-3 md:py-1.5 rounded-lg md:rounded-xl bg-sky-600 hover:bg-sky-500 text-white transition-all text-[11px] md:text-xs font-black shrink-0 shadow-md shadow-sky-500/20 cursor-pointer" title={selectedPhotoIds.length > 1 ? "선택한 사진들을 압축(ZIP)하여 다운로드" : "선택한 사진 다운로드"}>
+                                                <Download className="w-3 h-3 md:w-3.5 md:h-3.5" /> 다운로드
                                             </button>
-                                            <button onClick={() => setIsLocalCopyOpen(true)} className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-white transition-all text-xs font-black shrink-0 shadow-md shadow-emerald-500/20 cursor-pointer" title="선택한 사진들을 지정한 로컬 폴더로 직접 복사">
-                                                <Folder className="w-3.5 h-3.5" /> 로컬 복사
+                                            <button onClick={() => setIsLocalCopyOpen(true)} className="flex items-center gap-1 md:gap-1.5 px-2 py-1 md:px-3 md:py-1.5 rounded-lg md:rounded-xl bg-emerald-500 hover:bg-emerald-400 text-white transition-all text-[11px] md:text-xs font-black shrink-0 shadow-md shadow-emerald-500/20 cursor-pointer" title="선택한 사진들을 지정한 로컬 폴더로 직접 복사">
+                                                <Folder className="w-3 h-3 md:w-3.5 md:h-3.5" /> 로컬 복사
                                             </button>
-                                            <button onClick={() => handleRotatePhotos(-90)} className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-500/10 dark:hover:bg-slate-500 text-slate-700 dark:text-slate-400 dark:hover:text-white transition-all text-xs font-black shrink-0 cursor-pointer" title="선택한 사진들을 반시계방향 90도 회전">
-                                                <RotateCcw className="w-3.5 h-3.5" /> 좌회전
+                                            <button onClick={() => handleRotatePhotos(-90)} className="flex items-center gap-1 md:gap-1.5 px-2 py-1 md:px-3 md:py-1.5 rounded-lg md:rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-500/10 dark:hover:bg-slate-500 text-slate-700 dark:text-slate-400 dark:hover:text-white transition-all text-[11px] md:text-xs font-black shrink-0 cursor-pointer" title="선택한 사진들을 반시계방향 90도 회전">
+                                                <RotateCcw className="w-3 h-3 md:w-3.5 md:h-3.5" /> 좌회전
                                             </button>
-                                            <button onClick={() => handleRotatePhotos(180)} className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-500/10 dark:hover:bg-slate-500 text-slate-700 dark:text-slate-400 dark:hover:text-white transition-all text-xs font-black shrink-0 cursor-pointer" title="선택한 사진들을 180도 회전">
-                                                <RotateCw className="w-3.5 h-3.5 text-amber-500" /> 180°
+                                            <button onClick={() => handleRotatePhotos(180)} className="flex items-center gap-1 md:gap-1.5 px-2 py-1 md:px-3 md:py-1.5 rounded-lg md:rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-500/10 dark:hover:bg-slate-500 text-slate-700 dark:text-slate-400 dark:hover:text-white transition-all text-[11px] md:text-xs font-black shrink-0 cursor-pointer" title="선택한 사진들을 180도 회전">
+                                                <RotateCw className="w-3 h-3 md:w-3.5 md:h-3.5 text-amber-500" /> 180°
                                             </button>
-                                            <button onClick={() => handleRotatePhotos(90)} className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-500/10 dark:hover:bg-slate-500 text-slate-700 dark:text-slate-400 dark:hover:text-white transition-all text-xs font-black shrink-0 cursor-pointer" title="선택한 사진들을 시계방향 90도 회전">
-                                                <RotateCw className="w-3.5 h-3.5" /> 우회전
+                                            <button onClick={() => handleRotatePhotos(90)} className="flex items-center gap-1 md:gap-1.5 px-2 py-1 md:px-3 md:py-1.5 rounded-lg md:rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-500/10 dark:hover:bg-slate-500 text-slate-700 dark:text-slate-400 dark:hover:text-white transition-all text-[11px] md:text-xs font-black shrink-0 cursor-pointer" title="선택한 사진들을 시계방향 90도 회전">
+                                                <RotateCw className="w-3 h-3 md:w-3.5 md:h-3.5" /> 우회전
                                             </button>
                                         </>
                                     )
                                 )}
                             </div>
 
-                            <div className="pl-2 md:pl-3 border-l border-slate-300 dark:border-slate-700 shrink-0">
-                                <button onClick={() => { setSelectedFolders([]); setSelectedPhotoIds([]); }} className="p-1 rounded-full hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 dark:hover:text-slate-200 transition-colors cursor-pointer" title="선택 취소">
-                                    <X className="w-4 h-4 md:w-5 md:h-5" />
+                            <div className="pl-1.5 md:pl-3 border-l border-slate-300 dark:border-slate-700 shrink-0">
+                                <button onClick={() => { setSelectedFolders([]); setSelectedPhotoIds([]); }} className="p-0.5 md:p-1.5 rounded-full hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 dark:hover:text-slate-200 transition-colors cursor-pointer" title="선택 취소">
+                                    <X className="w-3.5 h-3.5 md:w-5 md:h-5" />
                                 </button>
                             </div>
                         </div>
