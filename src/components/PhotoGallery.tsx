@@ -5,7 +5,7 @@ import {
     X, Calendar, User, Download, Search, Image as ImageIcon, 
     ChevronLeft, ChevronRight, ChevronDown, Loader2, ArrowLeft, Trash2, Folder,
     ExternalLink, RotateCw, RotateCcw, Grid, LayoutGrid, Check, Undo,
-    RefreshCw, SkipForward, Upload, Camera, FileText, AlertCircle, Pencil
+    RefreshCw, SkipForward, Upload, Camera, FileText, AlertCircle, Pencil, ArrowUpDown
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { fetchTeams } from '@/lib/actions/teamActions';
@@ -2137,63 +2137,62 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
                         </div>
                     </div>
 
-                    {/* Mobile: Ultra-Slim layout */}
-                    <div className="flex flex-col gap-1.5 md:hidden text-slate-800 pt-1">
-                        {/* Row 1: Dates without label */}
-                        <div className="grid grid-cols-2 gap-1.5">
+                    {/* Mobile: Ultra-Slim 2-Row Layout */}
+                    <div className="flex flex-col gap-1.5 md:hidden text-slate-800">
+                        {/* Row 1: Start Date, End Date, Team Select */}
+                        <div className="grid grid-cols-[1.15fr_1.15fr_1fr] gap-1.5">
                             <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} onClick={(e) => { try { e.currentTarget.showPicker(); } catch (err) {} }}
-                                className="w-full bg-white border border-slate-300 rounded-lg px-2 py-1 text-xs text-slate-800 outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 transition-colors shadow-2xs cursor-pointer h-7.5 text-center [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-80" />
+                                className="w-full bg-white border border-slate-300 rounded-lg px-1.5 py-1 text-[11px] font-bold text-slate-800 outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 transition-colors shadow-2xs cursor-pointer h-8 text-center [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-80" />
                             <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} onClick={(e) => { try { e.currentTarget.showPicker(); } catch (err) {} }}
-                                className="w-full bg-white border border-slate-300 rounded-lg px-2 py-1 text-xs text-slate-800 outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 transition-colors shadow-2xs cursor-pointer h-7.5 text-center [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-80" />
-                        </div>
-                        {/* Row 2: Team select & Container Search side by side */}
-                        <div className="grid grid-cols-2 gap-1.5">
+                                className="w-full bg-white border border-slate-300 rounded-lg px-1.5 py-1 text-[11px] font-bold text-slate-800 outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 transition-colors shadow-2xs cursor-pointer h-8 text-center [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-80" />
                             <select value={selectedTeamId} onChange={(e) => setSelectedTeamId(e.target.value)}
-                                className="w-full bg-white border border-slate-300 rounded-lg px-2 py-1 text-xs text-slate-800 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-colors cursor-pointer shadow-2xs h-7.5">
+                                className="w-full bg-white border border-slate-300 rounded-lg px-1.5 py-1 text-[11px] font-black text-slate-800 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-colors cursor-pointer shadow-2xs h-8">
                                 <option value="">전체 조</option>
                                 {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
                             </select>
-                            <div className="relative">
-                                <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400 pointer-events-none" />
+                        </div>
+
+                        {/* Row 2: Search Input + Action Buttons */}
+                        <div className="flex items-center gap-1.5">
+                            <div className="relative flex-1 min-w-0">
+                                <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
                                 <input type="text" placeholder="컨테이너 번호검색" value={searchCntrNo}
                                     onChange={(e) => setSearchCntrNo(e.target.value)}
                                     onKeyDown={(e) => { if (e.key === 'Enter') loadPhotos(); }}
-                                    className="w-full bg-white border border-slate-300 rounded-lg pl-7 pr-2 py-1 text-xs text-slate-800 outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 transition-colors shadow-2xs h-7.5" />
+                                    className="w-full bg-white border border-slate-300 rounded-lg pl-7 pr-2 py-1 text-[11px] font-bold text-slate-800 outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 transition-colors shadow-2xs h-8" />
                             </div>
-                        </div>
-                        {/* Row 3: Action buttons (GDrive backup visible ONLY to isAdmin) */}
-                        <div className="flex items-center gap-1.5 mt-0.5">
-                            {isAdmin && (
-                                <button onClick={() => handleActionWithCheck('GDRIVE_BACKUP')}
-                                    className="flex-1 flex items-center justify-center gap-1 py-1 px-2 rounded-lg bg-sky-600 border border-sky-500 hover:bg-sky-500 text-white font-black text-[11px] transition-all shadow-xs cursor-pointer h-7.5">
-                                    <Upload className="w-3 h-3" /> ☁️ GDrive 백업
-                                </button>
-                            )}
+
                             <button onClick={handleResetFilters}
                                 title="필터 초기화"
-                                className="flex-1 flex items-center justify-center gap-1 px-2 py-1 rounded-lg bg-slate-100 border border-slate-200 text-slate-700 hover:bg-slate-200 transition-all font-black text-[11px] cursor-pointer shadow-2xs h-7.5">
-                                <RotateCcw className="w-3 h-3" /> 초기화
+                                className="h-8 px-2 rounded-lg bg-slate-100 border border-slate-200 text-slate-700 hover:bg-slate-200 transition-all font-black text-[11px] cursor-pointer shadow-2xs flex items-center justify-center gap-1 shrink-0">
+                                <RotateCcw className="w-3 h-3" />
+                                <span>초기화</span>
                             </button>
+
                             <button onClick={loadPhotos}
                                 title="새로고침"
-                                className="flex-1 flex items-center justify-center gap-1 px-2 py-1 rounded-lg bg-emerald-600 border border-emerald-600 hover:bg-emerald-500 text-white font-black text-[11px] transition-all shadow-xs cursor-pointer h-7.5">
-                                <RefreshCw className="w-3 h-3" /> 새로고침
+                                className="h-8 px-2 rounded-lg bg-emerald-600 border border-emerald-600 hover:bg-emerald-500 text-white font-black text-[11px] transition-all shadow-xs cursor-pointer flex items-center justify-center gap-1 shrink-0">
+                                <RefreshCw className="w-3 h-3" />
+                                <span>새로고침</span>
                             </button>
-                        </div>
-                        {/* Mobile Navigation Bar: Back & Close */}
-                        <div className="flex items-center gap-1.5 mt-0.5">
+
                             {selectedContainerFolder !== null && (
                                 <button onClick={() => {
                                     setSelectedContainerFolder(null);
                                     loadPhotos();
                                 }}
-                                    className="flex-1 flex items-center justify-center gap-1 py-1 px-2 rounded-lg bg-slate-100 border border-slate-300 hover:bg-slate-200 text-slate-800 transition-all cursor-pointer text-[11px] font-black shadow-2xs h-7.5">
-                                    <ArrowLeft className="w-3 h-3" /> 뒤로가기
+                                    title="폴더 목록으로 뒤로가기"
+                                    className="h-8 px-2 rounded-lg bg-slate-100 border border-slate-300 hover:bg-slate-200 text-slate-800 transition-all cursor-pointer text-[11px] font-black shadow-2xs flex items-center justify-center gap-1 shrink-0">
+                                    <ArrowLeft className="w-3 h-3" />
+                                    <span>뒤로</span>
                                 </button>
                             )}
+
                             <button onClick={onClose}
-                                className="flex-1 flex items-center justify-center gap-1 py-1 px-2 rounded-lg bg-rose-500/10 hover:bg-rose-500 text-rose-600 hover:text-white border border-rose-500/30 transition-all cursor-pointer text-[11px] font-black shadow-2xs h-7.5">
-                                <X className="w-3 h-3" /> 보관함 닫기
+                                title="보관함 닫기"
+                                className="h-8 px-2 rounded-lg bg-rose-50 hover:bg-rose-500 text-rose-600 hover:text-white border border-rose-200 hover:border-rose-500 transition-all cursor-pointer text-[11px] font-black shadow-2xs flex items-center justify-center gap-1 shrink-0">
+                                <X className="w-3 h-3" />
+                                <span>닫기</span>
                             </button>
                         </div>
                     </div>
@@ -2436,95 +2435,99 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
                     ) : (
                         /* PHOTO GRID VIEW (INSIDE SELECTED FOLDER) */
                         <div>
-                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 shrink-0">
-                                <div className="flex items-center gap-3">
-                                    <div className="text-xs font-black text-sky-400 uppercase tracking-widest bg-sky-500/10 border border-sky-500/20 px-4 py-2 rounded-xl">
-                                        폴더: {selectedContainerFolder ? selectedContainerFolder.split('|')[0] : ''} ({folderPhotos.length}장)
-                                    </div>
-                                </div>
-
-                                {/* Sort & View Mode Options */}
-                                <div className="flex items-center gap-4">
-                                    {/* View Mode Toggle */}
-                                    <div className="flex items-center gap-1.5">
-                                        <span className="text-[11px] font-bold text-slate-500">보기:</span>
-                                        <div className="flex bg-[#11111a] border border-white/5 p-0.5 rounded-lg gap-0.5">
-                                            <button
-                                                onClick={() => setViewMode('GRID')}
-                                                className={`p-1 rounded transition-all flex items-center gap-1 text-[11px] font-bold cursor-pointer ${
-                                                    viewMode === 'GRID' 
-                                                        ? 'bg-sky-500 text-white shadow-sm' 
-                                                        : 'text-slate-400 hover:text-white'
-                                                }`}
-                                                title="일반 바둑판 보기 (5열)"
-                                            >
-                                                <LayoutGrid className="w-3 h-3" />
-                                                <span className="hidden sm:inline">바둑판</span>
-                                            </button>
-                                            <button
-                                                onClick={() => setViewMode('LARGE')}
-                                                className={`p-1 rounded transition-all flex items-center gap-1 text-[11px] font-bold cursor-pointer ${
-                                                    viewMode === 'LARGE' 
-                                                        ? 'bg-sky-500 text-white shadow-sm' 
-                                                        : 'text-slate-400 hover:text-white'
-                                                }`}
-                                                title="크게 보기 (원본 비율, 3-4열)"
-                                            >
-                                                <Grid className="w-3 h-3" />
-                                                <span className="hidden sm:inline">크게 보기</span>
-                                            </button>
+                            {/* Clean 2-Row Folder Photo Header Card */}
+                            <div className="mb-3.5 bg-white dark:bg-[#11111a] border border-slate-200 dark:border-white/10 rounded-2xl p-2.5 md:p-3 shadow-xs space-y-2">
+                                {/* Row 1: Folder Title Badge (Left) + View Mode Toggle (Right) */}
+                                <div className="flex items-center justify-between gap-2">
+                                    <div className="flex items-center gap-2 min-w-0">
+                                        <div className="p-1.5 rounded-lg bg-sky-50 dark:bg-sky-950/60 text-sky-600 dark:text-sky-400 border border-sky-200/60 dark:border-sky-800/40 shrink-0">
+                                            <Folder className="w-3.5 h-3.5" />
+                                        </div>
+                                        <div className="flex items-baseline gap-1.5 min-w-0 truncate">
+                                            <span className="text-xs md:text-sm font-black text-slate-900 dark:text-white truncate tracking-tight">
+                                                {selectedContainerFolder ? selectedContainerFolder.split('|')[0] : ''}
+                                            </span>
+                                            <span className="text-[10px] md:text-xs font-bold text-sky-600 dark:text-sky-400 bg-sky-100/80 dark:bg-sky-500/10 px-1.5 py-0.5 rounded-md shrink-0">
+                                                {folderPhotos.length}장
+                                            </span>
                                         </div>
                                     </div>
 
-                                    {/* Sort dropdown */}
-                                    <div className="flex items-center gap-1.5">
-                                        <span className="text-[11px] font-bold text-slate-500">정렬:</span>
+                                    {/* Right: View Mode Toggle */}
+                                    <div className="flex bg-slate-100 dark:bg-black/40 border border-slate-200 dark:border-white/10 p-0.5 rounded-lg gap-0.5 shrink-0 shadow-2xs">
+                                        <button
+                                            onClick={() => setViewMode('GRID')}
+                                            className={`px-2 py-1 rounded-md transition-all flex items-center gap-1 text-[10px] md:text-xs font-black cursor-pointer ${
+                                                viewMode === 'GRID' 
+                                                    ? 'bg-sky-600 text-white shadow-2xs' 
+                                                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                                            }`}
+                                            title="일반 바둑판 보기"
+                                        >
+                                            <LayoutGrid className="w-3 h-3" />
+                                            <span>바둑판</span>
+                                        </button>
+                                        <button
+                                            onClick={() => setViewMode('LARGE')}
+                                            className={`px-2 py-1 rounded-md transition-all flex items-center gap-1 text-[10px] md:text-xs font-black cursor-pointer ${
+                                                viewMode === 'LARGE' 
+                                                    ? 'bg-sky-600 text-white shadow-2xs' 
+                                                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                                            }`}
+                                            title="크게 보기"
+                                        >
+                                            <Grid className="w-3 h-3" />
+                                            <span>크게</span>
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Row 2: Select All Button (Left) + Sort Dropdown (Right) */}
+                                <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100 dark:border-white/5">
+                                    {/* Left: Select All Checkbox Button */}
+                                    <button 
+                                        onClick={() => handleToggleSelectAllPhotos(folderPhotos)}
+                                        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] md:text-xs font-black transition-all cursor-pointer shadow-2xs ${
+                                            selectedPhotoIds.filter(id => folderPhotos.some(p => p.id === id)).length > 0
+                                                ? 'bg-sky-50 dark:bg-sky-950/60 border-sky-300 dark:border-sky-700 text-sky-700 dark:text-sky-300'
+                                                : 'bg-slate-50 dark:bg-white/5 hover:bg-slate-100 dark:hover:bg-white/10 border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300'
+                                        }`}
+                                    >
+                                        <div className={`w-3.5 h-3.5 rounded border flex items-center justify-center transition-all ${
+                                            folderPhotos.length > 0 && folderPhotos.every(p => selectedPhotoIds.includes(p.id))
+                                                ? "bg-sky-600 border-sky-600 text-white"
+                                                : selectedPhotoIds.some(id => folderPhotos.some(p => p.id === id))
+                                                    ? "bg-sky-500/40 border-sky-500 text-white"
+                                                    : "bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700"
+                                        }`}>
+                                            {folderPhotos.length > 0 && folderPhotos.every(p => selectedPhotoIds.includes(p.id)) ? (
+                                                <Check className="w-2.5 h-2.5 stroke-[3]" />
+                                            ) : selectedPhotoIds.some(id => folderPhotos.some(p => p.id === id)) ? (
+                                                <div className="w-1.5 h-0.5 bg-white rounded-full" />
+                                            ) : null}
+                                        </div>
+                                        <span>
+                                            전체 선택 {selectedPhotoIds.filter(id => folderPhotos.some(p => p.id === id)).length > 0 ? `(${selectedPhotoIds.filter(id => folderPhotos.some(p => p.id === id)).length}/${folderPhotos.length}장)` : ''}
+                                        </span>
+                                    </button>
+
+                                    {/* Right: Sort Dropdown */}
+                                    <div className="flex items-center gap-1">
+                                        <ArrowUpDown className="w-3 h-3 text-slate-400 shrink-0" />
                                         <select 
                                             value={sortBy} 
                                             onChange={(e) => setSortBy(e.target.value as any)}
-                                            className="bg-[#11111a] border border-white/5 rounded-xl px-3 py-1.5 text-xs text-slate-300 focus:outline-none focus:border-sky-500 transition-colors cursor-pointer"
+                                            className="bg-slate-50 dark:bg-black/40 border border-slate-200 dark:border-white/10 rounded-lg px-2 py-1 text-[11px] font-bold text-slate-700 dark:text-slate-300 focus:outline-none focus:border-sky-500 transition-colors cursor-pointer shadow-2xs h-7.5"
                                         >
                                             <option value="UPLOAD_DESC">업로드순 (최신)</option>
                                             <option value="UPLOAD_ASC">업로드순 (과거)</option>
                                             <option value="CREATION_DESC">파일제작순 (최신)</option>
                                             <option value="CREATION_ASC">파일제작순 (과거)</option>
-                                            <option value="NAME_ASC">파일이름순 (오름차순)</option>
-                                            <option value="NAME_DESC">파일이름순 (내림차순)</option>
+                                            <option value="NAME_ASC">파일이름순 (오름)</option>
+                                            <option value="NAME_DESC">파일이름순 (내림)</option>
                                         </select>
                                     </div>
                                 </div>
-                            </div>
-                            {/* Photo Selection & Bulk Actions Control Bar */}
-                            <div className="mb-4 p-3 rounded-2xl bg-[#11111a] border border-white/5 flex flex-wrap items-center justify-between gap-3 shadow-md">
-                                <div className="flex items-center gap-3">
-                                    <button 
-                                        onClick={() => handleToggleSelectAllPhotos(folderPhotos)}
-                                        className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 text-xs font-black text-slate-300 hover:text-white transition-all cursor-pointer"
-                                    >
-                                        <div className={`w-4 h-4 rounded border flex items-center justify-center transition-all ${
-                                            folderPhotos.length > 0 && folderPhotos.every(p => selectedPhotoIds.includes(p.id))
-                                                ? "bg-sky-500 border-sky-400 text-white"
-                                                : selectedPhotoIds.some(id => folderPhotos.some(p => p.id === id))
-                                                    ? "bg-sky-500/40 border-sky-400 text-white"
-                                                    : "bg-slate-900 border-slate-700"
-                                        }`}>
-                                            {folderPhotos.length > 0 && folderPhotos.every(p => selectedPhotoIds.includes(p.id)) ? (
-                                                <Check className="w-3 h-3 stroke-[3]" />
-                                            ) : selectedPhotoIds.some(id => folderPhotos.some(p => p.id === id)) ? (
-                                                <div className="w-2 h-0.5 bg-white rounded-full" />
-                                            ) : null}
-                                        </div>
-                                        <span>
-                                            전체 선택 {selectedPhotoIds.filter(id => folderPhotos.some(p => p.id === id)).length > 0 ? `(${selectedPhotoIds.filter(id => folderPhotos.some(p => p.id === id)).length} / ${folderPhotos.length}장)` : `(${folderPhotos.length}장)`}
-                                        </span>
-                                    </button>
-                                    {selectedPhotoIds.filter(id => folderPhotos.some(p => p.id === id)).length > 0 && (
-                                        <span className="text-xs font-black text-sky-400 bg-sky-500/10 border border-sky-500/20 px-2.5 py-1 rounded-lg">
-                                            {selectedPhotoIds.filter(id => folderPhotos.some(p => p.id === id)).length}장 선택됨
-                                        </span>
-                                    )}
-                                </div>
-
                             </div>
 
                             {/* Duplicate Photos Banner */}
