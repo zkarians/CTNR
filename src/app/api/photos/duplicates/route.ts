@@ -216,7 +216,7 @@ export async function POST(req: NextRequest) {
                 await client.query(
                     `UPDATE container_photos 
                      SET is_deleted = true, deleted_at = NOW() 
-                     WHERE id = ANY($1)`,
+                     WHERE id = ANY($1::uuid[])`,
                     [duplicateIdsToTrash]
                 );
             }

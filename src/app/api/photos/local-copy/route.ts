@@ -45,7 +45,7 @@ export async function POST(req: NextRequest) {
                 const res = await client.query(
                     `SELECT cntr_no, photo_path, gdrive_file_id, gdrive_url, team_name 
                      FROM container_photos 
-                     WHERE id = ANY($1) AND (is_deleted IS NULL OR is_deleted = false)`,
+                     WHERE id = ANY($1::uuid[]) AND (is_deleted IS NULL OR is_deleted = false)`,
                     [ids]
                 );
                 photos = res.rows;
@@ -63,7 +63,7 @@ export async function POST(req: NextRequest) {
                 const query = `
                     SELECT cntr_no, photo_path, gdrive_file_id, gdrive_url, team_name 
                     FROM container_photos 
-                    WHERE UPPER(TRIM(cntr_no)) = ANY($1)
+                    WHERE UPPER(TRIM(cntr_no)) = ANY($1::text[])
                       AND (is_deleted IS NULL OR is_deleted = false)
                 `;
                 const res = await client.query(query, [cntrNos]);

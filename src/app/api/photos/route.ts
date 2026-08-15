@@ -305,7 +305,7 @@ export async function GET(req: NextRequest) {
                         }
                     }
                     const expiredIds = expiredRes.rows.map(r => r.id);
-                    await cleanupClient.query('DELETE FROM container_photos WHERE id = ANY($1)', [expiredIds]);
+                    await cleanupClient.query('DELETE FROM container_photos WHERE id = ANY($1::uuid[])', [expiredIds]);
                     console.log(`[Auto-Cleanup] Permanently deleted ${expiredIds.length} expired photos from trash.`);
                 }
             } finally {

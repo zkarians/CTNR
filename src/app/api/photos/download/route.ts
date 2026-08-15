@@ -39,7 +39,7 @@ export async function GET(req: NextRequest) {
                 const res = await client.query(
                     `SELECT cntr_no, photo_path, gdrive_file_id, gdrive_url 
                      FROM container_photos 
-                     WHERE id = ANY($1) AND (is_deleted IS NULL OR is_deleted = false)`,
+                     WHERE id = ANY($1::uuid[]) AND (is_deleted IS NULL OR is_deleted = false)`,
                     [ids]
                 );
                 photos = res.rows;
@@ -48,22 +48,22 @@ export async function GET(req: NextRequest) {
                 let query = `
                     SELECT cntr_no, photo_path, gdrive_file_id, gdrive_url 
                     FROM container_photos 
-                    WHERE cntr_no = ANY($1)
+                    WHERE cntr_no = ANY($1::text[])
                       AND (is_deleted IS NULL OR is_deleted = false)
                 `;
                 const params: (string | Date | string[])[] = [cntrNos];
                 let paramIdx = 2;
 
                 if (startDate) {
-                    query += ` AND uploaded_at AT TIME ZONE 'Asia/Seoul' >= ${paramIdx++}::timestamp`;
+                    query += ` AND uploaded_at AT TIME ZONE 'Asia/Seoul' >= $${paramIdx++}::timestamp`;
                     params.push(`${startDate} 13:00:00`);
                 }
                 if (endDate) {
-                    query += ` AND uploaded_at AT TIME ZONE 'Asia/Seoul' <= (${paramIdx++}::date + INTERVAL '1 day 12 hours 59 minutes 59.999 seconds')`;
+                    query += ` AND uploaded_at AT TIME ZONE 'Asia/Seoul' <= ($${paramIdx++}::date + INTERVAL '1 day 12 hours 59 minutes 59.999 seconds')`;
                     params.push(endDate);
                 }
                 if (userId) {
-                    query += ` AND uploaded_by = ${paramIdx++}`;
+                    query += ` AND uploaded_by = $${paramIdx++}`;
                     params.push(userId);
                 }
 
