@@ -19,6 +19,7 @@ function getJobCategory(cntr: any): string {
     let hasOven = false;
     let hasWasher = false;
     let hasDishwasher = false;
+    let hasAircon = false;
     let hasComp = false;
     let hasFridge = false;
     let hasSKFridge = false;
@@ -28,6 +29,7 @@ function getJobCategory(cntr: any): string {
         if (p.division === 'CVZ') hasOven = true;
         if (p.division === 'DFZ') hasWasher = true;
         if (p.division === 'CDZ') hasDishwasher = true;
+        if (p.division === 'DMZ') hasAircon = true;
         if (p.division === 'DHZ') hasComp = true;
         if (p.division === 'CNZ') {
             hasFridge = true;
@@ -41,6 +43,7 @@ function getJobCategory(cntr: any): string {
     if (hasOven) return '오븐';
     if (hasWasher) return '세탁기';
     if (hasDishwasher) return '식기';
+    if (hasAircon) return '에어컨';
     if (hasComp) return '콤프';
     if (hasSKFridge) return 'SK냉장고';
     if (hasFridge) return '냉장고';
@@ -48,7 +51,7 @@ function getJobCategory(cntr: any): string {
     return '기타';
 }
 
-const CATEGORIES = ['오븐', '세탁기', '식기', '횡적', 'SK냉장고', '냉장고', '콤프', '기타'];
+const CATEGORIES = ['오븐', '세탁기', '식기', '에어컨', '횡적', 'SK냉장고', '냉장고', '콤프', '기타'];
 
 export default function TeamSummaryModal({ isOpen, onClose, reportData }: TeamSummaryModalProps) {
     const [dayShiftCount, setDayShiftCount] = React.useState<string>('');
@@ -426,7 +429,7 @@ const emptyBoxSummary = useMemo(() => {
                         </div>
 
                         <div className="mt-4 text-xs text-slate-500 bg-slate-50 p-3 rounded-lg border border-slate-200">
-                            <strong>* 분류 우선순위:</strong> 오븐 &gt; 세탁기 &gt; 식기 &gt; 횡적 &gt; 콤프 &gt; SK냉장고 &gt; 냉장고<br/>
+                            <strong>* 분류 우선순위:</strong> 오븐 &gt; 세탁기 &gt; 식기 &gt; 에어컨 &gt; 횡적 &gt; 콤프 &gt; SK냉장고 &gt; 냉장고<br/>
                             <span className="text-slate-400 mt-1 block">작업취소 및 작업제외 처리된 컨테이너는 수량에서 제외되었습니다.</span>
                         </div>
                     </div>

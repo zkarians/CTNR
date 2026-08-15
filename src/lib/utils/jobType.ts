@@ -57,6 +57,9 @@ export function generateJobType(products: { name: string; qty: number; division:
             case 'DHZ':
                 typeName = '콤프';
                 break;
+            case 'DMZ':
+                typeName = '에어컨';
+                break;
             default:
                 typeName = p.division || '기타';
                 break;
