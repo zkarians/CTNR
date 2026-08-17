@@ -481,6 +481,9 @@ export default function Home({ user }: { user: SessionUser }) {
             } else {
                 setManualProducts([...manualProducts, ...parsedProducts]);
             }
+        }
+    };
+
     const handleAddManualSubmit = () => {
         if (!manualCntrNo.trim()) {
             alert("컨테이너 번호를 입력해주세요.");
