@@ -36,7 +36,7 @@ import { fetchJobs, fetchProductsByJob, searchProducts, deleteContainerResult } 
 import { fetchTeamWorkProgress, updateContainerWorkDuration, updateContainerAdminComment, resetTeamWorkProgress } from '@/lib/actions/progressActions';
 import { getDbConfig, updateDbConfig, updatePassword, fetchAllUsers, createUserAccount, updateUserAccount, deleteUserAccount, deleteMultipleUserAccounts } from '@/lib/actions/userActions';
 import { exportDatabaseDump, restoreDatabaseDump, triggerManualBackupAndSync } from '@/lib/actions/syncActions';
-import { generateWorkReport, saveDailyWorkReport, getSavedDailyWorkReport, addManualReportEntry, deleteManualReportEntry, updateManualReportEntry } from '@/lib/actions/reportActions';
+import { generateWorkReport, saveDailyWorkReport, getSavedDailyWorkReport, addManualReportEntry, deleteManualReportEntry, updateManualReportEntry, updateContainerReportDetails } from '@/lib/actions/reportActions';
 import { SessionUser } from '@/lib/auth';
 import { calculateTeamTimeline } from '@/lib/timeline';
 
@@ -481,9 +481,6 @@ export default function Home({ user }: { user: SessionUser }) {
             } else {
                 setManualProducts([...manualProducts, ...parsedProducts]);
             }
-        }
-    };
-
     const handleAddManualSubmit = () => {
         if (!manualCntrNo.trim()) {
             alert("컨테이너 번호를 입력해주세요.");
@@ -513,6 +510,7 @@ export default function Home({ user }: { user: SessionUser }) {
             modelCount: validProducts.length,
             totalQty: totalQty,
             modelSummaryStr: `${validProducts.length}모델, ${totalQty.toLocaleString()}개${adminCommentStr ? ` ( ${adminCommentStr} )`: ''}`,
+            remark: manualRemark.trim(),
             lastRemark: manualRemark.trim() ? `지연사유: ${manualRemark.trim()}` : '',
             transporter: manualTransporter,
             adminComment: adminCommentStr,
@@ -671,7 +669,7 @@ export default function Home({ user }: { user: SessionUser }) {
         setManualProducts([{ division: 'DFZ', name: '', qty: 0 }]);
         setIsManualCancelled(false);
 
-                if (!editingReportItem) {
+        if (!editingReportItem) {
             addManualReportEntry({
                 workDate: reportStartDate || getLocalDateString(new Date()),
                 teamName: manualTeamName,
@@ -697,9 +695,19 @@ export default function Home({ user }: { user: SessionUser }) {
                 firstUploadedAt: targetFirstUploadedAt,
                 transporter: manualTransporter
             }).catch(console.error);
+        } else {
+            updateContainerReportDetails({
+                cntrNo: manualCntrNo.trim().toUpperCase(),
+                durationMinutes: duration,
+                remark: manualRemark.trim(),
+                category: adminCommentStr,
+                workDate: reportStartDate || getLocalDateString(new Date()),
+                emptyBoxes: manualEmptyBoxes.filter(e => e.name.trim() && e.qty > 0)
+            }).catch(console.error);
         }
     };
-const handleSaveComment = async (cntrNo: string) => {
+
+    const handleSaveComment = async (cntrNo: string) => {
         setEditingCommentCntr(null);
         if (!isAdmin) return;
         try {

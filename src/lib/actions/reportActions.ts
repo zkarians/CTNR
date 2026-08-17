@@ -608,3 +608,74 @@ export async function updateManualReportEntry(id: number, params: {
         return { success: false, error: error.message };
     }
 }
+
+export async function updateContainerReportDetails(params: {
+    cntrNo: string;
+    durationMinutes: number;
+    remark: string;
+    category?: string;
+    workDate?: string;
+    emptyBoxes?: any[];
+}): Promise<{ success: boolean; error?: string }> {
+    try {
+        const session = await getSession();
+        if (!session || (session.role !== 'ADMIN' && session.role !== 'MANAGER')) {
+            return { success: false, error: 'Unauthorized' };
+        }
+        const client = await pool.connect();
+        try {
+            await client.query('BEGIN');
+            
+            // 1. Update container_photos remark and work_duration_minutes
+            await client.query(`
+                UPDATE container_photos 
+                SET work_duration_minutes = $1,
+                    remark = $2
+                WHERE UPPER(TRIM(cntr_no)) = UPPER(TRIM($3))
+                  AND (is_deleted IS NOT TRUE)
+            `, [params.durationMinutes, params.remark || '', params.cntrNo]);
+
+            // 2. Update container_comments if category provided
+            if (params.category !== undefined) {
+                const targetWorkDate = params.workDate || getWorkDateString(new Date());
+                await client.query(`
+                    INSERT INTO container_comments (work_date, cntr_no, admin_comment, updated_at)
+                    VALUES ($1, $2, $3, NOW())
+                    ON CONFLICT (work_date, cntr_no)
+                    DO UPDATE SET admin_comment = EXCLUDED.admin_comment, updated_at = NOW()
+                `, [targetWorkDate, params.cntrNo, params.category]);
+            }
+
+            // 3. Update empty boxes if provided
+            if (params.emptyBoxes && params.emptyBoxes.length > 0) {
+                const jobRes = await client.query(`
+                    SELECT MAX(job_id) as job_id FROM container_photos WHERE UPPER(TRIM(cntr_no)) = UPPER(TRIM($1))
+                `, [params.cntrNo]);
+                const jobId = jobRes.rows[0]?.job_id;
+                if (jobId) {
+                    for (const box of params.emptyBoxes) {
+                        if (box.name && box.qty > 0) {
+                            await client.query(`
+                                INSERT INTO container_empty_boxes (job_id, cntr_no, box_name, qty, is_worker_edited)
+                                VALUES ($1, $2, $3, $4, true)
+                                ON CONFLICT (job_id, cntr_no, box_name) DO UPDATE 
+                                SET qty = EXCLUDED.qty, is_worker_edited = true, updated_at = CURRENT_TIMESTAMP
+                            `, [jobId, params.cntrNo, box.name, box.qty]);
+                        }
+                    }
+                }
+            }
+
+            await client.query('COMMIT');
+            return { success: true };
+        } catch (innerErr) {
+            await client.query('ROLLBACK');
+            throw innerErr;
+        } finally {
+            client.release();
+        }
+    } catch (err: any) {
+        console.error("updateContainerReportDetails Error:", err);
+        return { success: false, error: err?.message || 'DB update error' };
+    }
+}

@@ -643,14 +643,18 @@ export default function ReportModal({
                                                                             ) : null;
                                                                             })()}
                                                                         </div>
-                                                                        {cntr.remark && cntr.remark.trim() && (
-                                                                            <div className="text-xs text-amber-900 font-bold bg-amber-50/90 border border-amber-200/80 px-3 py-2 rounded-xl mb-2 flex items-start gap-1.5 leading-relaxed shadow-sm">
-                                                                                <span className="shrink-0 text-amber-600 mt-0.5">💬</span>
-                                                                                <div className="flex-1 break-words leading-relaxed">
-                                                                                    <span className="text-amber-900 font-black">지연사유:</span> {cntr.remark.trim()}
+                                                                        {(() => {
+                                                                            const displayRemark = (cntr.remark || cntr.lastRemark || '').replace(/^지연사유:\s*/, '').trim();
+                                                                            if (!displayRemark) return null;
+                                                                            return (
+                                                                                <div className="text-xs text-amber-900 font-bold bg-amber-50/90 border border-amber-200/80 px-3 py-2 rounded-xl mb-2 flex items-start gap-1.5 leading-relaxed shadow-sm">
+                                                                                    <span className="shrink-0 text-amber-600 mt-0.5">💬</span>
+                                                                                    <div className="flex-1 break-words leading-relaxed">
+                                                                                        <span className="text-amber-900 font-black">지연사유:</span> {displayRemark}
+                                                                                    </div>
                                                                                 </div>
-                                                                            </div>
-                                                                        )}
+                                                                            );
+                                                                        })()}
                                                                         {reportViewMode === 'full' && (
                                                                             <div className="space-y-1 pt-1.5 border-t border-slate-200/80 pl-0.5">
                                                                                 {cntr.products.map((p: any, idx: number) => (
@@ -728,14 +732,18 @@ export default function ReportModal({
                                                                 ))}
                                                             </div>
 
-                                                            {cntr.remark && cntr.remark.trim() && (
-                                                                <div className="text-xs text-amber-900 font-bold bg-amber-50/90 border border-amber-200/80 px-3 py-2 rounded-xl mt-2 flex items-start gap-1.5 leading-relaxed shadow-sm">
-                                                                    <span className="shrink-0 text-amber-600 mt-0.5">💬</span>
-                                                                    <div className="flex-1 break-words leading-relaxed">
-                                                                        <span className="text-amber-900 font-black">지연사유:</span> {cntr.remark.trim()}
+                                                            {(() => {
+                                                                const displayRemark = (cntr.remark || cntr.lastRemark || '').replace(/^지연사유:\s*/, '').trim();
+                                                                if (!displayRemark) return null;
+                                                                return (
+                                                                    <div className="text-xs text-amber-900 font-bold bg-amber-50/90 border border-amber-200/80 px-3 py-2 rounded-xl mt-2 flex items-start gap-1.5 leading-relaxed shadow-sm">
+                                                                        <span className="shrink-0 text-amber-600 mt-0.5">💬</span>
+                                                                        <div className="flex-1 break-words leading-relaxed">
+                                                                            <span className="text-amber-900 font-black">지연사유:</span> {displayRemark}
+                                                                        </div>
                                                                     </div>
-                                                                </div>
-                                                            )}
+                                                                );
+                                                            })()}
                                                         </div>
                                                     );
                                                 })
