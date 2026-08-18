@@ -924,9 +924,10 @@ export default function Home({ user }: { user: SessionUser }) {
         setIsGalleryOpen(true);
     };
 
-    const handleGenerateReport = async (overrideDate?: string) => {
+    const handleGenerateReport = async (overrideDate?: any) => {
         const defaultWorkDate = getWorkDateString(new Date());
-        const singleDate = overrideDate || filters.startDate || defaultWorkDate;
+        const validOverrideDate = (typeof overrideDate === 'string' && overrideDate.trim()) ? overrideDate.trim() : undefined;
+        const singleDate = validOverrideDate || (typeof filters?.startDate === 'string' && filters.startDate ? filters.startDate : defaultWorkDate);
         
         setReportStartDate(singleDate);
         setReportEndDate(singleDate);
@@ -936,7 +937,6 @@ export default function Home({ user }: { user: SessionUser }) {
         setIsCopied(false);
         try {
             const res = await generateWorkReport({
-                ...filters,
                 containerNo: '', // Ignore dashboard text search for the full report
                 productName: '', // Ignore dashboard text search for the full report
                 startDate: singleDate,
@@ -1831,7 +1831,7 @@ export default function Home({ user }: { user: SessionUser }) {
                     </div>
                     <div className="flex items-center gap-1.5">
                         <button 
-                            onClick={handleGenerateReport} 
+                            onClick={() => handleGenerateReport()} 
                             className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500 hover:text-white text-xs md:text-[11px] font-black transition-all cursor-pointer shadow-sm"
                             title={isAdmin ? "작업 완료 보고서 생성" : `${user.teamName || '소속 조'} 작업내역 조회`}
                         >

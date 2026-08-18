@@ -13,42 +13,46 @@ export async function generateWorkReport(filters: JobFilters): Promise<{ success
         const client = await pool.connect();
         try {
             const todayWorkDateStr = getWorkDateString(new Date());
-            const targetDateStr = filters.startDate || todayWorkDateStr;
+            const startDateStr = typeof filters?.startDate === 'string' ? filters.startDate.trim() : '';
+            const endDateStr = typeof filters?.endDate === 'string' ? filters.endDate.trim() : '';
+            const productNameStr = typeof filters?.productName === 'string' ? filters.productName.trim() : '';
+            const containerNoStr = typeof filters?.containerNo === 'string' ? filters.containerNo.trim() : '';
+            const targetDateStr = startDateStr || todayWorkDateStr;
             const whereClauses: string[] = [];
             const params: any[] = [];
             let paramIdx = 1;
 
             whereClauses.push(`COALESCE(r.qty_plan, 0) > 0`);
 
-            if (!filters.startDate && !filters.endDate) {
+            if (!startDateStr && !endDateStr) {
                 whereClauses.push(`COALESCE(p.uploaded_at, j.saved_at) AT TIME ZONE 'Asia/Seoul' >= $${paramIdx++}::timestamp`);
                 params.push(`${todayWorkDateStr} 13:00:00`);
             } else {
-                if (filters.startDate && filters.endDate) {
-                    const s = new Date(filters.startDate);
-                    const e = new Date(filters.endDate);
+                if (startDateStr && endDateStr) {
+                    const s = new Date(startDateStr);
+                    const e = new Date(endDateStr);
                     const diffDays = Math.ceil((e.getTime() - s.getTime()) / (1000 * 60 * 60 * 24));
                     if (diffDays > 31) {
                         return { success: false, error: "보고서 생성은 최대 31일 범위까지만 가능합니다. 조회 기간을 줄여주세요." };
                     }
                 }
-                if (filters.startDate) {
+                if (startDateStr) {
                     whereClauses.push(`COALESCE(p.uploaded_at, j.saved_at) AT TIME ZONE 'Asia/Seoul' >= $${paramIdx++}::timestamp`);
-                    params.push(`${filters.startDate} 13:00:00`);
+                    params.push(`${startDateStr} 13:00:00`);
                 }
-                if (filters.endDate) {
+                if (endDateStr) {
                     whereClauses.push(`COALESCE(p.uploaded_at, j.saved_at) AT TIME ZONE 'Asia/Seoul' <= ($${paramIdx++}::date + INTERVAL '1 day 12 hours 59 minutes 59.999 seconds')`);
-                    params.push(filters.endDate);
+                    params.push(endDateStr);
                 }
             }
 
-            if (filters.productName) {
+            if (productNameStr) {
                 whereClauses.push(`r.prod_name ILIKE $${paramIdx++}`);
-                params.push(`%${filters.productName}%`);
+                params.push(`%${productNameStr}%`);
             }
-            if (filters.containerNo) {
+            if (containerNoStr) {
                 whereClauses.push(`r.cntr_no ILIKE $${paramIdx++}`);
-                params.push(`%${filters.containerNo}%`);
+                params.push(`%${containerNoStr}%`);
             }
 
             const commentDateParamIdx = paramIdx++;
