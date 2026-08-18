@@ -227,8 +227,19 @@ const emptyBoxSummary = useMemo(() => {
 
     const nightTotal = colTotals['total'] || 0;
     const dayTotal = parseInt(dayShiftCount, 10) || 0;
+
+    let emptyBoxSuffix = '';
+    if (emptyBoxEntries.length > 0) {
+        const emptyBoxLines: string[] = ['공박스'];
+        emptyBoxEntries.forEach(([name, qty]) => {
+            emptyBoxLines.push(`${name} ${qty.toLocaleString()}개`);
+        });
+        emptyBoxLines.push(`합계 ${totalEmptyBoxes.toLocaleString()}개 장입`);
+        emptyBoxSuffix = `\n\n${emptyBoxLines.join('\n')}`;
+    }
+
     const rosterSuffix = rosterMessages.length > 0 ? `\n\n${rosterMessages.join('\n')}` : '';
-    const generatedText = `웅동 야간출하\n\n${carrierStr}\n${categoryStr}\n주간${dayTotal} 야간${nightTotal} 장입 이상무${rosterSuffix}`;
+    const generatedText = `웅동 야간출하\n\n${carrierStr}\n${categoryStr}\n주간${dayTotal} 야간${nightTotal} 장입 이상무${emptyBoxSuffix}${rosterSuffix}`;
 
     const handleCopyText = async () => {
         try {
@@ -413,7 +424,7 @@ const emptyBoxSummary = useMemo(() => {
                                 </div>
                                 <div className="relative">
                                     <textarea 
-                                        className="w-full h-44 p-4 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-800 focus:outline-none resize-none shadow-inner leading-relaxed"
+                                        className="w-full h-52 p-4 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-800 focus:outline-none resize-none shadow-inner leading-relaxed"
                                         readOnly
                                         value={generatedText}
                                     />
