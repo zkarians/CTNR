@@ -914,9 +914,9 @@ export default function Home({ user }: { user: SessionUser }) {
         }
     };
 
-    const handleOpenReportFromGallery = () => {
+    const handleOpenReportFromGallery = (galleryDate?: string) => {
         setIsGalleryOpen(false);
-        handleGenerateReport();
+        handleGenerateReport(galleryDate);
     };
 
     const handleOpenGalleryFromReport = () => {
@@ -924,9 +924,9 @@ export default function Home({ user }: { user: SessionUser }) {
         setIsGalleryOpen(true);
     };
 
-    const handleGenerateReport = async () => {
+    const handleGenerateReport = async (overrideDate?: string) => {
         const defaultWorkDate = getWorkDateString(new Date());
-        const singleDate = filters.startDate || defaultWorkDate;
+        const singleDate = overrideDate || filters.startDate || defaultWorkDate;
         
         setReportStartDate(singleDate);
         setReportEndDate(singleDate);
@@ -937,6 +937,8 @@ export default function Home({ user }: { user: SessionUser }) {
         try {
             const res = await generateWorkReport({
                 ...filters,
+                containerNo: '', // Ignore dashboard text search for the full report
+                productName: '', // Ignore dashboard text search for the full report
                 startDate: singleDate,
                 endDate: singleDate
             });
