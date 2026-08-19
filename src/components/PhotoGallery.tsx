@@ -2030,7 +2030,10 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
                     <div className="flex items-center gap-2 shrink-0">
                         {onOpenReport && (
                             <button 
-                                onClick={() => onOpenReport(startDate || '')}
+                                onClick={() => {
+                                    const targetDate = (foldersByWorkDate && foldersByWorkDate.length > 0 ? foldersByWorkDate[0].dateStr : '') || endDate || startDate || '';
+                                    onOpenReport(targetDate);
+                                }}
                                 className="flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-blue-500/10 hover:bg-blue-500 text-blue-700 hover:text-white border border-blue-500/30 font-black text-xs transition-all cursor-pointer shadow-2xs"
                                 title="보고서 보기"
                             >
@@ -2381,6 +2384,16 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
                                                     </div>
 
                                                     <div className="flex items-center gap-1.5 shrink-0">
+                                                        {onOpenReport && (
+                                                            <button
+                                                                onClick={() => onOpenReport(group.dateStr)}
+                                                                className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-blue-50 hover:bg-blue-600 text-blue-700 hover:text-white border border-blue-200 text-[11px] font-black transition-all cursor-pointer shadow-2xs shrink-0"
+                                                                title={`${group.dateStr} 작업 보고서 보기`}
+                                                            >
+                                                                <FileText className="w-3 h-3" />
+                                                                <span>{parseInt(group.dateStr.split('-')[2] || '0', 10)}일 보고서</span>
+                                                            </button>
+                                                        )}
                                                         <button
                                                             onClick={() => toggleCollapseDate(group.dateStr)}
                                                             className="p-1.5 rounded-lg bg-white border border-slate-300 hover:bg-slate-100 text-slate-600 hover:text-slate-900 transition-all cursor-pointer shadow-2xs"

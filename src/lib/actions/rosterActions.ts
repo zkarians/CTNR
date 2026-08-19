@@ -153,6 +153,7 @@ export async function getUpcoming3DaysRosterStatus(targetDateStr: string): Promi
         console.error('Error in getUpcoming3DaysRosterStatus:', err);
         return {
             success: false,
+            targetDate: targetDateStr,
             error: err?.message || '알 수 없는 오류가 발생했습니다.',
             messages: [],
             formattedText: '',

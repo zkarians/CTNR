@@ -58,16 +58,24 @@ export default function TeamSummaryModal({ isOpen, onClose, reportData }: TeamSu
     const [isCopied, setIsCopied] = React.useState(false);
     const [rosterMessages, setRosterMessages] = React.useState<string[]>([]);
     const [isLoadingRoster, setIsLoadingRoster] = React.useState(false);
+    const dayShiftInputRef = React.useRef<HTMLInputElement>(null);
 
     // Target date extracted from reportData
-    const targetDate = reportData?.[0]?.dateStr || reportData?.[0]?.date;
+    const targetDate = reportData?.[0]?.dateStr || reportData?.[0]?.date || '';
     
     React.useEffect(() => {
-        const savedCount = localStorage.getItem('dayShiftCount');
-        if (savedCount !== null) {
-            setDayShiftCount(savedCount);
+        if (!isOpen) return;
+        if (!targetDate) {
+            setDayShiftCount('');
+            return;
         }
-    }, []);
+        const savedCount = localStorage.getItem(`dayShiftCount_${targetDate}`);
+        if (savedCount !== null && savedCount.trim() !== '') {
+            setDayShiftCount(savedCount);
+        } else {
+            setDayShiftCount('');
+        }
+    }, [isOpen, targetDate]);
 
     React.useEffect(() => {
         if (!isOpen) return;
@@ -226,7 +234,8 @@ const emptyBoxSummary = useMemo(() => {
     categoryStr = categoryStr.trim();
 
     const nightTotal = colTotals['total'] || 0;
-    const dayTotal = parseInt(dayShiftCount, 10) || 0;
+    const isDayShiftEmpty = dayShiftCount === '' || dayShiftCount.trim() === '';
+    const dayTotalStr = isDayShiftEmpty ? '(미입력)' : dayShiftCount.trim();
 
     let emptyBoxSuffix = '';
     if (emptyBoxEntries.length > 0) {
@@ -239,16 +248,24 @@ const emptyBoxSummary = useMemo(() => {
     }
 
     const rosterSuffix = rosterMessages.length > 0 ? `\n\n${rosterMessages.join('\n')}` : '';
-    const generatedText = `웅동 야간출하\n\n${carrierStr}\n${categoryStr}\n주간${dayTotal} 야간${nightTotal} 장입 이상무${emptyBoxSuffix}${rosterSuffix}`;
+    const generatedText = `웅동 야간출하\n\n${carrierStr}\n${categoryStr}\n주간${dayTotalStr} 야간${nightTotal} 장입 이상무${emptyBoxSuffix}${rosterSuffix}`;
 
     const handleCopyText = async () => {
+        if (isDayShiftEmpty) {
+            alert('주간 작업수량을 입력해주세요. (0대인 경우 0 입력)');
+            dayShiftInputRef.current?.focus();
+            return;
+        }
+
+        const copyText = `웅동 야간출하\n\n${carrierStr}\n${categoryStr}\n주간${dayShiftCount.trim()} 야간${nightTotal} 장입 이상무${emptyBoxSuffix}${rosterSuffix}`;
+
         try {
             if (navigator.clipboard && navigator.clipboard.writeText) {
-                await navigator.clipboard.writeText(generatedText);
+                await navigator.clipboard.writeText(copyText);
             } else {
                 // Fallback for non-HTTPS environments
                 const textArea = document.createElement('textarea');
-                textArea.value = generatedText;
+                textArea.value = copyText;
                 
                 // Avoid scrolling to bottom
                 textArea.style.top = '0';
@@ -410,13 +427,24 @@ const emptyBoxSummary = useMemo(() => {
                                     <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-lg shadow-sm">
                                         <label className="text-sm font-bold text-slate-600">주간 작업수량:</label>
                                         <input 
+                                            ref={dayShiftInputRef}
                                             type="number" 
-                                            className="w-16 px-2 py-1 text-sm font-bold text-slate-800 border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500 text-right bg-white"
-                                            placeholder="0"
+                                            min="0"
+                                            className={`w-16 px-2 py-1 text-sm font-bold text-slate-800 border rounded focus:outline-none focus:ring-2 text-right bg-white transition-all ${
+                                                isDayShiftEmpty ? 'border-amber-400 ring-1 ring-amber-300' : 'border-slate-300 focus:ring-indigo-500'
+                                            }`}
+                                            placeholder="미입력"
                                             value={dayShiftCount}
                                             onChange={e => {
-                                                setDayShiftCount(e.target.value);
-                                                localStorage.setItem('dayShiftCount', e.target.value);
+                                                const val = e.target.value;
+                                                setDayShiftCount(val);
+                                                if (targetDate) {
+                                                    if (val === '') {
+                                                        localStorage.removeItem(`dayShiftCount_${targetDate}`);
+                                                    } else {
+                                                        localStorage.setItem(`dayShiftCount_${targetDate}`, val);
+                                                    }
+                                                }
                                             }}
                                         />
                                         <span className="text-sm font-bold text-slate-600">대</span>
