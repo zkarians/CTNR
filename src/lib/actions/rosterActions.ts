@@ -115,15 +115,18 @@ export async function getUpcoming3DaysRosterStatus(targetDateStr: string): Promi
         const messages: string[] = [];
         const details: RosterDayDetail[] = [];
 
-        for (const item of targetDates) {
+        for (let idx = 0; idx < targetDates.length; idx++) {
+            const item = targetDates[idx];
             const info = dateMap.get(item.dateStr)!;
             const activeTeamCount = info.activeTeams.size;
             let msg: string | null = null;
 
+            const verb = idx === 0 ? '운영됩니다.' : '운영예정입니다.';
+
             if (!info.rosterFound || info.totalAssignedWorkers === 0) {
                 msg = `${item.day}일(${item.weekday}) 근무편성내역 없음.`;
             } else if (activeTeamCount <= 2) {
-                msg = `${item.day}일(${item.weekday}) 야간출하 ${activeTeamCount}개조 운영됩니다.`;
+                msg = `${item.day}일(${item.weekday}) 야간출하 ${activeTeamCount}개조 ${verb}`;
             }
 
             if (msg) {
