@@ -313,7 +313,7 @@ const emptyBoxSummary = useMemo(() => {
                     initial={{ opacity: 0, scale: 0.95 }}
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0, scale: 0.95 }}
-                    className="bg-white rounded-2xl shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden border border-slate-200"
+                    className="bg-white rounded-2xl shadow-xl w-full max-w-5xl lg:max-w-6xl max-h-[92vh] flex flex-col overflow-hidden border border-slate-200"
                 >
                     <div className="flex items-center justify-between p-4 border-b border-slate-100 shrink-0">
                         <div className="flex items-center gap-2">
@@ -330,16 +330,16 @@ const emptyBoxSummary = useMemo(() => {
                         </button>
                     </div>
 
-                    <div className="p-4 md:p-6 overflow-auto">
+                    <div className="p-3 sm:p-5 md:p-6 overflow-auto">
                         <div className="overflow-x-auto ring-1 ring-slate-200 rounded-xl">
-                            <table className="w-full text-sm text-left whitespace-nowrap">
+                            <table className="w-full text-xs sm:text-sm text-left whitespace-nowrap">
                                 <thead>
                                     <tr className="bg-slate-50 text-slate-600">
-                                        <th className="px-4 py-3 font-bold border-b border-r border-slate-200">작업 조</th>
+                                        <th className="px-3 py-2.5 font-bold border-b border-r border-slate-200">작업 조</th>
                                         {CATEGORIES.map(cat => (
-                                            <th key={cat} className="px-4 py-3 font-bold text-center border-b border-slate-200">{cat}</th>
+                                            <th key={cat} className="px-2 sm:px-2.5 py-2.5 font-bold text-center border-b border-slate-200">{cat}</th>
                                         ))}
-                                        <th className="px-4 py-3 font-black text-center border-b border-l border-slate-200 text-indigo-700 bg-indigo-50/50">총계</th>
+                                        <th className="px-3 py-2.5 font-black text-center border-b border-l border-slate-200 text-indigo-700 bg-indigo-50/50">총계</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -352,13 +352,13 @@ const emptyBoxSummary = useMemo(() => {
                                             const counts = summary.get(team)!;
                                             return (
                                                 <tr key={team} className="border-b border-slate-100 hover:bg-slate-50/50">
-                                                    <td className="px-4 py-3 font-bold text-slate-800 border-r border-slate-100">{team}</td>
+                                                    <td className="px-3 py-2.5 font-bold text-slate-800 border-r border-slate-100">{team}</td>
                                                     {CATEGORIES.map(cat => (
-                                                        <td key={cat} className={`px-4 py-3 text-center ${counts[cat] > 0 ? 'font-bold text-slate-700' : 'text-slate-300'}`}>
+                                                        <td key={cat} className={`px-2 sm:px-2.5 py-2.5 text-center ${counts[cat] > 0 ? 'font-bold text-slate-700' : 'text-slate-300'}`}>
                                                             {counts[cat]}
                                                         </td>
                                                     ))}
-                                                    <td className="px-4 py-3 text-center font-black text-indigo-600 border-l border-slate-100 bg-indigo-50/20">
+                                                    <td className="px-3 py-2.5 text-center font-black text-indigo-600 border-l border-slate-100 bg-indigo-50/20">
                                                         {counts['total']}
                                                     </td>
                                                 </tr>
@@ -369,13 +369,13 @@ const emptyBoxSummary = useMemo(() => {
                                 {teams.length > 0 && (
                                     <tfoot className="bg-slate-50 font-black">
                                         <tr>
-                                            <td className="px-4 py-3 text-slate-700 border-r border-slate-200">전체 합계</td>
+                                            <td className="px-3 py-2.5 text-slate-700 border-r border-slate-200">전체 합계</td>
                                             {CATEGORIES.map(cat => (
-                                                <td key={cat} className="px-4 py-3 text-center text-slate-700 border-t border-slate-200">
+                                                <td key={cat} className="px-2 sm:px-2.5 py-2.5 text-center text-slate-700 border-t border-slate-200">
                                                     {colTotals[cat]}
                                                 </td>
                                             ))}
-                                            <td className="px-4 py-3 text-center text-indigo-700 border-t border-l border-slate-200 bg-indigo-50/50">
+                                            <td className="px-3 py-2.5 text-center text-indigo-700 border-t border-l border-slate-200 bg-indigo-50/50">
                                                 {colTotals['total']}
                                             </td>
                                         </tr>
