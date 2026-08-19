@@ -2027,6 +2027,95 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
                             </p>
                         </div>
                     </div>
+
+                    {/* Integrated Folder Control Toolbar in Header */}
+                    {selectedContainerFolder && (
+                        <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 px-2.5 py-1 rounded-xl shadow-2xs">
+                            {/* Folder Title & Count Badge */}
+                            <div className="flex items-center gap-1.5 shrink-0 pr-2 border-r border-slate-200">
+                                <Folder className="w-3.5 h-3.5 text-sky-600" />
+                                <span className="text-xs font-black text-slate-900 tracking-tight">
+                                    {selectedContainerFolder.split('|')[0]}
+                                </span>
+                                <span className="text-[11px] font-bold text-sky-600 bg-sky-100 px-1.5 py-0.2 rounded-md">
+                                    {folderPhotos.length}장
+                                </span>
+                            </div>
+
+                            {/* Select All Checkbox Button */}
+                            <button 
+                                onClick={() => handleToggleSelectAllPhotos(folderPhotos)}
+                                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-black transition-all cursor-pointer ${
+                                    selectedPhotoIds.filter(id => folderPhotos.some(p => p.id === id)).length > 0
+                                        ? 'bg-sky-50 border-sky-300 text-sky-700'
+                                        : 'bg-white hover:bg-slate-100 border-slate-200 text-slate-700'
+                                }`}
+                            >
+                                <div className={`w-3.5 h-3.5 rounded border flex items-center justify-center transition-all ${
+                                    folderPhotos.length > 0 && folderPhotos.every(p => selectedPhotoIds.includes(p.id))
+                                        ? "bg-sky-600 border-sky-600 text-white"
+                                        : selectedPhotoIds.some(id => folderPhotos.some(p => p.id === id))
+                                            ? "bg-sky-500/40 border-sky-500 text-white"
+                                            : "bg-white border-slate-300"
+                                }`}>
+                                    {folderPhotos.length > 0 && folderPhotos.every(p => selectedPhotoIds.includes(p.id)) ? (
+                                        <Check className="w-2.5 h-2.5 stroke-[3]" />
+                                    ) : selectedPhotoIds.some(id => folderPhotos.some(p => p.id === id)) ? (
+                                        <div className="w-1.5 h-0.5 bg-white rounded-full" />
+                                    ) : null}
+                                </div>
+                                <span>
+                                    전체 선택 {selectedPhotoIds.filter(id => folderPhotos.some(p => p.id === id)).length > 0 ? `(${selectedPhotoIds.filter(id => folderPhotos.some(p => p.id === id)).length}/${folderPhotos.length}장)` : ''}
+                                </span>
+                            </button>
+
+                            {/* View Mode Toggle */}
+                            <div className="flex bg-slate-200/70 border border-slate-200 p-0.5 rounded-lg gap-0.5 shrink-0">
+                                <button
+                                    onClick={() => setViewMode('GRID')}
+                                    className={`px-2 py-0.5 rounded-md transition-all flex items-center gap-1 text-xs font-black cursor-pointer ${
+                                        viewMode === 'GRID' 
+                                            ? 'bg-sky-600 text-white shadow-2xs' 
+                                            : 'text-slate-600 hover:text-slate-900'
+                                    }`}
+                                    title="일반 바둑판 보기"
+                                >
+                                    <LayoutGrid className="w-3 h-3" />
+                                    <span>바둑판</span>
+                                </button>
+                                <button
+                                    onClick={() => setViewMode('LARGE')}
+                                    className={`px-2 py-0.5 rounded-md transition-all flex items-center gap-1 text-xs font-black cursor-pointer ${
+                                        viewMode === 'LARGE' 
+                                            ? 'bg-sky-600 text-white shadow-2xs' 
+                                            : 'text-slate-600 hover:text-slate-900'
+                                    }`}
+                                    title="크게 보기"
+                                >
+                                    <Grid className="w-3 h-3" />
+                                    <span>크게</span>
+                                </button>
+                            </div>
+
+                            {/* Sort Dropdown */}
+                            <div className="flex items-center gap-1 pl-1 border-l border-slate-200">
+                                <ArrowUpDown className="w-3 h-3 text-slate-400 shrink-0" />
+                                <select 
+                                    value={sortBy} 
+                                    onChange={(e) => setSortBy(e.target.value as any)}
+                                    className="bg-white border border-slate-200 rounded-lg px-2 py-0.5 text-xs font-bold text-slate-700 focus:outline-none focus:border-sky-500 transition-colors cursor-pointer shadow-2xs h-7"
+                                >
+                                    <option value="UPLOAD_DESC">업로드순 (최신)</option>
+                                    <option value="UPLOAD_ASC">업로드순 (과거)</option>
+                                    <option value="CREATION_DESC">파일제작순 (최신)</option>
+                                    <option value="CREATION_ASC">파일제작순 (과거)</option>
+                                    <option value="NAME_ASC">파일이름순 (오름)</option>
+                                    <option value="NAME_DESC">파일이름순 (내림)</option>
+                                </select>
+                            </div>
+                        </div>
+                    )}
+
                     <div className="flex items-center gap-2 shrink-0">
                         {onOpenReport && (
                             <button 
@@ -2446,102 +2535,7 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
                             )}
                         </div>
                     ) : (
-                        /* PHOTO GRID VIEW (INSIDE SELECTED FOLDER) */
                         <div>
-                            {/* Clean 2-Row Folder Photo Header Card */}
-                            <div className="mb-3.5 bg-white dark:bg-[#11111a] border border-slate-200 dark:border-white/10 rounded-2xl p-2.5 md:p-3 shadow-xs space-y-2">
-                                {/* Row 1: Folder Title Badge (Left) + View Mode Toggle (Right) */}
-                                <div className="flex items-center justify-between gap-2">
-                                    <div className="flex items-center gap-2 min-w-0">
-                                        <div className="p-1.5 rounded-lg bg-sky-50 dark:bg-sky-950/60 text-sky-600 dark:text-sky-400 border border-sky-200/60 dark:border-sky-800/40 shrink-0">
-                                            <Folder className="w-3.5 h-3.5" />
-                                        </div>
-                                        <div className="flex items-baseline gap-1.5 min-w-0 truncate">
-                                            <span className="text-xs md:text-sm font-black text-slate-900 dark:text-white truncate tracking-tight">
-                                                {selectedContainerFolder ? selectedContainerFolder.split('|')[0] : ''}
-                                            </span>
-                                            <span className="text-[10px] md:text-xs font-bold text-sky-600 dark:text-sky-400 bg-sky-100/80 dark:bg-sky-500/10 px-1.5 py-0.5 rounded-md shrink-0">
-                                                {folderPhotos.length}장
-                                            </span>
-                                        </div>
-                                    </div>
-
-                                    {/* Right: View Mode Toggle */}
-                                    <div className="flex bg-slate-100 dark:bg-black/40 border border-slate-200 dark:border-white/10 p-0.5 rounded-lg gap-0.5 shrink-0 shadow-2xs">
-                                        <button
-                                            onClick={() => setViewMode('GRID')}
-                                            className={`px-2 py-1 rounded-md transition-all flex items-center gap-1 text-[10px] md:text-xs font-black cursor-pointer ${
-                                                viewMode === 'GRID' 
-                                                    ? 'bg-sky-600 text-white shadow-2xs' 
-                                                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                                            }`}
-                                            title="일반 바둑판 보기"
-                                        >
-                                            <LayoutGrid className="w-3 h-3" />
-                                            <span>바둑판</span>
-                                        </button>
-                                        <button
-                                            onClick={() => setViewMode('LARGE')}
-                                            className={`px-2 py-1 rounded-md transition-all flex items-center gap-1 text-[10px] md:text-xs font-black cursor-pointer ${
-                                                viewMode === 'LARGE' 
-                                                    ? 'bg-sky-600 text-white shadow-2xs' 
-                                                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                                            }`}
-                                            title="크게 보기"
-                                        >
-                                            <Grid className="w-3 h-3" />
-                                            <span>크게</span>
-                                        </button>
-                                    </div>
-                                </div>
-
-                                {/* Row 2: Select All Button (Left) + Sort Dropdown (Right) */}
-                                <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100 dark:border-white/5">
-                                    {/* Left: Select All Checkbox Button */}
-                                    <button 
-                                        onClick={() => handleToggleSelectAllPhotos(folderPhotos)}
-                                        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] md:text-xs font-black transition-all cursor-pointer shadow-2xs ${
-                                            selectedPhotoIds.filter(id => folderPhotos.some(p => p.id === id)).length > 0
-                                                ? 'bg-sky-50 dark:bg-sky-950/60 border-sky-300 dark:border-sky-700 text-sky-700 dark:text-sky-300'
-                                                : 'bg-slate-50 dark:bg-white/5 hover:bg-slate-100 dark:hover:bg-white/10 border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300'
-                                        }`}
-                                    >
-                                        <div className={`w-3.5 h-3.5 rounded border flex items-center justify-center transition-all ${
-                                            folderPhotos.length > 0 && folderPhotos.every(p => selectedPhotoIds.includes(p.id))
-                                                ? "bg-sky-600 border-sky-600 text-white"
-                                                : selectedPhotoIds.some(id => folderPhotos.some(p => p.id === id))
-                                                    ? "bg-sky-500/40 border-sky-500 text-white"
-                                                    : "bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700"
-                                        }`}>
-                                            {folderPhotos.length > 0 && folderPhotos.every(p => selectedPhotoIds.includes(p.id)) ? (
-                                                <Check className="w-2.5 h-2.5 stroke-[3]" />
-                                            ) : selectedPhotoIds.some(id => folderPhotos.some(p => p.id === id)) ? (
-                                                <div className="w-1.5 h-0.5 bg-white rounded-full" />
-                                            ) : null}
-                                        </div>
-                                        <span>
-                                            전체 선택 {selectedPhotoIds.filter(id => folderPhotos.some(p => p.id === id)).length > 0 ? `(${selectedPhotoIds.filter(id => folderPhotos.some(p => p.id === id)).length}/${folderPhotos.length}장)` : ''}
-                                        </span>
-                                    </button>
-
-                                    {/* Right: Sort Dropdown */}
-                                    <div className="flex items-center gap-1">
-                                        <ArrowUpDown className="w-3 h-3 text-slate-400 shrink-0" />
-                                        <select 
-                                            value={sortBy} 
-                                            onChange={(e) => setSortBy(e.target.value as any)}
-                                            className="bg-slate-50 dark:bg-black/40 border border-slate-200 dark:border-white/10 rounded-lg px-2 py-1 text-[11px] font-bold text-slate-700 dark:text-slate-300 focus:outline-none focus:border-sky-500 transition-colors cursor-pointer shadow-2xs h-7.5"
-                                        >
-                                            <option value="UPLOAD_DESC">업로드순 (최신)</option>
-                                            <option value="UPLOAD_ASC">업로드순 (과거)</option>
-                                            <option value="CREATION_DESC">파일제작순 (최신)</option>
-                                            <option value="CREATION_ASC">파일제작순 (과거)</option>
-                                            <option value="NAME_ASC">파일이름순 (오름)</option>
-                                            <option value="NAME_DESC">파일이름순 (내림)</option>
-                                        </select>
-                                    </div>
-                                </div>
-                            </div>
 
                             {/* Duplicate Photos Banner */}
                             {duplicatePhotoIds.length > 0 && (
