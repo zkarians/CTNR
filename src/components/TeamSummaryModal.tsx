@@ -239,8 +239,15 @@ const emptyBoxSummary = useMemo(() => {
     carrierStr = carrierStr.trim();
 
     let categoryStr = '';
-    CATEGORIES.forEach(cat => {
-        if (colTotals[cat] > 0) categoryStr += `${cat}${colTotals[cat]} `;
+    const REPORT_CATEGORIES = ['식기', '콤프', '오븐', '횡적', '세탁기', 'SK냉장고', '냉장고', '에어컨', '기타'];
+    REPORT_CATEGORIES.forEach(cat => {
+        let count = colTotals[cat] || 0;
+        if (cat === 'SK냉장고') {
+            count += (colTotals['다모델 SK냉장고'] || 0);
+        }
+        if (count > 0) {
+            categoryStr += `${cat}${count} `;
+        }
     });
     categoryStr = categoryStr.trim();
 
