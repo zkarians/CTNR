@@ -24,8 +24,13 @@ function getJobCategory(cntr: any): string {
     let hasFridge = false;
     let hasSKFridge = false;
 
+    const uniqueModels = new Set<string>();
+
     for (const p of (cntr.products || [])) {
         if (p.division === 'ZZZ') continue;
+        const name = (p.model_name || p.name || '').trim();
+        if (name) uniqueModels.add(name);
+
         if (p.division === 'CVZ') hasOven = true;
         if (p.division === 'DFZ') hasWasher = true;
         if (p.division === 'CDZ') hasDishwasher = true;
@@ -33,7 +38,7 @@ function getJobCategory(cntr: any): string {
         if (p.division === 'DHZ') hasComp = true;
         if (p.division === 'CNZ') {
             hasFridge = true;
-            const nameUpper = (p.model_name || p.name || '').toUpperCase();
+            const nameUpper = name.toUpperCase();
             if (nameUpper.startsWith('SK')) {
                 hasSKFridge = true;
             }
@@ -45,13 +50,19 @@ function getJobCategory(cntr: any): string {
     if (hasDishwasher) return '식기';
     if (hasAircon) return '에어컨';
     if (hasComp) return '콤프';
-    if (hasSKFridge) return 'SK냉장고';
+    if (hasSKFridge) {
+        const modelCount = uniqueModels.size || cntr.modelCount || (cntr.products ? cntr.products.length : 1);
+        if (modelCount >= 7) {
+            return '다모델 SK냉장고';
+        }
+        return 'SK냉장고';
+    }
     if (hasFridge) return '냉장고';
 
     return '기타';
 }
 
-const CATEGORIES = ['식기', '콤프', '오븐', '횡적', '세탁기', 'SK냉장고', '냉장고', '에어컨', '기타'];
+const CATEGORIES = ['식기', '콤프', '오븐', '횡적', '세탁기', 'SK냉장고', '다모델 SK냉장고', '냉장고', '에어컨', '기타'];
 
 export default function TeamSummaryModal({ isOpen, onClose, reportData }: TeamSummaryModalProps) {
     const [dayShiftCount, setDayShiftCount] = React.useState<string>('');
@@ -468,7 +479,7 @@ const emptyBoxSummary = useMemo(() => {
                         </div>
 
                         <div className="mt-4 text-xs text-slate-500 bg-slate-50 p-3 rounded-lg border border-slate-200">
-                            <strong>* 분류 우선순위:</strong> 오븐 &gt; 세탁기 &gt; 식기 &gt; 에어컨 &gt; 횡적 &gt; 콤프 &gt; SK냉장고 &gt; 냉장고<br/>
+                            <strong>* 분류 우선순위:</strong> 오븐 &gt; 세탁기 &gt; 식기 &gt; 에어컨 &gt; 횡적 &gt; 콤프 &gt; SK냉장고(다모델) &gt; 냉장고<br/>
                             <span className="text-slate-400 mt-1 block">작업취소 및 작업제외 처리된 컨테이너는 수량에서 제외되었습니다.</span>
                         </div>
                     </div>
