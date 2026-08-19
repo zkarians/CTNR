@@ -51,7 +51,7 @@ function getJobCategory(cntr: any): string {
     return '기타';
 }
 
-const CATEGORIES = ['오븐', '세탁기', '식기', '에어컨', '횡적', 'SK냉장고', '냉장고', '콤프', '기타'];
+const CATEGORIES = ['식기', '콤프', '오븐', '횡적', '세탁기', 'SK냉장고', '냉장고', '에어컨', '기타'];
 
 export default function TeamSummaryModal({ isOpen, onClose, reportData }: TeamSummaryModalProps) {
     const [dayShiftCount, setDayShiftCount] = React.useState<string>('');
