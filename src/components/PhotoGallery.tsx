@@ -2030,14 +2030,7 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
                     <div className="flex items-center gap-2 shrink-0">
                         {onOpenReport && (
                             <button 
-                                onClick={() => {
-                                    let targetDate = startDate || '';
-                                    if (selectedContainerFolder) {
-                                        const parts = selectedContainerFolder.split('|');
-                                        if (parts[1]) targetDate = parts[1];
-                                    }
-                                    onOpenReport(targetDate);
-                                }}
+                                onClick={() => onOpenReport(startDate || '')}
                                 className="flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-blue-500/10 hover:bg-blue-500 text-blue-700 hover:text-white border border-blue-500/30 font-black text-xs transition-all cursor-pointer shadow-2xs"
                                 title="보고서 보기"
                             >
