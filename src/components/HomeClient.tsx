@@ -26,6 +26,7 @@ import JobCard from '@/components/home/JobCard';
 import { getLocalDateString, getWorkDateString } from '@/lib/utils/dateUtils';
 import { isSameTeam } from '@/lib/utils/teamUtils';
 import { getCarrierColor } from '@/lib/utils/colorUtils';
+import { getNormalizedCarrier } from '@/lib/utils/carrierUtils';
 import { buildReportTextFromData } from '@/lib/utils/reportUtils';
 import {
     Product, PackingResult, ContainerType, CONTAINER_DATA, Job, JobFilters, DbConfig, UserAccount, Team, TeamWorkProgress
@@ -705,6 +706,7 @@ export default function Home({ user }: { user: SessionUser }) {
                 remark: manualRemark.trim(),
                 category: adminCommentStr,
                 workDate: reportStartDate || getLocalDateString(new Date()),
+                transporter: manualTransporter,
                 emptyBoxes: manualEmptyBoxes.filter(e => e.name.trim() && e.qty > 0)
             }).catch(console.error);
         }
@@ -1350,11 +1352,13 @@ export default function Home({ user }: { user: SessionUser }) {
             alert("소속 조(팀)가 지정되지 않았습니다. 소속 조를 먼저 선택해 주세요.");
             return;
         }
+        let defaultTeam = manualTeamName;
         if (!isAdmin && user.teamName) {
             const availableTeams = ['1조(BNI)', '2조(천마)', '3조(천마)'];
-            const matched = availableTeams.find(t => isSameTeam(t, user.teamName)) || user.teamName;
-            setManualTeamName(matched);
+            defaultTeam = availableTeams.find(t => isSameTeam(t, user.teamName)) || user.teamName;
+            setManualTeamName(defaultTeam);
         }
+        setManualTransporter(getNormalizedCarrier(null, defaultTeam));
         setIsAddManualOpen(true);
     };
 
@@ -1363,6 +1367,10 @@ export default function Home({ user }: { user: SessionUser }) {
         setManualInsertIndex(cntrIdx);
         setManualTeamName(teamName);
         setManualCntrNo(cntr.cntrNo || '');
+        
+        // Transporter setup
+        const initialTransporter = getNormalizedCarrier(cntr.transporter, teamName);
+        setManualTransporter(initialTransporter);
         
         const adminComment = cntr.adminComment || '';
         const isExcluded = adminComment.includes('[작업제외]');

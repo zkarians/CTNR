@@ -619,6 +619,7 @@ export async function updateContainerReportDetails(params: {
     remark: string;
     category?: string;
     workDate?: string;
+    transporter?: string;
     emptyBoxes?: any[];
 }): Promise<{ success: boolean; error?: string }> {
     try {
@@ -639,7 +640,16 @@ export async function updateContainerReportDetails(params: {
                   AND (is_deleted IS NOT TRUE)
             `, [params.durationMinutes, params.remark || '', params.cntrNo]);
 
-            // 2. Update container_comments if category provided
+            // 2. Update transporter in container_results if provided
+            if (params.transporter !== undefined) {
+                await client.query(`
+                    UPDATE container_results 
+                    SET transporter = $1
+                    WHERE UPPER(TRIM(cntr_no)) = UPPER(TRIM($2))
+                `, [params.transporter, params.cntrNo]);
+            }
+
+            // 3. Update container_comments if category provided
             if (params.category !== undefined) {
                 const targetWorkDate = params.workDate || getWorkDateString(new Date());
                 await client.query(`

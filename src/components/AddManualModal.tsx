@@ -88,7 +88,14 @@ export default function AddManualModal({
                                 <button
                                     key={t}
                                     type="button"
-                                    onClick={() => { if (isAdmin || isSameTeam(t, user?.teamName || '')) setManualTeamName(t); }}
+                                    onClick={() => {
+                                        if (isAdmin || isSameTeam(t, user?.teamName || '')) {
+                                            setManualTeamName(t);
+                                            if (!editingReportItem) {
+                                                setManualTransporter(t.includes('BNI') || t.includes('비엔아이') ? 'BNI' : '천마');
+                                            }
+                                        }
+                                    }}
                                     disabled={editingReportItem !== null}
                                     className={`flex-1 py-1.5 rounded-xl font-black border transition-all cursor-pointer ${manualTeamName === t ? 'bg-sky-600 text-white border-sky-600 shadow-sm' : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed'}`}
                                 >
