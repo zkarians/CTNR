@@ -112,9 +112,9 @@ export default function ReportModal({
     }
 
     const modalWidthStyle = maxNumTeams === 1 
-        ? 'md:max-w-3xl' 
+        ? 'md:max-w-4xl lg:max-w-5xl' 
         : maxNumTeams === 2 
-        ? 'md:max-w-5xl' 
+        ? 'md:max-w-5xl lg:max-w-6xl' 
         : maxNumTeams === 3 
         ? 'md:max-w-7xl' 
         : 'md:max-w-[96vw]';
@@ -133,7 +133,7 @@ export default function ReportModal({
                     initial={{ scale: 0.95, opacity: 0, y: 20 }} 
                     animate={{ scale: 1, opacity: 1, y: 0 }} 
                     exit={{ scale: 0.95, opacity: 0, y: 20 }}
-                    className={`relative w-full max-w-[99vw] ${modalWidthStyle} transition-all duration-500 bg-white border border-slate-300 rounded-[1.2rem] sm:rounded-[1.5rem] md:rounded-[2rem] shadow-2xl overflow-hidden p-1 pb-1.5 sm:p-2 md:p-3 z-10 h-[96dvh] max-h-[97dvh] md:h-[96vh] md:max-h-[98vh] flex flex-col text-slate-900`}
+                    className={`relative w-full max-w-[99vw] ${modalWidthStyle} transition-all duration-300 bg-white border border-slate-300 rounded-[1.2rem] sm:rounded-[1.5rem] md:rounded-[2rem] shadow-2xl overflow-hidden p-2 sm:p-3 md:p-4 z-10 max-h-[96dvh] md:max-h-[96vh] flex flex-col text-slate-900`}
                 >
                     <div className="flex items-start justify-between pb-2 mb-1.5 border-b border-slate-200 shrink-0 gap-2">
                         <div className="flex items-start gap-3 min-w-0">
@@ -180,19 +180,19 @@ export default function ReportModal({
                         </div>
                     </div>
 
-                    <div className="mb-1.5 bg-slate-100 border border-slate-200 rounded-xl p-1.5 md:p-2.5 text-slate-900 shrink-0">
-                        <div className="hidden md:flex items-center justify-between gap-2">
+                    <div className="mb-2 bg-slate-100/90 border border-slate-200 rounded-xl p-2 md:p-3 text-slate-900 shrink-0">
+                        <div className="hidden md:flex items-center justify-between gap-2.5 flex-wrap">
                             {isAdmin ? (
-                                <>
-                                    <span className="text-xs font-bold text-slate-600">조회 일자:</span>
-                                    <div className="flex items-center gap-1 bg-white border border-slate-300 rounded-xl p-1 shadow-xs">
+                                <div className="flex items-center gap-2 flex-wrap min-w-0">
+                                    <span className="text-xs font-bold text-slate-600 whitespace-nowrap shrink-0">조회 일자:</span>
+                                    <div className="flex items-center gap-1 bg-white border border-slate-300 rounded-xl p-1 shadow-xs shrink-0">
                                         <button
                                             onClick={() => handleNavigateDate(-1)}
-                                            className="px-2.5 py-1 text-xs font-bold text-slate-700 hover:text-emerald-700 hover:bg-slate-100 rounded-lg transition-all flex items-center gap-1 cursor-pointer"
+                                            className="px-2.5 py-1 text-xs font-bold text-slate-700 hover:text-emerald-700 hover:bg-slate-100 rounded-lg transition-all flex items-center gap-1 cursor-pointer whitespace-nowrap shrink-0"
                                             title="이전날 (어제)로 이동"
                                         >
-                                            <ChevronLeft className="w-4 h-4" />
-                                            <span>이전날</span>
+                                            <ChevronLeft className="w-4 h-4 shrink-0" />
+                                            <span className="whitespace-nowrap">이전날</span>
                                         </button>
 
                                         <input 
@@ -203,47 +203,59 @@ export default function ReportModal({
                                                 setReportStartDate(val);
                                                 setReportEndDate(val);
                                             }}
-                                            className="bg-transparent border-x border-slate-200 px-3 py-0.5 text-xs text-slate-900 focus:outline-none font-black cursor-pointer text-center"
+                                            className="bg-transparent border-x border-slate-200 px-3 py-0.5 text-xs text-slate-900 focus:outline-none font-black cursor-pointer text-center shrink-0"
                                         />
 
                                         <button
                                             onClick={() => handleNavigateDate(1)}
-                                            className="px-2.5 py-1 text-xs font-bold text-slate-700 hover:text-emerald-700 hover:bg-slate-100 rounded-lg transition-all flex items-center gap-1 cursor-pointer"
+                                            className="px-2.5 py-1 text-xs font-bold text-slate-700 hover:text-emerald-700 hover:bg-slate-100 rounded-lg transition-all flex items-center gap-1 cursor-pointer whitespace-nowrap shrink-0"
                                             title="다음날 (내일)로 이동"
                                         >
-                                            <span>다음날</span>
-                                            <ChevronRight className="w-4 h-4" />
+                                            <span className="whitespace-nowrap">다음날</span>
+                                            <ChevronRight className="w-4 h-4 shrink-0" />
                                         </button>
                                     </div>
 
                                     <button
                                         onClick={handleRegenerateReport}
-                                        className="px-4 py-1.5 bg-emerald-600 text-white hover:bg-emerald-500 text-xs font-black rounded-xl transition-all shadow-sm cursor-pointer flex items-center gap-1.5"
+                                        className="px-3.5 py-1.5 bg-emerald-600 text-white hover:bg-emerald-500 text-xs font-black rounded-xl transition-all shadow-sm cursor-pointer flex items-center gap-1.5 whitespace-nowrap shrink-0"
                                     >
-                                        <RotateCw className="w-3.5 h-3.5" />
-                                        조회
+                                        <RotateCw className="w-3.5 h-3.5 shrink-0" />
+                                        <span>조회</span>
                                     </button>
                                     <button
                                         onClick={handleLoadSavedReport}
                                         disabled={isLoadingSavedReport}
-                                        className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-white font-black text-xs rounded-xl transition-all shadow-sm cursor-pointer flex items-center gap-1.5 shrink-0 disabled:opacity-50"
+                                        className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-white font-black text-xs rounded-xl transition-all shadow-sm cursor-pointer flex items-center gap-1.5 shrink-0 disabled:opacity-50 whitespace-nowrap"
                                         title="선택된 날짜의 DB 저장된 보고서 불러오기"
                                     >
-                                        {isLoadingSavedReport ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Folder className="w-3.5 h-3.5" />}
+                                        {isLoadingSavedReport ? <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" /> : <Folder className="w-3.5 h-3.5 shrink-0" />}
                                         <span>불러오기</span>
                                     </button>
                                     <button
                                         onClick={() => setIsCancelManageOpen(true)}
-                                        className="px-3.5 py-1.5 bg-rose-50 border border-rose-200 hover:bg-rose-600 hover:text-white text-rose-600 font-black text-xs rounded-xl transition-all shadow-2xs cursor-pointer flex items-center gap-1.5 shrink-0"
+                                        className="px-3.5 py-1.5 bg-rose-50 border border-rose-200 hover:bg-rose-600 hover:text-white text-rose-600 font-black text-xs rounded-xl transition-all shadow-2xs cursor-pointer flex items-center gap-1.5 shrink-0 whitespace-nowrap"
                                         title="조별 작업취소 선택 및 관리"
                                     >
-                                        <Ban className="w-3.5 h-3.5 text-rose-500" />
+                                        <Ban className="w-3.5 h-3.5 text-rose-500 shrink-0" />
                                         <span>작업취소</span>
                                     </button>
-                                    <div className="ml-auto flex items-center gap-1 bg-slate-200/80 p-1 rounded-xl shrink-0">
+                                </div>
+                            ) : (
+                                <div className="flex items-center gap-2 shrink-0">
+                                    <span className="text-xs font-bold text-slate-600 whitespace-nowrap">내 담당 조:</span>
+                                    <span className="px-2.5 py-1 bg-sky-100 border border-sky-300 text-sky-800 rounded-lg text-xs font-black whitespace-nowrap">
+                                        {user.teamName || '미지정 조'}
+                                    </span>
+                                </div>
+                            )}
+
+                            <div className="flex items-center gap-2 shrink-0 ml-auto">
+                                {isAdmin && (
+                                    <div className="flex items-center gap-1 bg-slate-200/80 p-1 rounded-xl shrink-0">
                                         <button
                                             onClick={() => setReportViewMode('full')}
-                                            className={`px-3 py-1 text-xs font-black rounded-lg transition-all cursor-pointer ${
+                                            className={`px-3 py-1 text-xs font-black rounded-lg transition-all cursor-pointer whitespace-nowrap ${
                                                 reportViewMode === 'full' 
                                                     ? 'bg-white text-slate-900 shadow-xs' 
                                                     : 'text-slate-600 hover:text-slate-900'
@@ -253,7 +265,7 @@ export default function ReportModal({
                                         </button>
                                         <button
                                             onClick={() => setReportViewMode('compact')}
-                                            className={`px-3 py-1 text-xs font-black rounded-lg transition-all cursor-pointer ${
+                                            className={`px-3 py-1 text-xs font-black rounded-lg transition-all cursor-pointer whitespace-nowrap ${
                                                 reportViewMode === 'compact' 
                                                     ? 'bg-white text-slate-900 shadow-xs' 
                                                     : 'text-slate-600 hover:text-slate-900'
@@ -262,24 +274,17 @@ export default function ReportModal({
                                             ⚡ 요약보기
                                         </button>
                                     </div>
-                                </>
-                            ) : (
-                                <div className="flex items-center gap-2">
-                                    <span className="text-xs font-bold text-slate-600">내 담당 조:</span>
-                                    <span className="px-2.5 py-1 bg-sky-100 border border-sky-300 text-sky-800 rounded-lg text-xs font-black">
-                                        {user.teamName || '미지정 조'}
-                                    </span>
-                                </div>
-                            )}
+                                )}
 
-                            <button
-                                onClick={handleOpenAddManual}
-                                className="ml-auto px-3.5 py-1.5 bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white text-xs font-black rounded-xl transition-all shadow-sm cursor-pointer flex items-center gap-1.5 shrink-0"
-                                title="보고서 전용 수동 항목 추가"
-                            >
-                                <Plus className="w-4 h-4" />
-                                <span>추가</span>
-                            </button>
+                                <button
+                                    onClick={handleOpenAddManual}
+                                    className="px-3.5 py-1.5 bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white text-xs font-black rounded-xl transition-all shadow-sm cursor-pointer flex items-center gap-1.5 shrink-0 whitespace-nowrap"
+                                    title="보고서 전용 수동 항목 추가"
+                                >
+                                    <Plus className="w-4 h-4 shrink-0" />
+                                    <span>항목 추가</span>
+                                </button>
+                            </div>
                         </div>
 
                         <div className="flex md:hidden flex-col gap-1.5">
@@ -760,99 +765,108 @@ export default function ReportModal({
                         )}
                     </div>
 
-                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 mt-2 sm:mt-3 shrink-0 pb-1 sm:pb-0">
-                        {savedReportInfo?.isSaved && (
-                            <span className="text-[11px] sm:text-xs font-black text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-xl flex items-center justify-center sm:justify-start gap-1 shadow-2xs w-full sm:w-auto truncate">
-                                <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                                <span>{savedReportInfo.savedAt}에 DB 저장 완료 ({savedReportInfo.savedBy})</span>
-                            </span>
-                        )}
+                    {/* Bottom Action Footer */}
+                    <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-2.5 mt-2 md:mt-3 pt-2 border-t border-slate-200 shrink-0 select-none">
+                        {/* Saved status notification */}
+                        <div className="flex items-center gap-2 min-w-0">
+                            {savedReportInfo?.isSaved && (
+                                <span className="text-[11px] sm:text-xs font-black text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1.5 rounded-xl flex items-center gap-1.5 shadow-2xs truncate">
+                                    <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                                    <span className="truncate">{savedReportInfo.savedAt}에 DB 저장 완료 ({savedReportInfo.savedBy})</span>
+                                </span>
+                            )}
+                        </div>
 
-                        <div className={`w-full sm:w-auto ml-auto flex ${isAdmin ? 'grid grid-cols-4 sm:flex' : 'justify-end'} items-center sm:justify-end gap-2`}>
-                                <button
-                                    onClick={handleSaveReport}
-                                    disabled={isSavingReport || !reportText}
-                                    className="py-2 px-3 sm:py-2.5 sm:px-4 md:px-5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-black text-xs sm:text-sm transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 shadow-lg ring-2 ring-sky-400 ring-offset-2 animate-[pulse_2s_ease-in-out_infinite] whitespace-nowrap"
-                                    title={isAdmin ? "현재 화면의 데이터를 1일 보고서 DB에 덮어쓰기 합니다" : "추가한 작업내역을 영구 저장합니다"}
-                                >
-                                    {isSavingReport ? <Loader2 className="w-4 h-4 animate-spin text-white shrink-0" /> : <Save className="w-4 h-4 shrink-0" />}
-                                    <span>{isSavingReport ? '저장 중...' : isAdmin ? '보고서 저장' : '작업내역 저장'}</span>
-                                </button>
+                        {/* Action buttons bar */}
+                        <div className="flex flex-wrap items-center justify-end gap-2 shrink-0">
+                            {/* Save button */}
+                            <button
+                                onClick={handleSaveReport}
+                                disabled={isSavingReport || !reportText}
+                                className="py-2 px-3.5 md:py-2.5 md:px-4 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-black text-xs md:text-sm transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 shadow-md ring-2 ring-sky-400/50 whitespace-nowrap shrink-0"
+                                title={isAdmin ? "현재 화면의 데이터를 1일 보고서 DB에 덮어쓰기 합니다" : "추가한 작업내역을 영구 저장합니다"}
+                            >
+                                {isSavingReport ? <Loader2 className="w-4 h-4 animate-spin text-white shrink-0" /> : <Save className="w-4 h-4 shrink-0" />}
+                                <span>{isSavingReport ? '저장 중...' : isAdmin ? '보고서 저장' : '작업내역 저장'}</span>
+                            </button>
 
+                            {/* Copy preset buttons group */}
                             {isAdmin && (
-                                <div className="flex items-center gap-1.5 flex-wrap">
+                                <div className="flex items-center bg-slate-100 border border-slate-300/80 p-1 rounded-xl gap-1 shrink-0">
                                     <button
                                         onClick={handleCopyReport}
                                         disabled={isReportGenerating || !reportText}
-                                        className={`py-2 px-2.5 sm:py-2.5 sm:px-3 rounded-xl font-bold text-[11px] sm:text-xs md:text-sm transition-all shadow-sm flex items-center justify-center gap-1 sm:gap-1.5 cursor-pointer disabled:opacity-50 whitespace-nowrap ${
+                                        className={`py-1.5 px-2.5 rounded-lg font-bold text-xs md:text-sm transition-all flex items-center justify-center gap-1 cursor-pointer disabled:opacity-50 whitespace-nowrap shrink-0 ${
                                             isCopied
-                                                ? 'bg-emerald-600 text-white'
-                                                : 'bg-slate-100 border border-slate-300 text-slate-700 hover:bg-slate-200'
+                                                ? 'bg-emerald-600 text-white shadow-xs'
+                                                : 'text-slate-700 hover:bg-white hover:text-slate-900 hover:shadow-2xs'
                                         }`}
                                         title="기본 상세 형식으로 텍스트 복사"
                                     >
-                                        {isCopied ? <Check className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-100 shrink-0" /> : <Copy className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-500 shrink-0" />}
+                                        {isCopied ? <Check className="w-3.5 h-3.5 text-emerald-100 shrink-0" /> : <Copy className="w-3.5 h-3.5 text-slate-500 shrink-0" />}
                                         <span>{isCopied ? '복사 완료!' : '📋 상세 복사'}</span>
                                     </button>
 
                                     <button
                                         onClick={() => handleCopyPresetText('summary')}
                                         disabled={isReportGenerating || !reportData || reportData.length === 0}
-                                        className={`py-2 px-2.5 sm:py-2.5 sm:px-3 rounded-xl font-bold text-[11px] sm:text-xs md:text-sm transition-all shadow-sm flex items-center justify-center gap-1 sm:gap-1.5 cursor-pointer disabled:opacity-50 whitespace-nowrap ${
+                                        className={`py-1.5 px-2.5 rounded-lg font-bold text-xs md:text-sm transition-all flex items-center justify-center gap-1 cursor-pointer disabled:opacity-50 whitespace-nowrap shrink-0 ${
                                             copiedPreset === 'summary'
-                                                ? 'bg-emerald-600 text-white'
-                                                : 'bg-slate-100 border border-slate-300 text-slate-700 hover:bg-slate-200'
+                                                ? 'bg-emerald-600 text-white shadow-xs'
+                                                : 'text-slate-700 hover:bg-white hover:text-slate-900 hover:shadow-2xs'
                                         }`}
                                         title="컨테이너 번호와 수량만 간략하게 요약 복사"
                                     >
-                                        {copiedPreset === 'summary' ? <Check className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-100 shrink-0" /> : <Copy className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-500 shrink-0" />}
+                                        {copiedPreset === 'summary' ? <Check className="w-3.5 h-3.5 text-emerald-100 shrink-0" /> : <Copy className="w-3.5 h-3.5 text-slate-500 shrink-0" />}
                                         <span>{copiedPreset === 'summary' ? '요약 복사 완료!' : '⚡ 요약 복사'}</span>
                                     </button>
 
                                     <button
                                         onClick={() => handleCopyPresetText('anomaly')}
                                         disabled={isReportGenerating || !reportData || reportData.length === 0}
-                                        className={`py-2 px-2.5 sm:py-2.5 sm:px-3 rounded-xl font-bold text-[11px] sm:text-xs md:text-sm transition-all shadow-sm flex items-center justify-center gap-1 sm:gap-1.5 cursor-pointer disabled:opacity-50 whitespace-nowrap ${
+                                        className={`py-1.5 px-2.5 rounded-lg font-bold text-xs md:text-sm transition-all flex items-center justify-center gap-1 cursor-pointer disabled:opacity-50 whitespace-nowrap shrink-0 ${
                                             copiedPreset === 'anomaly'
-                                                ? 'bg-rose-600 text-white'
-                                                : 'bg-slate-100 border border-slate-300 text-rose-700 hover:bg-rose-50'
+                                                ? 'bg-rose-600 text-white shadow-xs'
+                                                : 'text-rose-700 hover:bg-white hover:shadow-2xs'
                                         }`}
                                         title="취소, 제외, 지연사유 등 특이사항만 집중 복사"
                                     >
-                                        {copiedPreset === 'anomaly' ? <Check className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-rose-100 shrink-0" /> : <Copy className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-rose-500 shrink-0" />}
+                                        {copiedPreset === 'anomaly' ? <Check className="w-3.5 h-3.5 text-rose-100 shrink-0" /> : <Copy className="w-3.5 h-3.5 text-rose-500 shrink-0" />}
                                         <span>{copiedPreset === 'anomaly' ? '특이사항 복사 완료!' : '🚨 특이사항 복사'}</span>
                                     </button>
                                 </div>
                             )}
 
+                            {/* Image export buttons */}
                             {isAdmin && (
-                                <>
+                                <div className="flex items-center gap-1.5 shrink-0">
                                     <button
                                         onClick={handleCopyReportImage}
                                         disabled={isReportGenerating || isExportingImage || !reportData || reportData.length === 0}
-                                        className={`py-2 px-1 sm:py-2.5 sm:px-4 md:px-5 rounded-xl font-bold text-[11px] sm:text-xs md:text-sm transition-all flex items-center justify-center gap-1 sm:gap-1.5 cursor-pointer disabled:opacity-50 shadow-md whitespace-nowrap ${
+                                        className={`py-2 px-3 md:py-2.5 md:px-4 rounded-xl font-bold text-xs md:text-sm transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 shadow-md whitespace-nowrap shrink-0 ${
                                             isImageCopied
                                                 ? 'bg-emerald-600 text-white'
                                                 : 'bg-sky-600 hover:bg-sky-500 text-white'
                                         }`}
                                     >
-                                        {isExportingImage ? <Loader2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 animate-spin text-white shrink-0" /> : isImageCopied ? <Check className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-100 shrink-0" /> : <Copy className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />}
+                                        {isExportingImage ? <Loader2 className="w-3.5 h-3.5 animate-spin text-white shrink-0" /> : isImageCopied ? <Check className="w-3.5 h-3.5 text-emerald-100 shrink-0" /> : <Copy className="w-3.5 h-3.5 shrink-0" />}
                                         <span>{isExportingImage ? '생성 중...' : isImageCopied ? '복사 완료!' : '이미지 복사'}</span>
                                     </button>
                                     <button
                                         onClick={handleDownloadReportImage}
                                         disabled={isReportGenerating || isExportingImage || !reportData || reportData.length === 0}
-                                        className="py-2 px-1 sm:py-2.5 sm:px-4 md:px-5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] sm:text-xs md:text-sm transition-all flex items-center justify-center gap-1 sm:gap-1.5 cursor-pointer disabled:opacity-50 shadow-md whitespace-nowrap"
+                                        className="py-2 px-3 md:py-2.5 md:px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs md:text-sm transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 shadow-md whitespace-nowrap shrink-0"
                                     >
-                                        {isExportingImage ? <Loader2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 animate-spin text-white shrink-0" /> : <Download className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />}
-                                        <span>{isExportingImage ? '생성 중...' : '이미지 저장'}<span className="hidden sm:inline"> (.png)</span></span>
+                                        {isExportingImage ? <Loader2 className="w-3.5 h-3.5 animate-spin text-white shrink-0" /> : <Download className="w-3.5 h-3.5 shrink-0" />}
+                                        <span>{isExportingImage ? '생성 중...' : '이미지 저장'}</span>
                                     </button>
-                                </>
+                                </div>
                             )}
 
+                            {/* Close button */}
                             <button
                                 onClick={() => setIsReportOpen(false)}
-                                className={`py-2 px-4 sm:py-2.5 sm:px-4 rounded-xl bg-slate-100 border border-slate-300 hover:bg-slate-200 text-slate-700 font-bold text-xs md:text-sm transition-all cursor-pointer ${isAdmin ? 'hidden sm:inline-flex items-center justify-center' : 'w-auto inline-flex items-center justify-center shrink-0'}`}
+                                className="py-2 px-3.5 md:py-2.5 md:px-4 rounded-xl bg-slate-100 border border-slate-300 hover:bg-slate-200 text-slate-700 font-bold text-xs md:text-sm transition-all cursor-pointer whitespace-nowrap shrink-0"
                             >
                                 닫기
                             </button>
