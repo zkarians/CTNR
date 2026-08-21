@@ -382,7 +382,16 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
             });
             const data = await res.json();
             if (data.success) {
-                setPhotos(prev => prev.map(p => p.id === photo.id ? { ...p, photo_type: newType } : p));
+                setPhotos(prev => {
+                    const updated = prev.map(p => p.id === photo.id ? { ...p, photo_type: newType } : p);
+                    if (selectedContainerFolder && (sortBy === 'NAME_ASC' || sortBy === 'NAME_DESC')) {
+                        const [cntrNo, workDateStr] = selectedContainerFolder.split('|');
+                        const targetPhotos = updated.filter(p => p.cntr_no === cntrNo && (!workDateStr || getWorkDateString(new Date(p.uploaded_at)) === workDateStr));
+                        const hasSeal = targetPhotos.some(p => p.photo_type === 'seal');
+                        setSortBy(hasSeal ? 'NAME_DESC' : 'NAME_ASC');
+                    }
+                    return updated;
+                });
                 alert(data.message || '사진 구분이 성공적으로 변경되었습니다.');
             } else {
                 alert(`변경 실패: ${data.error || '알 수 없는 오류'}`);
@@ -432,7 +441,16 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
             });
             const data = await res.json();
             if (data.success) {
-                setPhotos(prev => prev.map(p => targetIds.includes(p.id) ? { ...p, photo_type: targetType } : p));
+                setPhotos(prev => {
+                    const updated = prev.map(p => targetIds.includes(p.id) ? { ...p, photo_type: targetType } : p);
+                    if (selectedContainerFolder && (sortBy === 'NAME_ASC' || sortBy === 'NAME_DESC')) {
+                        const [cntrNo, workDateStr] = selectedContainerFolder.split('|');
+                        const targetPhotos = updated.filter(p => p.cntr_no === cntrNo && (!workDateStr || getWorkDateString(new Date(p.uploaded_at)) === workDateStr));
+                        const hasSeal = targetPhotos.some(p => p.photo_type === 'seal');
+                        setSortBy(hasSeal ? 'NAME_DESC' : 'NAME_ASC');
+                    }
+                    return updated;
+                });
                 alert(data.message || '사진 구분이 성공적으로 변경되었습니다.');
             } else {
                 alert(`변경 실패: ${data.error || '알 수 없는 오류'}`);
@@ -714,6 +732,12 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
 
     React.useEffect(() => {
         setSelectedPhotoIds([]);
+        if (selectedContainerFolder) {
+            const [cntrNo, workDateStr] = selectedContainerFolder.split('|');
+            const targetPhotos = photos.filter(p => p.cntr_no === cntrNo && (!workDateStr || getWorkDateString(new Date(p.uploaded_at)) === workDateStr));
+            const hasSeal = targetPhotos.some(p => p.photo_type === 'seal');
+            setSortBy(hasSeal ? 'NAME_DESC' : 'NAME_ASC');
+        }
     }, [selectedContainerFolder, tabState]);
     
     // Group photos by container number and work date
@@ -1103,6 +1127,41 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
     }, [selectedPhotoObjects]);
 
     // Helper to determine the target team key for saving/loading local copy path
+    // Helper to determine the target date info for local copy path
+    const getActiveWorkDateStr = () => {
+        if (selectedFolders.length > 0) {
+            const selectedFolderObjs = folders.filter(f => selectedFolders.includes(f.cntrNo + '|' + f.workDateStr));
+            const dateStr = selectedFolderObjs.find(f => f.workDateStr)?.workDateStr;
+            if (dateStr) return dateStr;
+        }
+        return '';
+    };
+
+    const adaptPathToWorkDate = (basePath: string, workDateStr: string) => {
+        if (!basePath || !workDateStr) return basePath;
+        try {
+            const parts = workDateStr.split('-');
+            if (parts.length === 3) {
+                const yearShort = parts[0].slice(-2);
+                const month = parts[1];
+                const day = parts[2];
+
+                let updated = basePath;
+                // 패턴: \26.08\19\ 또는 \26.08\19 (끝부분)
+                updated = updated.replace(/\\(\d{2})\.(\d{2})\\(\d{1,2})(\\?)/g, (match, y, m, d, trailingSlash) => {
+                    return `\\${yearShort}.${month}\\${day}${trailingSlash || ''}`;
+                });
+                updated = updated.replace(/\/(\d{2})\.(\d{2})\/(\d{1,2})(\/?)/g, (match, y, m, d, trailingSlash) => {
+                    return `/${yearShort}.${month}/${day}${trailingSlash || ''}`;
+                });
+                return updated;
+            }
+        } catch (e) {
+            console.error("adaptPathToWorkDate error:", e);
+        }
+        return basePath;
+    };
+
     const getActiveTeamStorageInfo = () => {
         if (selectedFolders.length > 0) {
             const selectedFolderObjs = folders.filter(f => selectedFolders.includes(f.cntrNo + '|' + f.workDateStr));
@@ -1131,22 +1190,25 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
 
     const saveLocalCopyPathToStorage = (path: string) => {
         if (typeof window === 'undefined' || !path.trim()) return;
-        const { teamKey } = getActiveTeamStorageInfo();
         const trimmed = path.trim();
-        localStorage.setItem(`localCopyTargetPath_${teamKey}`, trimmed);
-        localStorage.setItem(`localCopyTargetPath_${selectedTeamId || 'all'}`, trimmed);
         localStorage.setItem('localCopyTargetPath_last', trimmed);
+        const { teamKey } = getActiveTeamStorageInfo();
+        localStorage.setItem(`localCopyTargetPath_${teamKey}`, trimmed);
     };
 
     useEffect(() => {
         if (typeof window !== 'undefined') {
-            const { teamKey } = getActiveTeamStorageInfo();
-            const savedPath = localStorage.getItem(`localCopyTargetPath_${teamKey}`) 
-                           || localStorage.getItem(`localCopyTargetPath_${selectedTeamId || 'all'}`)
-                           || localStorage.getItem('localCopyTargetPath_last') 
+            const lastSaved = localStorage.getItem('localCopyTargetPath_last') 
+                           || localStorage.getItem('localCopyTargetPath_all') 
                            || '';
-            if (savedPath) {
-                setLocalCopyPath(savedPath);
+            const { teamKey } = getActiveTeamStorageInfo();
+            const teamSaved = localStorage.getItem(`localCopyTargetPath_${teamKey}`);
+            
+            const rawPath = lastSaved || teamSaved || '';
+            if (rawPath) {
+                const activeDate = getActiveWorkDateStr();
+                const smartPath = activeDate ? adaptPathToWorkDate(rawPath, activeDate) : rawPath;
+                setLocalCopyPath(smartPath);
             }
         }
     }, [isLocalCopyOpen, selectedTeamId, selectedFolders]);
@@ -3391,7 +3453,10 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
                                         <div className="flex gap-2">
                                             <input 
                                                 value={localCopyPath} 
-                                                onChange={e => setLocalCopyPath(e.target.value)}
+                                                onChange={e => {
+                                                    setLocalCopyPath(e.target.value);
+                                                    saveLocalCopyPathToStorage(e.target.value);
+                                                }}
                                                 className="flex-1 bg-black/40 border border-white/10 rounded-2xl px-4 py-3 text-xs md:text-sm focus:border-emerald-500 outline-none text-slate-200 transition-all placeholder:text-slate-600 font-mono" 
                                                 placeholder={selectedFolders.length > 0 ? "예: X:\\26.08\\15\\야간 또는 D:\\Downloads" : "예: X:\\26.08\\15\\야간\\1조\\TSSU1234567 또는 D:\\사진"} 
                                                 autoFocus

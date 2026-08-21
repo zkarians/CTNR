@@ -51,20 +51,22 @@ export async function fetchTeamWorkProgress(targetWorkDate?: string): Promise<Re
 
             const res = await client.query(query, [workDate, workDate]);
 
-            const teamContainersMap = new Map<string, Map<string, { durationMinutes: number; firstUploadedAt: Date; isManual?: boolean; manualEntryId?: number }>>();
+            const teamContainersMap = new Map<string, Map<string, { cntrNo: string; durationMinutes: number; firstUploadedAt: Date; isManual?: boolean; manualEntryId?: number }>>();
 
             for (const row of res.rows) {
                 const uploadedAt = row.first_uploaded_at ? new Date(row.first_uploaded_at) : new Date();
                 const teamName = row.team_name;
                 const cntrNo = row.cntr_no;
+                const entryKey = row.is_manual ? `manual_${row.manual_entry_id}_${cntrNo}` : `db_${cntrNo}`;
                 const durationMinutes = Number(row.duration_minutes) || 45;
 
                 if (!teamContainersMap.has(teamName)) {
                     teamContainersMap.set(teamName, new Map());
                 }
                 const cntrMap = teamContainersMap.get(teamName)!;
-                if (!cntrMap.has(cntrNo)) {
-                    cntrMap.set(cntrNo, { 
+                if (!cntrMap.has(entryKey)) {
+                    cntrMap.set(entryKey, { 
+                        cntrNo,
                         durationMinutes, 
                         firstUploadedAt: uploadedAt,
                         isManual: row.is_manual,
@@ -76,10 +78,7 @@ export async function fetchTeamWorkProgress(targetWorkDate?: string): Promise<Re
             const result: Record<string, TeamWorkProgress> = {};
 
             teamContainersMap.forEach((cntrMap, teamName) => {
-                const cntrList = Array.from(cntrMap.entries()).map(([cntrNo, data]) => ({
-                    cntrNo,
-                    ...data
-                })).sort((a, b) => a.firstUploadedAt.getTime() - b.firstUploadedAt.getTime());
+                const cntrList = Array.from(cntrMap.values()).sort((a, b) => a.firstUploadedAt.getTime() - b.firstUploadedAt.getTime());
 
                 const timelineList = calculateTeamTimeline(cntrList);
 

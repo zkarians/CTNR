@@ -480,7 +480,9 @@ export default function ReportModal({
                                                                             ? 'text-rose-600 font-black' 
                                                                             : (cName.includes('BNI') || cName.includes('비엔아이')) 
                                                                             ? 'text-indigo-600 font-black' 
-                                                                            : 'text-emerald-600 font-black';
+                                                                            : cName.includes('재작업')
+                                                                            ? 'text-amber-600 font-black'
+                                                                            : 'text-slate-600 font-black';
                                                                         return (
                                                                             <span key={cName} className="flex items-center">
                                                                                 {idx > 0 && <span className="text-slate-400 mr-1.5">,</span>}

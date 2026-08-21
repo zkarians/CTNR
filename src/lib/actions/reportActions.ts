@@ -144,8 +144,10 @@ export async function generateWorkReport(filters: JobFilters): Promise<{ success
                 return { success: false, error: '조건에 일치하는 작업 내역이 없습니다.' };
             }
 
-            // Group by workDate -> teamName -> cntr_no -> products & completion & timeline info
+            // Group by workDate -> teamName -> entryKey -> products & completion & timeline info
             const dateMap = new Map<string, Map<string, Map<string, { 
+                cntrNo: string;
+                jobId?: number;
                 isCompleted: boolean; 
                 division: string; 
                 durationMinutes: number; 
@@ -163,6 +165,7 @@ export async function generateWorkReport(filters: JobFilters): Promise<{ success
                 if (!teamName || teamName === '미지정 조') continue;
 
                 const cntrNo = row.cntr_no;
+                const entryKey = `db_${cntrNo}`;
                 const division = row.division || '일반';
                 const prodName = row.prod_name;
                 const qty = Math.round(Number(row.qty)) || 0;
@@ -182,10 +185,10 @@ export async function generateWorkReport(filters: JobFilters): Promise<{ success
                 if (!teamMap.has(teamName)) teamMap.set(teamName, new Map());
                 const cntrMap = teamMap.get(teamName)!;
 
-                if (!cntrMap.has(cntrNo)) {
-                    cntrMap.set(cntrNo, { isCompleted, division, durationMinutes, firstUploadedAt, remark, transporter, adminComment, products: [], emptyBoxes: [] });
+                if (!cntrMap.has(entryKey)) {
+                    cntrMap.set(entryKey, { cntrNo, jobId: row.job_id, isCompleted, division, durationMinutes, firstUploadedAt, remark, transporter, adminComment, products: [], emptyBoxes: [] });
                 }
-                const cntrData = cntrMap.get(cntrNo)!;
+                const cntrData = cntrMap.get(entryKey)!;
                 if (remark && !cntrData.remark) cntrData.remark = remark;
                 if (transporter && !cntrData.transporter) cntrData.transporter = transporter;
                 if (adminComment && !cntrData.adminComment) cntrData.adminComment = adminComment;
@@ -202,14 +205,16 @@ export async function generateWorkReport(filters: JobFilters): Promise<{ success
                 const workDateStr = mRow.work_date;
                 const teamName = mRow.team_name;
                 const cntrNo = mRow.cntr_no;
+                const entryKey = `manual_${mRow.id}_${cntrNo}`;
                 
                 if (!dateMap.has(workDateStr)) dateMap.set(workDateStr, new Map());
                 const teamMap = dateMap.get(workDateStr)!;
                 if (!teamMap.has(teamName)) teamMap.set(teamName, new Map());
                 const cntrMap = teamMap.get(teamName)!;
                 
-                if (!cntrMap.has(cntrNo)) {
-                    cntrMap.set(cntrNo, { 
+                if (!cntrMap.has(entryKey)) {
+                    cntrMap.set(entryKey, { 
+                        cntrNo,
                         isCompleted: true, 
                         division: 'DFZ', 
                         durationMinutes: mRow.duration_minutes || 45, 
@@ -223,7 +228,7 @@ export async function generateWorkReport(filters: JobFilters): Promise<{ success
                     });
                 }
                 
-                const cntrData = cntrMap.get(cntrNo)!;
+                const cntrData = cntrMap.get(entryKey)!;
                 
                 const mProducts = mRow.products || [];
                 for (const p of mProducts) {
@@ -260,10 +265,7 @@ export async function generateWorkReport(filters: JobFilters): Promise<{ success
                     const totalContainers = cntrMap.size;
                     upLines.push(`■ ${teamName} (합계 ${totalContainers}개)`);
 
-                    const cntrList = Array.from(cntrMap.entries()).map(([cntrNo, data]) => ({
-                        cntrNo,
-                        ...data
-                    })).sort((a, b) => a.firstUploadedAt.getTime() - b.firstUploadedAt.getTime());
+                    const cntrList = Array.from(cntrMap.values()).sort((a, b) => a.firstUploadedAt.getTime() - b.firstUploadedAt.getTime());
 
                     const timelineList = calculateTeamTimeline(cntrList);
 
@@ -322,10 +324,7 @@ export async function generateWorkReport(filters: JobFilters): Promise<{ success
                 const carrierCounts: Record<string, number> = {};
 
                 teamMap.forEach((cntrMap, teamName) => {
-                    const cntrList = Array.from(cntrMap.entries()).map(([cntrNo, data]) => ({
-                        cntrNo,
-                        ...data
-                    })).sort((a, b) => a.firstUploadedAt.getTime() - b.firstUploadedAt.getTime());
+                    const cntrList = Array.from(cntrMap.values()).sort((a, b) => a.firstUploadedAt.getTime() - b.firstUploadedAt.getTime());
 
                     const timelineList = calculateTeamTimeline(cntrList);
 

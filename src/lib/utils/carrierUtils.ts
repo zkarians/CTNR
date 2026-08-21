@@ -4,8 +4,8 @@ export function getNormalizedCarrier(transporter?: string | null, fallbackTeam?:
         if (t.includes('천마')) return '천마';
         if (t.includes('BNI') || t.includes('비엔아이')) return 'BNI';
         if (t.includes('재작업')) return '재작업';
-        const splitted = t.split('(')[0].trim();
-        if (splitted) return splitted;
+        if (t.includes('기타') || t.includes('오류')) return '기타';
+        return '기타';
     }
     const team = (fallbackTeam || '').trim();
     if (team.includes('천마')) return '천마';
