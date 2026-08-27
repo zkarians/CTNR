@@ -532,20 +532,20 @@ export default function ReportModal({
                                                                 const isCancelled = !isExcluded && (cntr.isCancelled || cntr.adminComment?.includes('[취소]') || cntr.adminComment?.includes('[작업취소]'));
                                                                 return (
                                                                     <div key={`${cntr.cntrNo}_${cntrIdx}`} className="bg-slate-50 border border-slate-200 rounded-lg md:rounded-xl p-2.5 sm:p-3 hover:border-slate-300 transition-all space-y-1.5">
-                                                                        <div className="flex items-center justify-between gap-1.5 mb-1.5">
-                                                                            <div className="flex items-center gap-1.5 min-w-0">
-                                                                                <span className={`text-sm font-black shrink-0 uppercase ${getCarrierColor(cntr.transporter)}`}>{cntr.cntrNo}</span>
+                                                                        <div className="flex items-center justify-between gap-1 mb-1.5 flex-nowrap min-w-0">
+                                                                            <div className="flex items-center gap-1 shrink-0">
+                                                                                <span className={`text-xs sm:text-sm font-black uppercase tracking-tight ${getCarrierColor(cntr.transporter)}`}>{cntr.cntrNo}</span>
                                                                                 {isExcluded ? (
-                                                                                    <span className="px-1.5 py-0.5 rounded-md bg-amber-500/10 border border-amber-500/30 text-amber-700 font-extrabold text-[11px] shrink-0">
+                                                                                    <span className="px-1 py-0.5 rounded bg-amber-500/10 border border-amber-500/30 text-amber-700 font-black text-[10px] whitespace-nowrap">
                                                                                         [작업제외]
                                                                                     </span>
                                                                                 ) : isCancelled ? (
-                                                                                    <span className="px-1.5 py-0.5 rounded-md bg-rose-500/10 border border-rose-500/20 text-rose-600 font-extrabold text-[11px] shrink-0">
+                                                                                    <span className="px-1 py-0.5 rounded bg-rose-500/10 border border-rose-500/20 text-rose-600 font-black text-[10px] whitespace-nowrap">
                                                                                         [작업취소]
                                                                                     </span>
                                                                                 ) : null}
                                                                             </div>
-                                                                            <div className="flex items-center gap-0.5 shrink-0">
+                                                                            <div className="flex items-center gap-0.5 shrink-0 ml-auto">
                                                                                 {!isExportingImage && (
                                                                                     <>
                                                                                         <button
@@ -556,7 +556,7 @@ export default function ReportModal({
                                                                                             className="p-0.5 rounded bg-slate-100 hover:bg-sky-100 text-slate-500 hover:text-sky-600 transition-colors cursor-pointer border border-transparent hover:border-sky-200"
                                                                                             title="이 항목 수정 (보고서 내용만)"
                                                                                         >
-                                                                                            <span className="text-[12px] font-black">✏️</span>
+                                                                                            <span className="text-[11px] font-black">✏️</span>
                                                                                         </button>
                                                                                         <button
                                                                                             onClick={(e) => {
@@ -566,13 +566,13 @@ export default function ReportModal({
                                                                                             className="p-0.5 rounded bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-600 transition-colors cursor-pointer border border-transparent hover:border-rose-200"
                                                                                             title="이 항목 삭제 (보고서 내용만)"
                                                                                         >
-                                                                                            <span className="text-[12px] font-black">🗑️</span>
+                                                                                            <span className="text-[11px] font-black">🗑️</span>
                                                                                         </button>
                                                                                     </>
                                                                                 )}
 
                                                                                 {cntr.startTimeStr && cntr.endTimeStr && (
-                                                                                    <span className="text-sky-900 font-bold text-[11px] bg-sky-100 px-1.5 py-0.5 rounded border border-sky-200 shrink-0">
+                                                                                    <span className="text-sky-900 font-bold text-[10px] sm:text-[11px] bg-sky-100 px-1 py-0.5 rounded border border-sky-200 whitespace-nowrap">
                                                                                         {cntr.durationMinutes || 45}분 ({cntr.startTimeStr}~{cntr.endTimeStr})
                                                                                     </span>
                                                                                 )}
