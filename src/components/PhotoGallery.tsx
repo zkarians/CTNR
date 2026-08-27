@@ -5,7 +5,8 @@ import {
     X, Calendar, User, Download, Search, Image as ImageIcon, 
     ChevronLeft, ChevronRight, ChevronDown, Loader2, ArrowLeft, Trash2, Folder,
     ExternalLink, RotateCw, RotateCcw, Grid, LayoutGrid, Check, Undo,
-    RefreshCw, SkipForward, Upload, Camera, FileText, AlertCircle, Pencil, ArrowUpDown
+    RefreshCw, SkipForward, Upload, Camera, FileText, AlertCircle, Pencil, ArrowUpDown,
+    Users
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { fetchTeams } from '@/lib/actions/teamActions';
@@ -122,6 +123,115 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
     // Rename State
     const [editingPhotoId, setEditingPhotoId] = useState<string | null>(null);
     const [editFilename, setEditFilename] = useState('');
+
+    // Change Team State
+    const [isTeamChangeModalOpen, setIsTeamChangeModalOpen] = useState(false);
+    const [teamChangeTarget, setTeamChangeTarget] = useState<{
+        type: 'SINGLE_FOLDER' | 'MULTI_FOLDERS' | 'PHOTOS';
+        cntrNo?: string;
+        workDateStr?: string;
+        cntrNos?: string[];
+        photoIds?: string[];
+        count: number;
+        currentTeamName?: string;
+    } | null>(null);
+    const [selectedNewTeamId, setSelectedNewTeamId] = useState<string>('null');
+    const [isChangingTeam, setIsChangingTeam] = useState(false);
+
+    const handleOpenChangeTeamModalForFolder = (folder: any, e?: React.MouseEvent) => {
+        if (e) e.stopPropagation();
+        setTeamChangeTarget({
+            type: 'SINGLE_FOLDER',
+            cntrNo: folder.cntrNo,
+            workDateStr: folder.workDateStr,
+            count: folder.photos.length,
+            currentTeamName: folder.teamNames
+        });
+        const firstWithTeam = folder.photos.find((p: any) => p.team_id);
+        setSelectedNewTeamId(firstWithTeam?.team_id ? String(firstWithTeam.team_id) : (teams.length > 0 ? String(teams[0].id) : 'null'));
+        setIsTeamChangeModalOpen(true);
+    };
+
+    const handleOpenChangeTeamModalForSelectedFolders = (e?: React.MouseEvent) => {
+        if (e) e.stopPropagation();
+        if (selectedFolders.length === 0) {
+            alert("작업 조를 변경할 컨테이너 폴더를 하나 이상 선택해 주세요.");
+            return;
+        }
+        const targetFolders = folders.filter(f => selectedFolders.includes(f.cntrNo + '|' + f.workDateStr));
+        const totalCount = targetFolders.reduce((sum, f) => sum + f.photos.length, 0);
+        const cntrNos = Array.from(new Set(targetFolders.map(f => f.cntrNo)));
+
+        setTeamChangeTarget({
+            type: 'MULTI_FOLDERS',
+            cntrNos,
+            count: totalCount
+        });
+        setSelectedNewTeamId(teams.length > 0 ? String(teams[0].id) : 'null');
+        setIsTeamChangeModalOpen(true);
+    };
+
+    const handleOpenChangeTeamModalForPhotos = (customIds?: string[], e?: React.MouseEvent) => {
+        if (e) e.stopPropagation();
+        const targetIds = customIds && customIds.length > 0 ? customIds : selectedPhotoIds;
+        if (targetIds.length === 0) {
+            alert("작업 조를 변경할 사진을 선택해 주세요.");
+            return;
+        }
+        setTeamChangeTarget({
+            type: 'PHOTOS',
+            photoIds: targetIds,
+            count: targetIds.length
+        });
+        setSelectedNewTeamId(teams.length > 0 ? String(teams[0].id) : 'null');
+        setIsTeamChangeModalOpen(true);
+    };
+
+    const handleExecuteChangeTeam = async () => {
+        if (!teamChangeTarget) return;
+
+        setIsChangingTeam(true);
+        try {
+            const teamIdPayload = (selectedNewTeamId === 'null' || !selectedNewTeamId) ? null : parseInt(selectedNewTeamId, 10);
+            
+            let bodyPayload: any = {
+                action: 'change_team',
+                teamId: teamIdPayload
+            };
+
+            if (teamChangeTarget.type === 'SINGLE_FOLDER') {
+                bodyPayload.cntrNo = teamChangeTarget.cntrNo;
+                bodyPayload.workDateStr = teamChangeTarget.workDateStr;
+            } else if (teamChangeTarget.type === 'MULTI_FOLDERS') {
+                bodyPayload.cntrNos = teamChangeTarget.cntrNos;
+            } else if (teamChangeTarget.type === 'PHOTOS') {
+                bodyPayload.ids = teamChangeTarget.photoIds;
+            }
+
+            const res = await fetch('/api/photos', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(bodyPayload)
+            });
+
+            const data = await res.json();
+            if (!res.ok || !data.success) {
+                alert(`작업 조 변경 실패: ${data.error || '알 수 없는 오류'}`);
+                return;
+            }
+
+            alert(data.message || '작업 조가 성공적으로 변경되었습니다.');
+            setIsTeamChangeModalOpen(false);
+            setTeamChangeTarget(null);
+            setSelectedPhotoIds([]);
+            loadPhotos();
+        } catch (err: any) {
+            console.error("Change team error:", err);
+            alert(`작업 조 변경 실패: ${err.message || '네트워크 오류'}`);
+        } finally {
+            setIsChangingTeam(false);
+        }
+    };
 
     type ActionType = 'LOCAL_COPY' | 'ZIP_DOWNLOAD' | 'GDRIVE_BACKUP';
     const [warningModalInfo, setWarningModalInfo] = useState<{ isOpen: boolean, action: ActionType | null, missingCntrs: string[] }>({ isOpen: false, action: null, missingCntrs: [] });
@@ -967,7 +1077,11 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
             </div>
 
             <div className="flex items-center justify-between mt-2 pt-2 border-t border-white/5 text-[9px] text-slate-500 font-bold">
-                <span className="truncate max-w-[140px]">
+                <span 
+                    onClick={(e) => isAdmin ? handleOpenChangeTeamModalForFolder(folder, e) : undefined}
+                    className={`truncate max-w-[140px] ${isAdmin ? 'cursor-pointer hover:text-indigo-400 transition-colors' : ''}`}
+                    title={isAdmin ? '클릭하여 작업 조 변경' : undefined}
+                >
                     조: {folder.teamNames} ({folder.uploaderNames && folder.uploaderNames.trim() ? folder.uploaderNames : '퇴사자'})
                 </span>
                 <div className="flex items-center gap-1.5 shrink-0">
@@ -1012,6 +1126,16 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
                                         title="작업 완료 처리"
                                     >
                                         <Check className="w-2.5 h-2.5" />
+                                    </button>
+                                )}
+                                {/* Change Team (Admin Only) */}
+                                {isAdmin && (
+                                    <button
+                                        onClick={(e) => handleOpenChangeTeamModalForFolder(folder, e)}
+                                        className="p-1 rounded bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 hover:text-white hover:bg-indigo-600 transition-all shrink-0 cursor-pointer"
+                                        title="작업 조 변경"
+                                    >
+                                        <Users className="w-2.5 h-2.5" />
                                     </button>
                                 )}
                                 {/* Delete (Admin Only) */}
@@ -3399,6 +3523,146 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
                     )}
                 </AnimatePresence>
 
+                {/* Team Change Modal */}
+                <AnimatePresence>
+                    {isTeamChangeModalOpen && teamChangeTarget && (
+                        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
+                            <motion.div 
+                                key="team-change-modal-backdrop"
+                                initial={{ opacity: 0 }} 
+                                animate={{ opacity: 1 }} 
+                                exit={{ opacity: 0 }} 
+                                onClick={() => !isChangingTeam && setIsTeamChangeModalOpen(false)}
+                                className="absolute inset-0 bg-black/70 backdrop-blur-md" 
+                            />
+                            <motion.div 
+                                key="team-change-modal-content"
+                                initial={{ scale: 0.9, opacity: 0, y: 20 }} 
+                                animate={{ scale: 1, opacity: 1, y: 0 }} 
+                                exit={{ scale: 0.9, opacity: 0, y: 20 }}
+                                className="relative w-full max-w-md bg-[#0e111c] border border-indigo-500/30 rounded-[2.5rem] shadow-2xl overflow-hidden p-7 z-10 text-slate-100"
+                            >
+                                <div className="flex items-center justify-between gap-3 mb-5 border-b border-white/10 pb-4">
+                                    <div className="flex items-center gap-3">
+                                        <div className="p-3 bg-indigo-500/10 rounded-2xl text-indigo-400 border border-indigo-500/20">
+                                            <Users className="w-6 h-6" />
+                                        </div>
+                                        <div>
+                                            <h2 className="text-lg font-black text-white flex items-center gap-2">
+                                                👥 작업 조(Team) 변경
+                                            </h2>
+                                            <p className="text-xs text-indigo-400 font-bold">
+                                                사진의 업로드 조를 다른 조로 변경합니다
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <button 
+                                        onClick={() => setIsTeamChangeModalOpen(false)}
+                                        disabled={isChangingTeam}
+                                        className="p-2 rounded-xl bg-white/10 border border-white/10 text-slate-300 hover:text-white transition-all cursor-pointer"
+                                    >
+                                        <X className="w-4 h-4" />
+                                    </button>
+                                </div>
+
+                                <div className="space-y-4">
+                                    <div className="p-3.5 bg-black/40 border border-white/5 rounded-2xl text-xs space-y-1.5">
+                                        <div className="text-slate-400 font-bold">변경 대상:</div>
+                                        <div className="text-indigo-400 font-black text-sm">
+                                            {teamChangeTarget.type === 'SINGLE_FOLDER' && (
+                                                <span>컨테이너 <strong className="text-white font-mono">{teamChangeTarget.cntrNo}</strong> (총 {teamChangeTarget.count}장)</span>
+                                            )}
+                                            {teamChangeTarget.type === 'MULTI_FOLDERS' && (
+                                                <span>선택한 <strong className="text-white font-mono">{teamChangeTarget.cntrNos?.length}개</strong> 컨테이너 (총 {teamChangeTarget.count}장)</span>
+                                            )}
+                                            {teamChangeTarget.type === 'PHOTOS' && (
+                                                <span>선택한 사진 <strong className="text-white font-mono">{teamChangeTarget.count}장</strong></span>
+                                            )}
+                                        </div>
+                                        {teamChangeTarget.currentTeamName && (
+                                            <div className="text-[11px] text-slate-500 font-bold">
+                                                현재 조: <span className="text-amber-400">{teamChangeTarget.currentTeamName}</span>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <label className="text-xs font-black text-slate-300 uppercase tracking-wider block">
+                                            변경할 작업 조 선택
+                                        </label>
+                                        <div className="grid grid-cols-1 gap-2 max-h-56 overflow-y-auto p-1">
+                                            {teams.map((t) => (
+                                                <button
+                                                    key={t.id}
+                                                    type="button"
+                                                    onClick={() => setSelectedNewTeamId(String(t.id))}
+                                                    className={`w-full flex items-center justify-between p-3 rounded-xl border text-sm font-black transition-all cursor-pointer ${
+                                                        selectedNewTeamId === String(t.id)
+                                                            ? "bg-indigo-600 border-indigo-400 text-white shadow-lg shadow-indigo-500/20"
+                                                            : "bg-white/5 border-white/10 text-slate-300 hover:bg-white/10 hover:text-white"
+                                                    }`}
+                                                >
+                                                    <span className="flex items-center gap-2">
+                                                        <Users className="w-4 h-4" />
+                                                        {t.name}
+                                                    </span>
+                                                    {selectedNewTeamId === String(t.id) && (
+                                                        <Check className="w-4 h-4 stroke-[3]" />
+                                                    )}
+                                                </button>
+                                            ))}
+                                            <button
+                                                type="button"
+                                                onClick={() => setSelectedNewTeamId('null')}
+                                                className={`w-full flex items-center justify-between p-3 rounded-xl border text-sm font-black transition-all cursor-pointer ${
+                                                    selectedNewTeamId === 'null'
+                                                        ? "bg-slate-700 border-slate-500 text-white shadow-lg"
+                                                        : "bg-white/5 border-white/10 text-slate-400 hover:bg-white/10 hover:text-slate-300"
+                                                }`}
+                                            >
+                                                <span className="flex items-center gap-2">
+                                                    <Users className="w-4 h-4 text-slate-500" />
+                                                    미지정 조
+                                                </span>
+                                                {selectedNewTeamId === 'null' && (
+                                                    <Check className="w-4 h-4 stroke-[3]" />
+                                                )}
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <div className="pt-4 border-t border-white/10 flex items-center justify-end gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => setIsTeamChangeModalOpen(false)}
+                                            disabled={isChangingTeam}
+                                            className="px-5 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 border border-white/10 text-white font-bold text-xs transition-all cursor-pointer"
+                                        >
+                                            취소
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={handleExecuteChangeTeam}
+                                            disabled={isChangingTeam}
+                                            className="px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-black text-xs transition-all cursor-pointer shadow-lg shadow-indigo-500/20 flex items-center gap-1.5"
+                                        >
+                                            {isChangingTeam ? (
+                                                <>
+                                                    <Loader2 className="w-4 h-4 animate-spin" /> 변경 중...
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <Check className="w-4 h-4" /> 변경 적용
+                                                </>
+                                            )}
+                                        </button>
+                                    </div>
+                                </div>
+                            </motion.div>
+                        </div>
+                    )}
+                </AnimatePresence>
+
                 {/* Local Copy Modal */}
                 <AnimatePresence>
                     {isLocalCopyOpen && (
@@ -3792,6 +4056,11 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
                                             <button onClick={() => handleActionWithCheck('ZIP_DOWNLOAD')} className="flex items-center gap-1 md:gap-1.5 px-2 py-1 md:px-3 md:py-1.5 rounded-lg md:rounded-xl bg-sky-500 hover:bg-sky-400 border border-sky-600 text-white transition-all text-[11px] md:text-xs font-black shrink-0 shadow-md shadow-indigo-500/20 cursor-pointer">
                                                 <Download className="w-3 h-3 md:w-3.5 md:h-3.5" /> ZIP
                                             </button>
+                                             {isAdmin && (
+                                                 <button onClick={handleOpenChangeTeamModalForSelectedFolders} className="flex items-center gap-1 md:gap-1.5 px-2 py-1 md:px-3 md:py-1.5 rounded-lg md:rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white transition-all text-[11px] md:text-xs font-black shrink-0 shadow-md shadow-indigo-500/20 cursor-pointer" title="선택한 폴더들의 작업 조 일괄 변경">
+                                                     <Users className="w-3 h-3 md:w-3.5 md:h-3.5" /> 조 변경
+                                                 </button>
+                                             )}
                                         </>
                                     )
                                 ) : (
@@ -3830,7 +4099,12 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
                                                     <Camera className="w-3 h-3 md:w-3.5 md:h-3.5 text-rose-500" /> 씰 해제
                                                 </button>
                                             )}
-                                            <button onClick={() => setIsMoveModalOpen(true)} className="flex items-center gap-1 md:gap-1.5 px-2 py-1 md:px-3 md:py-1.5 rounded-lg md:rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white transition-all text-[11px] md:text-xs font-black shrink-0 shadow-md shadow-indigo-500/20 cursor-pointer">
+                                            {isAdmin && (
+                                                 <button onClick={() => handleOpenChangeTeamModalForPhotos()} className="flex items-center gap-1 md:gap-1.5 px-2 py-1 md:px-3 md:py-1.5 rounded-lg md:rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white transition-all text-[11px] md:text-xs font-black shrink-0 shadow-md shadow-indigo-500/20 cursor-pointer" title="선택한 사진들의 작업 조 변경">
+                                                     <Users className="w-3 h-3 md:w-3.5 md:h-3.5" /> 조 변경
+                                                 </button>
+                                             )}
+                                             <button onClick={() => setIsMoveModalOpen(true)} className="flex items-center gap-1 md:gap-1.5 px-2 py-1 md:px-3 md:py-1.5 rounded-lg md:rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white transition-all text-[11px] md:text-xs font-black shrink-0 shadow-md shadow-indigo-500/20 cursor-pointer">
                                                 <Folder className="w-3 h-3 md:w-3.5 md:h-3.5" /> 이동
                                             </button>
                                             <button onClick={handleDownloadSelectedPhotos} className="flex items-center gap-1 md:gap-1.5 px-2 py-1 md:px-3 md:py-1.5 rounded-lg md:rounded-xl bg-sky-600 hover:bg-sky-500 text-white transition-all text-[11px] md:text-xs font-black shrink-0 shadow-md shadow-sky-500/20 cursor-pointer" title={selectedPhotoIds.length > 1 ? "선택한 사진들을 압축(ZIP)하여 다운로드" : "선택한 사진 다운로드"}>

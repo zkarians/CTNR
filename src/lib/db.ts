@@ -1,20 +1,13 @@
-import path from 'path';
-import dotenv from 'dotenv';
 import { Pool } from 'pg';
-import { Job, mapContainerType, Product, JobFilters } from "./types";
-
-// Force load .env from the root directory for reliability
-dotenv.config({ path: path.resolve(process.cwd(), '.env') });
+import { Job, JobFilters, Product, mapContainerType } from './types';
 
 let _pool: Pool | null = null;
 
 export function getPool(): Pool {
     if (!_pool) {
-        dotenv.config({ path: path.resolve(process.cwd(), '.env'), override: true });
-        console.log("DB Pool: Initializing with host", process.env.DB_HOST);
         _pool = new Pool({
             user: process.env.DB_USER || 'postgres',
-            host: process.env.DB_HOST || 'localhost',
+            host: process.env.DB_HOST || '127.0.0.1',
             database: process.env.DB_NAME || 'excel',
             password: process.env.DB_PASSWORD || 'z456qwe12!@',
             port: parseInt(process.env.DB_PORT || '5432'),
@@ -149,12 +142,72 @@ export async function getJobsFromDB(filters?: JobFilters): Promise<Job[]> {
     try {
         const client = await pool.connect();
         try {
-            // 외부 ERP/엑셀 연동 시 누락될 수 있는 job_id 연결 고리를 자동으로 복구
+            // 1. 동일 지시서명(job_name) 및 동일 컨테이너(cntr_no)인데 job_id가 쪼개져 있는 경우, 최신/사진 매핑 메인 job_id로 자동 일원화 (Self-Healing)
+            await client.query(`
+                WITH DuplicateJobs AS (
+                    SELECT 
+                        r.job_name,
+                        r.cntr_no,
+                        COALESCE(
+                            (SELECT cp.job_id FROM container_photos cp WHERE cp.job_id = ANY(ARRAY_AGG(DISTINCT r.job_id)) AND (cp.is_deleted IS NOT TRUE) ORDER BY cp.id DESC LIMIT 1),
+                            MAX(r.job_id)
+                        ) as target_job_id,
+                        ARRAY_AGG(DISTINCT r.job_id) as all_job_ids
+                    FROM container_results r
+                    WHERE r.job_name IS NOT NULL AND r.cntr_no IS NOT NULL
+                    GROUP BY r.job_name, r.cntr_no
+                    HAVING COUNT(DISTINCT r.job_id) > 1
+                )
+                UPDATE container_results cr
+                SET job_id = dj.target_job_id
+                FROM DuplicateJobs dj
+                WHERE cr.job_name = dj.job_name 
+                  AND cr.cntr_no = dj.cntr_no 
+                  AND cr.job_id != dj.target_job_id;
+            `);
+
+            // 2. 사진 레코드 중 job_id가 다른 분할 job으로 매핑된 경우도 target_job_id로 자동 정렬
+            await client.query(`
+                WITH DuplicateJobs AS (
+                    SELECT 
+                        r.job_name,
+                        r.cntr_no,
+                        MAX(r.job_id) as target_job_id,
+                        ARRAY_AGG(DISTINCT r.job_id) as all_job_ids
+                    FROM container_results r
+                    WHERE r.job_name IS NOT NULL AND r.cntr_no IS NOT NULL
+                    GROUP BY r.job_name, r.cntr_no
+                    HAVING COUNT(DISTINCT r.job_id) > 1
+                )
+                UPDATE container_photos cp
+                SET job_id = dj.target_job_id
+                FROM DuplicateJobs dj
+                WHERE cp.cntr_no = dj.cntr_no 
+                  AND cp.job_id = ANY(dj.all_job_ids) 
+                  AND cp.job_id != dj.target_job_id;
+            `);
+
+            // 3. 외부 ERP/엑셀 연동 시 job_id가 NULL인 행들을 가장 최신 단일 job_id로 안전하게 복구
             await client.query(`
                 UPDATE container_results r
-                SET job_id = j.id
-                FROM container_jobs j
-                WHERE r.job_name = j.job_name AND r.job_id IS NULL
+                SET job_id = sub.id
+                FROM (
+                    SELECT DISTINCT ON (job_name) id, job_name
+                    FROM container_jobs
+                    ORDER BY job_name, id DESC
+                ) sub
+                WHERE r.job_name = sub.job_name AND r.job_id IS NULL;
+            `);
+
+            // 4. 품목이 완전히 비어버린 중복 container_jobs 행 자동 정리
+            await client.query(`
+                DELETE FROM container_jobs j
+                WHERE NOT EXISTS (SELECT 1 FROM container_results r WHERE r.job_id = j.id)
+                  AND NOT EXISTS (SELECT 1 FROM container_photos p WHERE p.job_id = j.id)
+                  AND EXISTS (
+                      SELECT 1 FROM container_jobs j2 
+                      WHERE j2.job_name = j.job_name AND j2.id != j.id
+                  );
             `);
 
             let whereClauses: string[] = [];
@@ -189,7 +242,6 @@ export async function getJobsFromDB(filters?: JobFilters): Promise<Job[]> {
                 params.push(dateStr);
             }
 
-
             const whereSql = whereClauses.length > 0 ? "WHERE " + whereClauses.join(" AND ") : "";
             const query = `
                 SELECT * FROM (
@@ -219,14 +271,16 @@ export async function getJobsFromDB(filters?: JobFilters): Promise<Job[]> {
                         (SELECT MAX(eb.updated_at) FROM container_empty_boxes eb WHERE eb.job_id = j.id AND eb.cntr_no = r.cntr_no) as empty_boxes_updated_at
                     FROM container_jobs j
                     LEFT JOIN (
-                        SELECT j2.job_name, cntr_no, MAX(transporter) as transporter, MAX(cntr_type) as cntr_type,
+                        SELECT cr.job_id,
+                               MAX(cntr_no) as cntr_no,
+                               MAX(transporter) as transporter, 
+                               MAX(cntr_type) as cntr_type,
                                COUNT(DISTINCT prod_name)::integer as model_count,
                                SUM(qty_plan)::integer as total_qty,
                                MAX(cr.remark) as db_remark
                         FROM container_results cr
-                        JOIN container_jobs j2 ON cr.job_id = j2.id
-                        GROUP BY j2.job_name, cntr_no
-                    ) r ON r.job_name = j.job_name
+                        GROUP BY cr.job_id
+                    ) r ON r.job_id = j.id
                     ${whereSql}
                     ORDER BY COALESCE(r.cntr_no, j.id::text), j.job_name, j.saved_at DESC, j.id DESC
                 ) sub
@@ -260,7 +314,7 @@ export async function getJobsFromDB(filters?: JobFilters): Promise<Job[]> {
                     }
                     // Fallback to ETD if saved_at is missing/invalid (e.g., "04월 21일" -> "04.21.")
                     if (row.etd && typeof row.etd === 'string') {
-                        const etdMatch = row.etd.match(/(\d{1,2})월\s*(\d{1,2})일/);
+                        const etdMatch = row.etd.match(/(\\d{1,2})월\\s*(\\d{1,2})일/);
                         if (etdMatch) {
                             return `${etdMatch[1].padStart(2, '0')}.${etdMatch[2].padStart(2, '0')}.`;
                         }
@@ -284,30 +338,6 @@ export async function getProductsForJob(jobId: number): Promise<Product[]> {
     try {
         const client = await pool.connect();
         try {
-            // First, find the container number and job name for this jobId to handle split jobs
-              const infoQuery = `
-                  SELECT j.job_name, 
-                         COALESCE(r.cntr_no, (
-                             SELECT cr.cntr_no 
-                             FROM container_results cr 
-                             JOIN container_jobs j2 ON cr.job_id = j2.id 
-                             WHERE j2.job_name = j.job_name 
-                             LIMIT 1
-                         )) as cntr_no 
-                  FROM container_jobs j
-                  LEFT JOIN container_results r ON r.job_id = j.id
-                  WHERE j.id = $1
-                  LIMIT 1
-              `;
-            const infoRes = await client.query(infoQuery, [jobId]);
-            
-            if (infoRes.rows.length === 0) return [];
-            
-            const { job_name, cntr_no } = infoRes.rows[0];
-
-            // If we have a container number, fetch products for ALL jobs that share this container number and job name.
-            // This handles cases where data was split across multiple job IDs.
-            // If cntr_no is null, fall back to only fetching for this specific job ID (matching grouping in getJobsFromDB).
             const query = `
                 SELECT 
                     r.prod_name as id,
@@ -319,33 +349,29 @@ export async function getProductsForJob(jobId: number): Promise<Product[]> {
                     m.prod_type,
                     MAX(r.division) as division
                 FROM container_results r
-                JOIN container_jobs j ON r.job_id = j.id
                 LEFT JOIN product_master_sync m ON r.prod_name = m.prod_name
-                WHERE (
-                    ($2::text IS NOT NULL AND r.cntr_no = $2 AND j.job_name = $3)
-                    OR
-                    ($2::text IS NULL AND j.id = $1)
-                )
-                AND COALESCE(r.qty_plan, 0) > 0
+                WHERE r.job_id = $1
+                  AND COALESCE(r.qty_plan, 0) > 0
                 GROUP BY r.prod_name, m.width, m.depth, m.height, m.prod_type
             `;
             
-            console.log(`Fetching products for logical job (JobId: ${jobId}, Container: ${cntr_no}, Name: ${job_name})`);
-            const res = await client.query(query, [jobId, cntr_no, job_name]);
-            console.log(`Found ${res.rows.length} product types for logical job`);
+            const res = await client.query(query, [jobId]);
 
             return res.rows.map(row => {
                 const isDFZ = (row.division || '').toUpperCase().includes('DFZ');
+                const modelName = row.model_name || row.id || '';
                 return {
-                    id: row.id,
-                    model_name: row.model_name,
+                    id: row.id || modelName,
+                    name: modelName,
+                    model_name: modelName,
                     division: row.division || '',
-                    width: Number(row.width) || 0,
-                    length: Number(row.length) || 0,
-                    height: Number(row.height) || 0,
-                    quantity: Math.round(Number(row.quantity)) || 0,
-                    allow_rotate: !isDFZ,
-                    allow_lay_down: false
+                    width: isDFZ ? Number(row.length) : Number(row.width),
+                    length: isDFZ ? Number(row.width) : Number(row.length),
+                    height: Number(row.height),
+                    quantity: Number(row.quantity),
+                    allow_rotate: true,
+                    allow_lay_down: false,
+                    prod_type: row.prod_type
                 };
             });
         } finally {
@@ -356,4 +382,3 @@ export async function getProductsForJob(jobId: number): Promise<Product[]> {
         return [];
     }
 }
-

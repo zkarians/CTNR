@@ -63,7 +63,7 @@ export async function generateWorkReport(filters: JobFilters): Promise<{ success
             const query = `
                 WITH GroupedResults AS (
                     SELECT 
-                        MAX(COALESCE(p.photo_job_id, j.id)) as job_id,
+                        j.id as job_id,
                         COALESCE(r.cntr_no, j.job_name, '미지정') as cntr_no,
                         r.prod_name,
                         r.division,
@@ -83,25 +83,23 @@ export async function generateWorkReport(filters: JobFilters): Promise<{ success
                     LEFT JOIN product_master_sync mp ON r.prod_name = mp.prod_name
                     LEFT JOIN (
                         SELECT 
-                            cj.job_name,
+                            cp.job_id,
                             cp.cntr_no, 
-                            MAX(cp.job_id) as photo_job_id,
                             MAX(cp.team_id) as team_id,
                             MAX(cp.work_duration_minutes) as work_duration_minutes,
                             BOOL_OR(cp.is_completed) as is_completed,
                             MIN(cp.uploaded_at) as uploaded_at,
                             MAX(cp.remark) as remark
                         FROM container_photos cp
-                        LEFT JOIN container_jobs cj ON cp.job_id = cj.id
                         WHERE (cp.is_deleted IS NOT TRUE)
-                        GROUP BY cj.job_name, cp.cntr_no
-                    ) p ON p.job_name = j.job_name AND (p.cntr_no = r.cntr_no OR (r.cntr_no IS NULL AND p.cntr_no IS NULL))
+                        GROUP BY cp.job_id, cp.cntr_no
+                    ) p ON p.job_id = j.id AND (p.cntr_no = r.cntr_no OR (r.cntr_no IS NULL AND p.cntr_no IS NULL))
                     LEFT JOIN teams t ON p.team_id = t.id
                     LEFT JOIN container_comments cc 
                       ON cc.cntr_no = COALESCE(r.cntr_no, j.job_name, '미지정')
                      AND (cc.work_date = $${commentDateParamIdx} OR cc.work_date = '' OR cc.work_date IS NULL)
                     ${whereSql}
-                    GROUP BY COALESCE(r.cntr_no, j.job_name, '미지정'), r.prod_name, r.division, t.name
+                    GROUP BY j.id, COALESCE(r.cntr_no, j.job_name, '미지정'), r.prod_name, r.division, t.name
                 )
                 SELECT gr.*,
                        (SELECT json_agg(json_build_object('name', eb.box_name, 'qty', eb.qty)) 
@@ -165,7 +163,7 @@ export async function generateWorkReport(filters: JobFilters): Promise<{ success
                 if (!teamName || teamName === '미지정 조') continue;
 
                 const cntrNo = row.cntr_no;
-                const entryKey = `db_${cntrNo}`;
+                const entryKey = `db_${row.job_id}_${cntrNo}`;
                 const division = row.division || '일반';
                 const prodName = row.prod_name;
                 const qty = Math.round(Number(row.qty)) || 0;
@@ -614,6 +612,7 @@ export async function updateManualReportEntry(id: number, params: {
 
 export async function updateContainerReportDetails(params: {
     cntrNo: string;
+    jobId?: number;
     durationMinutes: number;
     remark: string;
     category?: string;
@@ -631,21 +630,41 @@ export async function updateContainerReportDetails(params: {
             await client.query('BEGIN');
             
             // 1. Update container_photos remark and work_duration_minutes
-            await client.query(`
-                UPDATE container_photos 
-                SET work_duration_minutes = $1,
-                    remark = $2
-                WHERE UPPER(TRIM(cntr_no)) = UPPER(TRIM($3))
-                  AND (is_deleted IS NOT TRUE)
-            `, [params.durationMinutes, params.remark || '', params.cntrNo]);
+            if (params.jobId) {
+                await client.query(`
+                    UPDATE container_photos 
+                    SET work_duration_minutes = $1,
+                        remark = $2
+                    WHERE job_id = $3
+                      AND (cntr_no = $4 OR ($4 = '' AND cntr_no IS NULL))
+                      AND (is_deleted IS NOT TRUE)
+                `, [params.durationMinutes, params.remark || '', params.jobId, params.cntrNo]);
+            } else {
+                await client.query(`
+                    UPDATE container_photos 
+                    SET work_duration_minutes = $1,
+                        remark = $2
+                    WHERE UPPER(TRIM(cntr_no)) = UPPER(TRIM($3))
+                      AND (is_deleted IS NOT TRUE)
+                `, [params.durationMinutes, params.remark || '', params.cntrNo]);
+            }
 
             // 2. Update transporter in container_results if provided
             if (params.transporter !== undefined) {
-                await client.query(`
-                    UPDATE container_results 
-                    SET transporter = $1
-                    WHERE UPPER(TRIM(cntr_no)) = UPPER(TRIM($2))
-                `, [params.transporter, params.cntrNo]);
+                if (params.jobId) {
+                    await client.query(`
+                        UPDATE container_results 
+                        SET transporter = $1
+                        WHERE job_id = $2
+                          AND (cntr_no = $3 OR ($3 = '' AND cntr_no IS NULL))
+                    `, [params.transporter, params.jobId, params.cntrNo]);
+                } else {
+                    await client.query(`
+                        UPDATE container_results 
+                        SET transporter = $1
+                        WHERE UPPER(TRIM(cntr_no)) = UPPER(TRIM($2))
+                    `, [params.transporter, params.cntrNo]);
+                }
             }
 
             // 3. Update container_comments if category provided
@@ -659,13 +678,16 @@ export async function updateContainerReportDetails(params: {
                 `, [targetWorkDate, params.cntrNo, params.category]);
             }
 
-            // 3. Update empty boxes if provided
+            // 4. Update empty boxes if provided
             if (params.emptyBoxes && params.emptyBoxes.length > 0) {
-                const jobRes = await client.query(`
-                    SELECT MAX(job_id) as job_id FROM container_photos WHERE UPPER(TRIM(cntr_no)) = UPPER(TRIM($1))
-                `, [params.cntrNo]);
-                const jobId = jobRes.rows[0]?.job_id;
-                if (jobId) {
+                let targetJobId = params.jobId;
+                if (!targetJobId) {
+                    const jobRes = await client.query(`
+                        SELECT MAX(job_id) as job_id FROM container_photos WHERE UPPER(TRIM(cntr_no)) = UPPER(TRIM($1))
+                    `, [params.cntrNo]);
+                    targetJobId = jobRes.rows[0]?.job_id;
+                }
+                if (targetJobId) {
                     for (const box of params.emptyBoxes) {
                         if (box.name && box.qty > 0) {
                             await client.query(`
@@ -673,7 +695,7 @@ export async function updateContainerReportDetails(params: {
                                 VALUES ($1, $2, $3, $4, true)
                                 ON CONFLICT (job_id, cntr_no, box_name) DO UPDATE 
                                 SET qty = EXCLUDED.qty, is_worker_edited = true, updated_at = CURRENT_TIMESTAMP
-                            `, [jobId, params.cntrNo, box.name, box.qty]);
+                            `, [targetJobId, params.cntrNo, box.name, box.qty]);
                         }
                     }
                 }

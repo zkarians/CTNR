@@ -310,9 +310,10 @@ export function packContainer(
     numPasses: number = 100,
     force: boolean = false
 ): PackingResult {
+    const cInput = containerInput || { id: '40hc' as any, name: '40ft High Cube', width: 2352, length: 12032, height: 2698 };
     const container = {
-        id: containerInput.id, name: containerInput.name,
-        width: Number(containerInput.width), length: Number(containerInput.length), height: Number(containerInput.height)
+        id: cInput.id || '40hc', name: cInput.name || '40ft High Cube',
+        width: Number(cInput.width || 2352), length: Number(cInput.length || 12032), height: Number(cInput.height || 2698)
     };
     const aggMap = new Map<string, Product>();
     const invalidProducts: Product[] = []; // V5.03: Track 0-dimension products to return as unpacked
@@ -501,7 +502,8 @@ function doTwoPhasePacking(container: any, normalProducts: Product[], smallProdu
         for (const limitD of depths) {
             // V4.26: Pass global unpacked and allProducts so blockPackShelf can scavenge small items for side gaps
             const tempU = new Map(unpacked);
-            const wallItems = blockPackShelf(container.width, container.height, limitD, allProducts, tempU, false, isMixedWidthSpecialJob);
+            const maxAvailLength = container.length - currentY;
+            const wallItems = blockPackShelf(container.width, container.height, limitD, allProducts, tempU, false, isMixedWidthSpecialJob, maxAvailLength);
 
             let score = evaluateWallScore(wallItems, container.width, isMixedWidthSpecialJob);
             if (isMixedWidthSpecialJob && pIdx > 0) {
@@ -1207,7 +1209,16 @@ function getOrients(p: Product): any[] {
     return result;
 }
 
-function blockPackShelf(W: number, H: number, D: number, allProducts: Product[], unpacked: Map<string, number>, allowSmall: boolean, isMixedWidthSpecialJob: boolean): any[] {
+function blockPackShelf(
+    W: number, 
+    H: number, 
+    D: number, 
+    allProducts: Product[], 
+    unpacked: Map<string, number>, 
+    allowSmall: boolean, 
+    isMixedWidthSpecialJob: boolean,
+    maxAvailLength: number = D
+): any[] {
     const wallItems: any[] = [];
     let currentX = 0;
 
@@ -1218,6 +1229,9 @@ function blockPackShelf(W: number, H: number, D: number, allProducts: Product[],
         let bestBlockScore = -Infinity;
         let bestBlockW = 0;
         let bestBlockItems: any[] = [];
+
+        // V6.18: For side gaps (currentX > 0), allow flexible depth up to remaining container length
+        const effectiveMaxD = currentX > 0 ? Math.min(maxAvailLength, Math.max(D, 1300)) : D;
 
         // V4.26 Side Gap Scavenging
         // Pass 0: Try to fit normal products.
@@ -1243,7 +1257,7 @@ function blockPackShelf(W: number, H: number, D: number, allProducts: Product[],
                     orientsList.push({ w: p.length, l: p.height, h: p.width, type: 'lay' });
                 }
 
-                const orients = orientsList.filter(o => o.w <= (W - currentX) + 0.5 && o.l <= D + 0.5 && o.h <= H + 0.5 && isStableBottom(p, o.w, o.l));
+                const orients = orientsList.filter(o => o.w <= (W - currentX) + 0.5 && o.l <= effectiveMaxD + 0.5 && o.h <= H + 0.5 && isStableBottom(p, o.w, o.l));
 
                 for (const o of orients) {
                     for (let bW = 1; bW <= Math.min(5, unpacked.get(p.id)!); bW++) {
@@ -1251,7 +1265,7 @@ function blockPackShelf(W: number, H: number, D: number, allProducts: Product[],
                             const totalW = o.w * bW;
                             const totalL = o.l * bL;
                             if (totalW > (W - currentX) + 0.5) break;
-                            if (totalL > D + 0.5) break;
+                            if (totalL > effectiveMaxD + 0.5) break;
 
                             // V5.05: If orientation is 'lay', limit height count to 2 to allow stacking laid down items up to 2 high
                             const maxHCount = o.type === 'lay' ? 2 : Math.floor((H + 0.5) / o.h);
@@ -1505,7 +1519,7 @@ function blockPackShelf(W: number, H: number, D: number, allProducts: Product[],
                                         }
 
                                         const bwFit = Math.floor((remainW + 0.5) / ro.w);
-                                        const lFit = Math.floor(((isMixedWidthSpecialJob ? D : totalL) + 0.5) / ro.l);
+                                        const lFit = Math.max(1, Math.floor(((effectiveMaxD || D) + 0.5) / ro.l));
                                         
                                         // 각 열(Column) 단위로 상단 오버행 침범 여부에 따른 높이 단수(hcFit) 계산
                                         let colHcFitSum = 0;

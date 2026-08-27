@@ -372,7 +372,7 @@ export async function GET(req: NextRequest) {
                 COALESCE(NULLIF(u.name, ''), NULLIF(u.username, ''), NULLIF(p.uploader_name, ''), '퇴사자') as uploader_name, 
                 COALESCE(u.username, p.uploader_username, '') as uploader_username, 
                 j.job_name,
-                (SELECT transporter FROM container_results WHERE cntr_no = p.cntr_no LIMIT 1) as transporter
+                (SELECT transporter FROM container_results WHERE (job_id = p.job_id AND (cntr_no = p.cntr_no OR p.cntr_no IS NULL)) OR cntr_no = p.cntr_no ORDER BY CASE WHEN job_id = p.job_id THEN 0 ELSE 1 END LIMIT 1) as transporter
             FROM container_photos p
             LEFT JOIN teams t ON p.team_id = t.id
             LEFT JOIN "User" u ON u.id = p.uploaded_by
@@ -702,9 +702,10 @@ export async function PATCH(req: NextRequest) {
         const isRotateAction = action === 'rotate';
         const isMoveContainerAction = action === 'move_container';
         const isUpdatePhotoTypeAction = action === 'update_photo_type';
+        const isChangeTeamAction = action === 'change_team';
 
         // Only admins or normal users with complete/move/gdrive/rotate/update_photo_type actions
-        if (!isCompleteAction && !isUploadGDriveAction && !isMoveContainerAction && !isRotateAction && !isUpdatePhotoTypeAction && !isAdmin) {
+        if (!isCompleteAction && !isUploadGDriveAction && !isMoveContainerAction && !isRotateAction && !isUpdatePhotoTypeAction && !isChangeTeamAction && !isAdmin) {
             return NextResponse.json({ error: '권한이 없습니다.' }, { status: 403 });
         }
 
@@ -862,6 +863,91 @@ if (isRotateAction) {
                     message: photoType === 'seal'
                         ? (targetIds.length > 1 ? `사진 ${targetIds.length}장이 씰(Seal) 사진으로 지정되었습니다.` : '씰(Seal) 사진으로 지정되었습니다.')
                         : (targetIds.length > 1 ? `사진 ${targetIds.length}장의 씰 지정이 해제되었습니다.` : '일반 사진으로 변경되었습니다.')
+                });
+            }
+
+            if (isChangeTeamAction) {
+                if (!isAdmin) {
+                    releaseClient();
+                    return NextResponse.json({ error: '관리자만 작업 조를 변경할 수 있습니다.' }, { status: 403 });
+                }
+
+                const targetTeamId = (body.teamId !== undefined && body.teamId !== null && body.teamId !== '' && body.teamId !== 'null') 
+                    ? parseInt(String(body.teamId), 10) 
+                    : null;
+                const workDateStr = body.workDateStr || null;
+
+                let updatedCount = 0;
+
+                if (ids && ids.length > 0) {
+                    const res = await client.query(
+                        `UPDATE container_photos SET team_id = $1 WHERE id = ANY($2::uuid[])`,
+                        [targetTeamId, ids]
+                    );
+                    updatedCount = res.rowCount || 0;
+                } else if (cntrNosParam && cntrNosParam.length > 0) {
+                    if (workDateStr) {
+                        const res = await client.query(
+                            `UPDATE container_photos 
+                             SET team_id = $1 
+                             WHERE cntr_no = ANY($2::text[]) 
+                               AND (is_deleted IS NOT TRUE)
+                               AND DATE(uploaded_at AT TIME ZONE 'Asia/Seoul' - INTERVAL '13 hours') = $3::date`,
+                            [targetTeamId, cntrNosParam, workDateStr]
+                        );
+                        updatedCount = res.rowCount || 0;
+                    } else {
+                        const res = await client.query(
+                            `UPDATE container_photos 
+                             SET team_id = $1 
+                             WHERE cntr_no = ANY($2::text[]) 
+                               AND (is_deleted IS NOT TRUE)`,
+                            [targetTeamId, cntrNosParam]
+                        );
+                        updatedCount = res.rowCount || 0;
+                    }
+                } else if (cntrNo) {
+                    if (workDateStr) {
+                        const res = await client.query(
+                            `UPDATE container_photos 
+                             SET team_id = $1 
+                             WHERE cntr_no = $2 
+                               AND (is_deleted IS NOT TRUE)
+                               AND DATE(uploaded_at AT TIME ZONE 'Asia/Seoul' - INTERVAL '13 hours') = $3::date`,
+                            [targetTeamId, cntrNo, workDateStr]
+                        );
+                        updatedCount = res.rowCount || 0;
+                    } else {
+                        const res = await client.query(
+                            `UPDATE container_photos 
+                             SET team_id = $1 
+                             WHERE cntr_no = $2 
+                               AND (is_deleted IS NOT TRUE)`,
+                            [targetTeamId, cntrNo]
+                        );
+                        updatedCount = res.rowCount || 0;
+                    }
+                } else {
+                    releaseClient();
+                    return NextResponse.json({ error: '변경할 대상 사진 또는 컨테이너가 지정되지 않았습니다.' }, { status: 400 });
+                }
+
+                // Get target team name for nice message
+                let teamName = '미지정 조';
+                if (targetTeamId) {
+                    const tRes = await client.query(`SELECT name FROM teams WHERE id = $1`, [targetTeamId]);
+                    if (tRes.rows.length > 0) {
+                        teamName = tRes.rows[0].name;
+                    }
+                }
+
+                releaseClient();
+                return NextResponse.json({
+                    success: true,
+                    updatedCount,
+                    teamId: targetTeamId,
+                    teamName,
+                    message: `사진 ${updatedCount}장의 작업 조가 [${teamName}](으)로 변경되었습니다.`
                 });
             }
 

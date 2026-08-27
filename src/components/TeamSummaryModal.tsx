@@ -246,7 +246,8 @@ const emptyBoxSummary = useMemo(() => {
             count += (colTotals['다모델 SK냉장고'] || 0);
         }
         if (count > 0) {
-            categoryStr += `${cat}${count} `;
+            const displayLabel = cat === 'SK냉장고' ? 'SK' : cat;
+            categoryStr += `${displayLabel}${count} `;
         }
     });
     categoryStr = categoryStr.trim();

@@ -265,9 +265,10 @@ function packContainer(containerInput, productsInput, numPasses, force) {
     var _a;
     if (numPasses === void 0) { numPasses = 100; }
     if (force === void 0) { force = false; }
+    var cInput = containerInput || { id: '40hc', name: '40ft High Cube', width: 2352, length: 12032, height: 2698 };
     var container = {
-        id: containerInput.id, name: containerInput.name,
-        width: Number(containerInput.width), length: Number(containerInput.length), height: Number(containerInput.height)
+        id: cInput.id || '40hc', name: cInput.name || '40ft High Cube',
+        width: Number(cInput.width || 2352), length: Number(cInput.length || 12032), height: Number(cInput.height || 2698)
     };
     var aggMap = new Map();
     var invalidProducts = []; // V5.03: Track 0-dimension products to return as unpacked
@@ -452,7 +453,8 @@ function doTwoPhasePacking(container, normalProducts, smallProducts, allProducts
             var limitD = depths_1[_c];
             // V4.26: Pass global unpacked and allProducts so blockPackShelf can scavenge small items for side gaps
             var tempU = new Map(unpacked);
-            var wallItems = blockPackShelf(container.width, container.height, limitD, allProducts, tempU, false, isMixedWidthSpecialJob);
+            var maxAvailLength = container.length - currentY;
+            var wallItems = blockPackShelf(container.width, container.height, limitD, allProducts, tempU, false, isMixedWidthSpecialJob, maxAvailLength);
             var score = evaluateWallScore(wallItems, container.width, isMixedWidthSpecialJob);
             if (isMixedWidthSpecialJob && pIdx > 0) {
                 score *= (0.9 + Math.random() * 0.2); // ±10% random noise to explore other wall options in random trials
@@ -1116,7 +1118,8 @@ function getOrients(p) {
     orientsCache.set(key, result);
     return result;
 }
-function blockPackShelf(W, H, D, allProducts, unpacked, allowSmall, isMixedWidthSpecialJob) {
+function blockPackShelf(W, H, D, allProducts, unpacked, allowSmall, isMixedWidthSpecialJob, maxAvailLength) {
+    if (maxAvailLength === void 0) { maxAvailLength = D; }
     var wallItems = [];
     var currentX = 0;
     while (currentX < W) {
@@ -1126,6 +1129,7 @@ function blockPackShelf(W, H, D, allProducts, unpacked, allowSmall, isMixedWidth
         var bestBlockScore = -Infinity;
         var bestBlockW = 0;
         var bestBlockItems = [];
+        var effectiveMaxD = currentX > 0 ? Math.min(maxAvailLength, Math.max(D, 1300)) : D;
         // V4.26 Side Gap Scavenging
         // Pass 0: Try to fit normal products.
         // Pass 1: Also try scavenging to see if small items provide a better local fit.
@@ -1151,7 +1155,7 @@ function blockPackShelf(W, H, D, allProducts, unpacked, allowSmall, isMixedWidth
                     orientsList.push({ w: p.height, l: p.width, h: p.length, type: 'lay' });
                     orientsList.push({ w: p.length, l: p.height, h: p.width, type: 'lay' });
                 }
-                var orients = orientsList.filter(function (o) { return o.w <= (W - currentX) + 0.5 && o.l <= D + 0.5 && o.h <= H + 0.5 && isStableBottom(p, o.w, o.l); });
+                var orients = orientsList.filter(function (o) { return o.w <= (W - currentX) + 0.5 && o.l <= effectiveMaxD + 0.5 && o.h <= H + 0.5 && isStableBottom(p, o.w, o.l); });
                 for (var _d = 0, orients_2 = orients; _d < orients_2.length; _d++) {
                     var o = orients_2[_d];
                     for (var bW = 1; bW <= Math.min(5, unpacked.get(p.id)); bW++) {
@@ -1160,7 +1164,7 @@ function blockPackShelf(W, H, D, allProducts, unpacked, allowSmall, isMixedWidth
                             var totalL = o.l * bL;
                             if (totalW > (W - currentX) + 0.5)
                                 break;
-                            if (totalL > D + 0.5)
+                            if (totalL > effectiveMaxD + 0.5)
                                 break;
                             // V5.05: If orientation is 'lay', limit height count to 2 to allow stacking laid down items up to 2 high
                             var maxHCount = o.type === 'lay' ? 2 : Math.floor((H + 0.5) / o.h);
@@ -1408,7 +1412,7 @@ function blockPackShelf(W, H, D, allProducts, unpacked, allowSmall, isMixedWidth
                                                     continue;
                                             }
                                             var bwFit = Math.floor((remainW + 0.5) / ro.w);
-                                            var lFit = Math.floor(((isMixedWidthSpecialJob ? D : totalL) + 0.5) / ro.l);
+                                            var lFit = Math.max(1, Math.floor(((effectiveMaxD || D) + 0.5) / ro.l));
                                             // 각 열(Column) 단위로 상단 오버행 침범 여부에 따른 높이 단수(hcFit) 계산
                                             var colHcFitSum = 0;
                                             for (var colIdx = 0; colIdx < bwFit; colIdx++) {

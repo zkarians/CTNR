@@ -29,7 +29,7 @@ import { getCarrierColor } from '@/lib/utils/colorUtils';
 import { getNormalizedCarrier } from '@/lib/utils/carrierUtils';
 import { buildReportTextFromData } from '@/lib/utils/reportUtils';
 import {
-    Product, PackingResult, ContainerType, CONTAINER_DATA, Job, JobFilters, DbConfig, UserAccount, Team, TeamWorkProgress
+    Product, PackingResult, ContainerType, CONTAINER_DATA, Job, JobFilters, DbConfig, UserAccount, Team, TeamWorkProgress, mapContainerType
 } from '@/lib/types';
 import { packContainer } from '@/lib/packer';
 import { fetchTeams, createTeam, updateTeam, deleteTeam } from '@/lib/actions/teamActions';
@@ -702,6 +702,7 @@ export default function Home({ user }: { user: SessionUser }) {
         } else {
             updateContainerReportDetails({
                 cntrNo: manualCntrNo.trim().toUpperCase(),
+                jobId: editingReportItem?.cntr?.jobId,
                 durationMinutes: duration,
                 remark: manualRemark.trim(),
                 category: adminCommentStr,
@@ -1459,7 +1460,8 @@ export default function Home({ user }: { user: SessionUser }) {
         if (products.length === 0) return;
         setIsLoading(true);
         setTimeout(() => {
-            const container = CONTAINER_DATA[selectedContainer];
+            const containerKey = mapContainerType(selectedContainer);
+            const container = CONTAINER_DATA[containerKey] || CONTAINER_DATA['40hc'];
             const res = packContainer(container, products, numPasses);
             setResult(res);
             setIsLoading(false);
@@ -1490,7 +1492,7 @@ export default function Home({ user }: { user: SessionUser }) {
             setProducts(data);
             const job = jobs.find(j => j.id === jobId);
             if (job) {
-                setSelectedContainer(job.container_type);
+                setSelectedContainer(mapContainerType(job.container_type));
                 setUploadCntrNo(job.cntr_no || '');
             }
         } catch (error) {

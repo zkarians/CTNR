@@ -76,6 +76,12 @@ export function generateJobType(products: { name: string; qty: number; division:
         jobTypes.delete('냉장고');
     }
 
+    // 냉장고와 콤프가 함께 들어간 경우 -> '콤프'로 단독 표기
+    if (jobTypes.has('콤프') && (jobTypes.has('냉장고') || jobTypes.has('SK냉장고'))) {
+        jobTypes.delete('냉장고');
+        jobTypes.delete('SK냉장고');
+    }
+
     let finalType = '';
     const sortedTypes = Array.from(jobTypes);
     
