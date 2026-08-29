@@ -65,7 +65,6 @@ export default function Home({ user }: { user: SessionUser }) {
     const [filters, setFilters] = useState<JobFilters>({ startDate: '', endDate: '', productName: '', containerNo: '' });
     const [manualProduct, setManualProduct] = useState({ model_name: '', width: 1000, length: 800, height: 1200, quantity: 10, allow_rotate: true, allow_lay_down: false });
     const [searchResults, setSearchResults] = useState<Product[]>([]);
-    const [numPasses, setNumPasses] = useState(10);
     const [activeProduct, setActiveProduct] = useState<string | null>(null);
     const [isManualAddOpen, setIsManualAddOpen] = useState(false);
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -1295,18 +1294,6 @@ export default function Home({ user }: { user: SessionUser }) {
         setSearchResults([]);
     };
 
-    const handlePassesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const valStr = e.target.value;
-        if (valStr === '') {
-            setNumPasses('' as any);
-            return;
-        }
-        let val = parseInt(valStr);
-        if (isNaN(val)) return;
-        if (val > 50) { val = 50; alert("최대 50회까지 입력 가능합니다."); }
-        setNumPasses(val);
-    };
-
     const loadTeamProgress = async () => {
         try {
             const progress = await fetchTeamWorkProgress();
@@ -1462,7 +1449,7 @@ export default function Home({ user }: { user: SessionUser }) {
         setTimeout(() => {
             const containerKey = mapContainerType(selectedContainer);
             const container = CONTAINER_DATA[containerKey] || CONTAINER_DATA['40hc'];
-            const res = packContainer(container, products, numPasses);
+            const res = packContainer(container, products);
             setResult(res);
             setIsLoading(false);
             // 모바일: 시뮬레이션 후 컨트롤 패널 최상단으로 스크롤
@@ -2271,13 +2258,8 @@ export default function Home({ user }: { user: SessionUser }) {
 
             {/* Simulation Button — Desktop Only */}
             <div className="hidden md:flex gap-2 shrink-0 pt-2 border-t border-white/5">
-                <div className="flex flex-col items-center justify-center bg-white/5 border border-white/10 rounded-2xl px-3 min-w-[100px] group hover:border-sky-500/50 transition-colors">
-                    <span className="text-[9px] font-black text-slate-500 uppercase tracking-tighter mb-1 select-none">시도횟수(MAX 50)</span>
-                    <input type="number" min="1" max="50" value={numPasses} onChange={handlePassesChange}
-                        className="bg-transparent text-sky-400 font-bold text-center w-full outline-none text-base [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" />
-                </div>
                 <button disabled={products.length === 0 || isLoading} onClick={runSimulation}
-                    className="group relative flex items-center justify-center overflow-hidden flex-1 py-4 rounded-2xl bg-sky-500 hover:bg-sky-400 active:scale-[0.98] disabled:opacity-50 text-white font-black text-lg transition-all shadow-lg shadow-sky-500/20">
+                    className="group relative flex items-center justify-center overflow-hidden w-full py-4 rounded-2xl bg-sky-500 hover:bg-sky-400 active:scale-[0.98] disabled:opacity-50 text-white font-black text-lg transition-all shadow-lg shadow-sky-500/20 cursor-pointer">
                     <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent -translate-x-[100%] group-hover:translate-x-[100%] transition-transform duration-700 pointer-events-none" />
                     {isLoading ? (
                         <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin" />
@@ -2437,22 +2419,10 @@ export default function Home({ user }: { user: SessionUser }) {
 
                 {/* 모바일 하단 고정 시뮬레이션 버튼 — Premium Floating Bar */}
                 <div className="fixed bottom-0 left-0 right-0 z-50 px-4 pb-4 pt-3 md:px-5 md:pb-8 md:pt-4 bg-gradient-to-t from-[#030712] via-[#030712]/95 to-transparent flex flex-col gap-3 md:gap-4">
-                    <div className="flex gap-2 text-xs md:gap-3 items-end">
-                        {/* Passes Count UI with Circle 'N' Style */}
-                        <div className="relative flex items-center gap-2 md:gap-3 flex-shrink-0 bg-[#1a1a24] border border-white/10 rounded-[1.25rem] px-3 py-1.5 md:px-4 md:py-2 mt-auto">
-                            <div className="w-8 h-8 rounded-full bg-sky-500/10 border border-sky-500/20 flex items-center justify-center">
-                                <span className="text-xs font-black text-sky-500 tracking-tighter">N</span>
-                            </div>
-                            <div className="flex flex-col">
-                                <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest leading-none mb-1">Passes</span>
-                                <input type="number" min="1" max="50" value={numPasses} onChange={handlePassesChange}
-                                    className="bg-transparent text-sky-400 font-black text-lg w-10 outline-none leading-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" />
-                            </div>
-                        </div>
-
-                        {/* Large Action Button */}
+                    <div className="flex w-full items-center">
+                        {/* Large Full-Width Action Button */}
                         <button disabled={products.length === 0 || isLoading} onClick={runSimulation}
-                            className="flex-1 py-3 md:py-[1.125rem] rounded-[1.25rem] md:rounded-3xl bg-sky-500 hover:bg-sky-400 active:scale-[0.98] disabled:opacity-50 text-white font-black text-[15px] md:text-[17px] transition-all flex items-center justify-center gap-2 md:gap-3 shadow-[0_12px_40px_rgba(56,189,248,0.3)] shadow-sky-500/20">
+                            className="w-full py-3.5 md:py-[1.125rem] rounded-[1.25rem] md:rounded-3xl bg-sky-500 hover:bg-sky-400 active:scale-[0.98] disabled:opacity-50 text-white font-black text-[16px] md:text-[17px] transition-all flex items-center justify-center gap-2 md:gap-3 shadow-[0_12px_40px_rgba(56,189,248,0.3)] shadow-sky-500/20 cursor-pointer">
                             {isLoading ? (
                                 <div className="w-5 h-5 md:w-6 md:h-6 border-3 border-white/30 border-t-white rounded-full animate-spin" />
                             ) : (
