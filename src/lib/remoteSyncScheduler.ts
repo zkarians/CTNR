@@ -136,6 +136,11 @@ export async function performBackupAndRemoteSync(): Promise<{ success: boolean; 
                 PRIMARY KEY (work_date, cntr_no)
             );
             ALTER TABLE container_comments ADD COLUMN IF NOT EXISTS work_date VARCHAR(20) NOT NULL DEFAULT '';
+            ALTER TABLE container_comments ADD COLUMN IF NOT EXISTS cntr_no VARCHAR(100);
+            ALTER TABLE container_comments ADD COLUMN IF NOT EXISTS job_id VARCHAR(100);
+            ALTER TABLE container_comments ADD COLUMN IF NOT EXISTS admin_comment TEXT;
+            ALTER TABLE container_comments ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;
+
             CREATE TABLE IF NOT EXISTS daily_work_reports (
                 work_date VARCHAR(20) PRIMARY KEY,
                 report_text TEXT NOT NULL,
@@ -185,7 +190,18 @@ export async function performBackupAndRemoteSync(): Promise<{ success: boolean; 
             const rows = localBackupData[tableName];
             if (!rows || rows.length === 0) continue;
 
-            const columns = Object.keys(rows[0]);
+            // Get valid columns that actually exist in the remote table
+            const remoteColRes = await remoteClient.query(`
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name = $1
+            `, [tableName]);
+            const remoteColSet = new Set(remoteColRes.rows.map((r: any) => r.column_name.toLowerCase()));
+
+            const allLocalKeys = Object.keys(rows[0]);
+            const columns = allLocalKeys.filter(c => remoteColSet.has(c.toLowerCase()));
+            if (columns.length === 0) continue;
+
             const colNamesSql = columns.map(c => `"${c}"`).join(', ');
 
             let conflictClause = 'ON CONFLICT DO NOTHING';
