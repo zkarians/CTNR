@@ -32,6 +32,25 @@ export default function RootLayout({
 }>) {
     return (
         <html lang="ko" className="dark" suppressHydrationWarning>
+            <head>
+                <script
+                    dangerouslySetInnerHTML={{
+                        __html: `
+                            if (typeof window !== 'undefined' && window.performance && typeof window.performance.measure === 'function') {
+                                const _origMeasure = window.performance.measure.bind(window.performance);
+                                window.performance.measure = function(name, startMark, endMark) {
+                                    try {
+                                        return _origMeasure(name, startMark, endMark);
+                                    } catch (e) {
+                                        // Next.js Turbopack negative timestamp issue suppression
+                                        return;
+                                    }
+                                };
+                            }
+                        `,
+                    }}
+                />
+            </head>
             <body className={`${inter.className} min-h-screen bg-[#030712] md:overflow-hidden`} suppressHydrationWarning>
                 {children}
             </body>

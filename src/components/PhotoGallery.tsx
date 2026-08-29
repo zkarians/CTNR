@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { 
     X, Calendar, User, Download, Search, Image as ImageIcon, 
     ChevronLeft, ChevronRight, ChevronDown, Loader2, ArrowLeft, Trash2, Folder,
-    ExternalLink, RotateCw, RotateCcw, Grid, LayoutGrid, Check, Undo,
+    ExternalLink, RotateCw, RotateCcw, Grid, LayoutGrid, Square, Check, Undo,
     RefreshCw, SkipForward, Upload, Camera, FileText, AlertCircle, Pencil, ArrowUpDown,
     Users
 } from 'lucide-react';
@@ -2061,8 +2061,6 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
     };
 
     const handleDownloadSelectedPhotos = async () => {
-        if (selectedPhotoIds.length === 0) return;
-
         if (selectedPhotoIds.length === 1) {
             const targetPhoto = photos.find(p => p.id === selectedPhotoIds[0]);
             if (targetPhoto) {
@@ -2183,25 +2181,33 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
                 initial={{ opacity: 0 }} 
                 animate={{ opacity: 1 }} 
                 exit={{ opacity: 0 }}
-                className="fixed inset-0 z-50 bg-slate-50 flex flex-col w-full h-full text-slate-800 opacity-100 overflow-hidden"
+                className="fixed inset-0 z-[150] bg-slate-50 flex flex-col w-full h-full text-slate-800 opacity-100 overflow-hidden"
             >
                 {/* Header */}
-                <header className="flex items-center justify-between px-4 py-3 md:px-8 border-b border-slate-200 bg-white shrink-0 shadow-xs transition-colors duration-300">
-                    <div className="flex items-center gap-3">
-                        <div>
-                            <h2 className={`text-base md:text-xl font-black tracking-tight flex items-center gap-2 transition-colors duration-300 ${
+                <header className="flex items-center justify-between px-3 py-2.5 md:px-8 md:py-3 border-b border-slate-200 bg-white shrink-0 shadow-xs transition-colors duration-300">
+                    <div className="flex items-center gap-2 min-w-0">
+                        <div className="p-1.5 bg-slate-100 rounded-lg shrink-0">
+                            <ImageIcon className={`w-4 h-4 md:w-5 md:h-5 ${
+                                isTrashView 
+                                    ? "text-purple-600" 
+                                    : isCompletedView 
+                                        ? "text-emerald-600" 
+                                        : "text-sky-600"
+                            }`} />
+                        </div>
+                        <div className="min-w-0">
+                            <h2 className={`text-sm md:text-xl font-black tracking-tight truncate whitespace-nowrap transition-colors duration-300 ${
                                 isTrashView 
                                     ? "text-purple-700" 
                                     : isCompletedView 
                                         ? "text-emerald-700" 
                                         : "text-sky-700"
                             }`}>
-                                <ImageIcon className="w-5 h-5" /> {
-                                    isTrashView 
-                                        ? "작업 사진 휴지통" 
-                                        : isCompletedView 
-                                            ? "완료된 작업 사진 보관함" 
-                                            : "진행 중인 작업 사진 보관함"
+                                {isTrashView 
+                                    ? "작업 사진 휴지통" 
+                                    : isCompletedView 
+                                        ? "완료된 작업 사진 보관함" 
+                                        : "진행 중인 작업 사진 보관함"
                                 }
                             </h2>
                             <p className="text-xs text-slate-500 font-bold mt-0.5 hidden md:block">
@@ -2214,10 +2220,9 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
                         </div>
                     </div>
 
-                    {/* Integrated Folder Control Toolbar in Header */}
+                    {/* Integrated Folder Control Toolbar (Desktop only) */}
                     {selectedContainerFolder && (
-                        <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 px-2.5 py-1 rounded-xl shadow-2xs">
-                            {/* Folder Title & Count Badge */}
+                        <div className="hidden md:flex items-center gap-2 bg-slate-50 border border-slate-200 px-2.5 py-1 rounded-xl shadow-2xs">
                             <div className="flex items-center gap-1.5 shrink-0 pr-2 border-r border-slate-200">
                                 <Folder className="w-3.5 h-3.5 text-sky-600" />
                                 <span className="text-xs font-black text-slate-900 tracking-tight">
@@ -2228,7 +2233,6 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
                                 </span>
                             </div>
 
-                            {/* Select All Checkbox Button */}
                             <button 
                                 onClick={() => handleToggleSelectAllPhotos(folderPhotos)}
                                 className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-black transition-all cursor-pointer ${
@@ -2250,12 +2254,8 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
                                         <div className="w-1.5 h-0.5 bg-white rounded-full" />
                                     ) : null}
                                 </div>
-                                <span>
-                                    전체 선택 {selectedPhotoIds.filter(id => folderPhotos.some(p => p.id === id)).length > 0 ? `(${selectedPhotoIds.filter(id => folderPhotos.some(p => p.id === id)).length}/${folderPhotos.length}장)` : ''}
-                                </span>
                             </button>
 
-                            {/* View Mode Toggle */}
                             <div className="flex bg-slate-200/70 border border-slate-200 p-0.5 rounded-lg gap-0.5 shrink-0">
                                 <button
                                     onClick={() => setViewMode('GRID')}
@@ -2264,9 +2264,9 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
                                             ? 'bg-sky-600 text-white shadow-2xs' 
                                             : 'text-slate-600 hover:text-slate-900'
                                     }`}
-                                    title="일반 바둑판 보기"
+                                    title="바둑판 (모아보기)"
                                 >
-                                    <LayoutGrid className="w-3 h-3" />
+                                    <LayoutGrid className="w-3.5 h-3.5" />
                                     <span>바둑판</span>
                                 </button>
                                 <button
@@ -2276,14 +2276,13 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
                                             ? 'bg-sky-600 text-white shadow-2xs' 
                                             : 'text-slate-600 hover:text-slate-900'
                                     }`}
-                                    title="크게 보기"
+                                    title="1장씩 크게보기"
                                 >
-                                    <Grid className="w-3 h-3" />
+                                    <Square className="w-3.5 h-3.5" />
                                     <span>크게</span>
                                 </button>
                             </div>
 
-                            {/* Sort Dropdown */}
                             <div className="flex items-center gap-1 pl-1 border-l border-slate-200">
                                 <ArrowUpDown className="w-3 h-3 text-slate-400 shrink-0" />
                                 <select 
@@ -2302,179 +2301,249 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
                         </div>
                     )}
 
-                    <div className="flex items-center gap-2 shrink-0">
+                    <div className="flex items-center gap-1.5 md:gap-2 shrink-0">
                         {onOpenReport && (
                             <button 
                                 onClick={() => {
                                     const targetDate = (foldersByWorkDate && foldersByWorkDate.length > 0 ? foldersByWorkDate[0].dateStr : '') || endDate || startDate || '';
                                     onOpenReport(targetDate);
                                 }}
-                                className="flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-blue-500/10 hover:bg-blue-500 text-blue-700 hover:text-white border border-blue-500/30 font-black text-xs transition-all cursor-pointer shadow-2xs"
+                                className="flex items-center justify-center gap-1 px-2.5 py-1.5 md:px-3.5 md:py-2 rounded-lg md:rounded-xl bg-blue-500/10 hover:bg-blue-500 text-blue-700 hover:text-white border border-blue-500/30 font-black text-[11px] md:text-xs transition-all cursor-pointer shadow-2xs"
                                 title="보고서 보기"
                             >
-                                <FileText className="w-4 h-4" />
-                                <span>보고서 보기</span>
+                                <FileText className="w-3.5 h-3.5 md:w-4 md:h-4" />
+                                <span className="hidden sm:inline">보고서 보기</span>
+                                <span className="sm:hidden">보고서</span>
                             </button>
                         )}
                         <button 
                             onClick={onClose}
-                            className="flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-rose-500/10 hover:bg-rose-500 text-rose-600 hover:text-white border border-rose-500/30 font-black text-xs transition-all cursor-pointer shadow-2xs"
+                            className="flex items-center justify-center gap-1 px-2.5 py-1.5 md:px-3.5 md:py-2 rounded-lg md:rounded-xl bg-rose-500/10 hover:bg-rose-500 text-rose-600 hover:text-white border border-rose-500/30 font-black text-[11px] md:text-xs transition-all cursor-pointer shadow-2xs"
                             title="사진 보관함 창 닫기"
                         >
-                            <X className="w-4 h-4" />
+                            <X className="w-3.5 h-3.5 md:w-4 md:h-4" />
                             <span>닫기</span>
                         </button>
                     </div>
                 </header>
 
-                {/* Filter Panel - Mobile-first redesign */}
-                <section className="px-3 pt-4 pb-2 md:px-8 md:py-4 border-b border-slate-200 bg-white shrink-0 shadow-2xs mt-0.5">
-                    {/* PC: Horizontal layout */}
-                    <div className="hidden md:flex flex-row gap-3 items-end">
-                        <div className="flex gap-3 flex-1 flex-wrap items-end">
-                            <div className="space-y-1">
-                                <label className="text-[10px] text-slate-500 font-bold tracking-wider uppercase flex items-center gap-1">
-                                    <Calendar className="w-3 h-3 text-sky-600" /> 시작일
-                                </label>
-                                <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} onClick={(e) => { try { e.currentTarget.showPicker(); } catch (err) {} }}
-                                    className="bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-xs text-slate-800 outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 transition-colors shadow-2xs cursor-pointer [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-80 [&::-webkit-calendar-picker-indicator]:hover:opacity-100" />
-                            </div>
-                            <div className="space-y-1">
-                                <label className="text-[10px] text-slate-500 font-bold tracking-wider uppercase flex items-center gap-1">
-                                    <Calendar className="w-3 h-3 text-sky-600" /> 종료일
-                                </label>
-                                <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} onClick={(e) => { try { e.currentTarget.showPicker(); } catch (err) {} }}
-                                    className="bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-xs text-slate-800 outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 transition-colors shadow-2xs cursor-pointer [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-80 [&::-webkit-calendar-picker-indicator]:hover:opacity-100" />
-                            </div>
-                            <div className="space-y-1 w-44">
-                                <label className="text-[10px] text-slate-500 font-bold tracking-wider uppercase flex items-center gap-1">
-                                    <User className="w-3 h-3 text-emerald-600" /> 작업 조
-                                </label>
-                                <select value={selectedTeamId} onChange={(e) => setSelectedTeamId(e.target.value)}
-                                    className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-xs text-slate-800 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-colors appearance-none cursor-pointer shadow-2xs">
-                                    <option value="">전체 조</option>
-                                    {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                                </select>
-                            </div>
-                            <div className="space-y-1">
-                                <label className="text-[10px] text-slate-500 font-bold tracking-wider uppercase flex items-center gap-1">
-                                    <Folder className="w-3 h-3 text-sky-600" /> 컨테이너 번호
-                                </label>
-                                <div className="flex items-center gap-2">
-                                    <input type="text" placeholder="컨테이너 번호 입력" value={searchCntrNo}
-                                        onChange={(e) => setSearchCntrNo(e.target.value)}
-                                        onKeyDown={(e) => { if (e.key === 'Enter') loadPhotos(); }}
-                                        className="w-44 bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-xs text-slate-800 outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 transition-colors shadow-2xs" />
-                                    <button onClick={handleResetFilters}
-                                        className="px-4 py-2.5 rounded-xl bg-slate-100 border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-200 transition-all font-black text-xs cursor-pointer flex items-center gap-1.5 h-[38px]">
-                                        <RotateCcw className="w-3.5 h-3.5" /> 초기화
-                                    </button>
-                                    <div className="flex bg-slate-100 border border-slate-200 p-0.5 rounded-xl gap-0.5 h-[38px]">
-                                        <button onClick={() => { setTabState('ACTIVE'); setSelectedFolders([]); setSelectedContainerFolder(null); }}
-                                            className={`px-3 py-1.5 rounded-lg transition-all text-xs font-black cursor-pointer whitespace-nowrap ${tabState === 'ACTIVE' ? "bg-sky-600 text-white shadow-xs" : "text-slate-600 hover:text-slate-900"}`}>
-                                            진행 중인 작업
-                                        </button>
-                                        <button onClick={() => { setTabState('COMPLETED'); setSelectedFolders([]); setSelectedContainerFolder(null); }}
-                                            className={`px-3 py-1.5 rounded-lg transition-all text-xs font-black cursor-pointer whitespace-nowrap ${tabState === 'COMPLETED' ? "bg-emerald-600 text-white shadow-xs" : "text-slate-600 hover:text-slate-900"}`}>
-                                            완료된 작업
-                                        </button>
-                                        {isAdmin && (
-                                            <button onClick={() => { setTabState('TRASH'); setSelectedFolders([]); setSelectedContainerFolder(null); }}
-                                                className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1 text-xs font-black cursor-pointer whitespace-nowrap ${tabState === 'TRASH' ? "bg-purple-600 text-white shadow-xs" : "text-slate-600 hover:text-slate-900"}`}>
-                                                <Trash2 className="w-3.5 h-3.5" /> 휴지통
-                                            </button>
-                                        )}
-                                    </div>
-                                    {selectedContainerFolder !== null && (
-                                        <button onClick={() => {
-                                            setSelectedContainerFolder(null);
-                                            loadPhotos();
-                                        }}
-                                            className="flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-100 border border-slate-200 hover:bg-slate-200 text-slate-700 font-black text-xs transition-all cursor-pointer h-[38px]"
-                                            title="이전 폴더 목록으로 뒤로가기">
-                                            <ArrowLeft className="w-3.5 h-3.5" />
-                                            <span>뒤로가기</span>
-                                        </button>
-                                    )}
-
-                                </div>
-                            </div>
-                        </div>
-                        <div className="flex items-center gap-2 shrink-0">
-                            {isAdmin && (
-                                <button onClick={() => handleActionWithCheck('GDRIVE_BACKUP')}
-                                    className="flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-sky-600 border border-sky-500 hover:bg-sky-500 text-white font-black text-xs transition-all shadow-lg shadow-sky-600/20 cursor-pointer shrink-0"
-                                    title="선택한 폴더 또는 완료된 사진들을 구글드라이브에 백업하고 로컬 PC 용량을 정리합니다.">
-                                    <Upload className="w-3.5 h-3.5" /> GDrive 백업 & 용량정리
-                                </button>
-                            )}
-                            <button onClick={loadPhotos}
-                                className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-500 border border-emerald-600 hover:bg-emerald-400 text-white font-black text-xs transition-all shadow-lg shadow-emerald-500/10 cursor-pointer shrink-0">
-                                <RefreshCw className="w-3.5 h-3.5" /> 새로고침
-                            </button>
-                        </div>
-                    </div>
-
-                    {/* Mobile: Ultra-Slim 2-Row Layout */}
-                    <div className="flex flex-col gap-1.5 md:hidden text-slate-800">
-                        {/* Row 1: Start Date, End Date, Team Select */}
-                        <div className="grid grid-cols-[1.15fr_1.15fr_1fr] gap-1.5">
-                            <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} onClick={(e) => { try { e.currentTarget.showPicker(); } catch (err) {} }}
-                                className="w-full bg-white border border-slate-300 rounded-lg px-1.5 py-1 text-[11px] font-bold text-slate-800 outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 transition-colors shadow-2xs cursor-pointer h-8 text-center [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-80" />
-                            <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} onClick={(e) => { try { e.currentTarget.showPicker(); } catch (err) {} }}
-                                className="w-full bg-white border border-slate-300 rounded-lg px-1.5 py-1 text-[11px] font-bold text-slate-800 outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 transition-colors shadow-2xs cursor-pointer h-8 text-center [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-80" />
-                            <select value={selectedTeamId} onChange={(e) => setSelectedTeamId(e.target.value)}
-                                className="w-full bg-white border border-slate-300 rounded-lg px-1.5 py-1 text-[11px] font-black text-slate-800 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-colors cursor-pointer shadow-2xs h-8">
-                                <option value="">전체 조</option>
-                                {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                            </select>
-                        </div>
-
-                        {/* Row 2: Search Input + Action Buttons */}
-                        <div className="flex items-center gap-1.5">
-                            <div className="relative flex-1 min-w-0">
-                                <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
-                                <input type="text" placeholder="컨테이너 번호검색" value={searchCntrNo}
-                                    onChange={(e) => setSearchCntrNo(e.target.value)}
-                                    onKeyDown={(e) => { if (e.key === 'Enter') loadPhotos(); }}
-                                    className="w-full bg-white border border-slate-300 rounded-lg pl-7 pr-2 py-1 text-[11px] font-bold text-slate-800 outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 transition-colors shadow-2xs h-8" />
-                            </div>
-
-                            <button onClick={handleResetFilters}
-                                title="필터 초기화"
-                                className="h-8 px-2 rounded-lg bg-slate-100 border border-slate-200 text-slate-700 hover:bg-slate-200 transition-all font-black text-[11px] cursor-pointer shadow-2xs flex items-center justify-center gap-1 shrink-0">
-                                <RotateCcw className="w-3 h-3" />
-                                <span>초기화</span>
-                            </button>
-
-                            <button onClick={loadPhotos}
-                                title="새로고침"
-                                className="h-8 px-2 rounded-lg bg-emerald-600 border border-emerald-600 hover:bg-emerald-500 text-white font-black text-[11px] transition-all shadow-xs cursor-pointer flex items-center justify-center gap-1 shrink-0">
-                                <RefreshCw className="w-3 h-3" />
-                                <span>새로고침</span>
-                            </button>
-
-                            {selectedContainerFolder !== null && (
-                                <button onClick={() => {
+                {/* Mobile-only Integrated Folder Control Toolbar (When folder is open) */}
+                {selectedContainerFolder && (
+                    <div className="flex md:hidden items-center justify-between bg-white border-b border-slate-200 px-3 py-1.5 shrink-0 shadow-2xs gap-1.5">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                            <button 
+                                onClick={() => {
                                     setSelectedContainerFolder(null);
                                     loadPhotos();
                                 }}
-                                    title="폴더 목록으로 뒤로가기"
-                                    className="h-8 px-2 rounded-lg bg-slate-100 border border-slate-300 hover:bg-slate-200 text-slate-800 transition-all cursor-pointer text-[11px] font-black shadow-2xs flex items-center justify-center gap-1 shrink-0">
-                                    <ArrowLeft className="w-3 h-3" />
-                                    <span>뒤로</span>
-                                </button>
-                            )}
-
-                            <button onClick={onClose}
-                                title="보관함 닫기"
-                                className="h-8 px-2 rounded-lg bg-rose-50 hover:bg-rose-500 text-rose-600 hover:text-white border border-rose-200 hover:border-rose-500 transition-all cursor-pointer text-[11px] font-black shadow-2xs flex items-center justify-center gap-1 shrink-0">
-                                <X className="w-3 h-3" />
-                                <span>닫기</span>
+                                className="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 border border-slate-300 text-slate-800 font-black text-[11px] hover:bg-slate-200 transition-all cursor-pointer shrink-0"
+                                title="폴더 목록으로 돌아가기"
+                            >
+                                <ArrowLeft className="w-3 h-3" />
+                                <span>뒤로</span>
                             </button>
+                            <div className="flex items-center gap-1 shrink-0 font-black text-xs text-slate-900">
+                                <span className="truncate max-w-[120px]">{selectedContainerFolder.split('|')[0]}</span>
+                                <span className="text-[10px] font-bold text-sky-600 bg-sky-100 px-1 py-0.2 rounded">
+                                    {folderPhotos.length}장
+                                </span>
+                            </div>
+                        </div>
+
+                        <div className="flex items-center gap-1 shrink-0">
+                            {/* Select All */}
+                            <button 
+                                onClick={() => handleToggleSelectAllPhotos(folderPhotos)}
+                                className={`flex items-center gap-1 px-1.5 py-1 rounded-md border text-[11px] font-black transition-all cursor-pointer ${
+                                    selectedPhotoIds.filter(id => folderPhotos.some(p => p.id === id)).length > 0
+                                        ? 'bg-sky-50 border-sky-300 text-sky-700'
+                                        : 'bg-white hover:bg-slate-100 border-slate-200 text-slate-700'
+                                }`}
+                            >
+                                <div className={`w-3 h-3 rounded border flex items-center justify-center transition-all ${
+                                    folderPhotos.length > 0 && folderPhotos.every(p => selectedPhotoIds.includes(p.id))
+                                        ? "bg-sky-600 border-sky-600 text-white"
+                                        : selectedPhotoIds.some(id => folderPhotos.some(p => p.id === id))
+                                            ? "bg-sky-500/40 border-sky-500 text-white"
+                                            : "bg-white border-slate-300"
+                                }`}>
+                                    {folderPhotos.length > 0 && folderPhotos.every(p => selectedPhotoIds.includes(p.id)) ? (
+                                        <Check className="w-2 h-2 stroke-[3]" />
+                                    ) : selectedPhotoIds.some(id => folderPhotos.some(p => p.id === id)) ? (
+                                        <div className="w-1 h-0.5 bg-white rounded-full" />
+                                    ) : null}
+                                </div>
+                                <span>{selectedPhotoIds.filter(id => folderPhotos.some(p => p.id === id)).length > 0 ? `${selectedPhotoIds.filter(id => folderPhotos.some(p => p.id === id)).length}장` : '전체'}</span>
+                            </button>
+
+                            {/* View Mode */}
+                            <div className="flex bg-slate-100 border border-slate-200 p-0.5 rounded-md gap-0.5">
+                                <button
+                                    onClick={() => setViewMode('GRID')}
+                                    className={`p-1 rounded transition-all cursor-pointer ${viewMode === 'GRID' ? 'bg-sky-600 text-white shadow-2xs' : 'text-slate-600'}`}
+                                    title="바둑판 (2열 모아보기)"
+                                >
+                                    <LayoutGrid className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                    onClick={() => setViewMode('LARGE')}
+                                    className={`p-1 rounded transition-all cursor-pointer ${viewMode === 'LARGE' ? 'bg-sky-600 text-white shadow-2xs' : 'text-slate-600'}`}
+                                    title="1장씩 크게보기"
+                                >
+                                    <Square className="w-3.5 h-3.5" />
+                                </button>
+                            </div>
+
+                            {/* Sort */}
+                            <select 
+                                value={sortBy} 
+                                onChange={(e) => setSortBy(e.target.value as any)}
+                                className="bg-white border border-slate-200 rounded-md px-1 py-0.5 text-[10px] font-bold text-slate-700 focus:outline-none focus:border-sky-500 transition-colors cursor-pointer shadow-2xs h-6 max-w-[75px]"
+                            >
+                                <option value="UPLOAD_DESC">업로드 최신</option>
+                                <option value="UPLOAD_ASC">업로드 과거</option>
+                                <option value="CREATION_DESC">제작 최신</option>
+                                <option value="CREATION_ASC">제작 과거</option>
+                                <option value="NAME_ASC">이름 오름</option>
+                                <option value="NAME_DESC">이름 내림</option>
+                            </select>
                         </div>
                     </div>
-                </section>
+                )}
+
+                {/* Filter Panel - Clean & Mobile-Optimized */}
+                {/* On mobile: Hide filter panel when inside a container folder to give 100% space to photos! */}
+                {(!selectedContainerFolder || (typeof window !== 'undefined' && window.innerWidth >= 768)) && (
+                    <section className={`${selectedContainerFolder ? 'hidden md:block' : 'block'} px-3 pt-3 pb-2 md:px-8 md:py-4 border-b border-slate-200 bg-white shrink-0 shadow-2xs`}>
+                        {/* PC: Horizontal layout */}
+                        <div className="hidden md:flex flex-row gap-3 items-end">
+                            <div className="flex gap-3 flex-1 flex-wrap items-end">
+                                <div className="space-y-1">
+                                    <label className="text-[10px] text-slate-500 font-bold tracking-wider uppercase flex items-center gap-1">
+                                        <Calendar className="w-3 h-3 text-sky-600" /> 시작일
+                                    </label>
+                                    <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} onClick={(e) => { try { e.currentTarget.showPicker(); } catch (err) {} }}
+                                        className="bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-xs text-slate-800 outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 transition-colors shadow-2xs cursor-pointer [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-80 [&::-webkit-calendar-picker-indicator]:hover:opacity-100" />
+                                </div>
+                                <div className="space-y-1">
+                                    <label className="text-[10px] text-slate-500 font-bold tracking-wider uppercase flex items-center gap-1">
+                                        <Calendar className="w-3 h-3 text-sky-600" /> 종료일
+                                    </label>
+                                    <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} onClick={(e) => { try { e.currentTarget.showPicker(); } catch (err) {} }}
+                                        className="bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-xs text-slate-800 outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 transition-colors shadow-2xs cursor-pointer [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-80 [&::-webkit-calendar-picker-indicator]:hover:opacity-100" />
+                                </div>
+                                <div className="space-y-1 w-44">
+                                    <label className="text-[10px] text-slate-500 font-bold tracking-wider uppercase flex items-center gap-1">
+                                        <User className="w-3 h-3 text-emerald-600" /> 작업 조
+                                    </label>
+                                    <select value={selectedTeamId} onChange={(e) => setSelectedTeamId(e.target.value)}
+                                        className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-xs text-slate-800 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-colors appearance-none cursor-pointer shadow-2xs">
+                                        <option value="">전체 조</option>
+                                        {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                                    </select>
+                                </div>
+                                <div className="space-y-1">
+                                    <label className="text-[10px] text-slate-500 font-bold tracking-wider uppercase flex items-center gap-1">
+                                        <Folder className="w-3 h-3 text-sky-600" /> 컨테이너 번호
+                                    </label>
+                                    <div className="flex items-center gap-2">
+                                        <input type="text" placeholder="컨테이너 번호 입력" value={searchCntrNo}
+                                            onChange={(e) => setSearchCntrNo(e.target.value)}
+                                            onKeyDown={(e) => { if (e.key === 'Enter') loadPhotos(); }}
+                                            className="w-44 bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-xs text-slate-800 outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 transition-colors shadow-2xs" />
+                                        <button onClick={handleResetFilters}
+                                            className="px-4 py-2.5 rounded-xl bg-slate-100 border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-200 transition-all font-black text-xs cursor-pointer flex items-center gap-1.5 h-[38px]">
+                                            <RotateCcw className="w-3.5 h-3.5" /> 초기화
+                                        </button>
+                                        <div className="flex bg-slate-100 border border-slate-200 p-0.5 rounded-xl gap-0.5 h-[38px]">
+                                            <button onClick={() => { setTabState('ACTIVE'); setSelectedFolders([]); setSelectedContainerFolder(null); }}
+                                                className={`px-3 py-1.5 rounded-lg transition-all text-xs font-black cursor-pointer whitespace-nowrap ${tabState === 'ACTIVE' ? "bg-sky-600 text-white shadow-xs" : "text-slate-600 hover:text-slate-900"}`}>
+                                                진행 중인 작업
+                                            </button>
+                                            <button onClick={() => { setTabState('COMPLETED'); setSelectedFolders([]); setSelectedContainerFolder(null); }}
+                                                className={`px-3 py-1.5 rounded-lg transition-all text-xs font-black cursor-pointer whitespace-nowrap ${tabState === 'COMPLETED' ? "bg-emerald-600 text-white shadow-xs" : "text-slate-600 hover:text-slate-900"}`}>
+                                                완료된 작업
+                                            </button>
+                                            {isAdmin && (
+                                                <button onClick={() => { setTabState('TRASH'); setSelectedFolders([]); setSelectedContainerFolder(null); }}
+                                                    className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1 text-xs font-black cursor-pointer whitespace-nowrap ${tabState === 'TRASH' ? "bg-purple-600 text-white shadow-xs" : "text-slate-600 hover:text-slate-900"}`}>
+                                                    <Trash2 className="w-3.5 h-3.5" /> 휴지통
+                                                </button>
+                                            )}
+                                        </div>
+                                        {selectedContainerFolder !== null && (
+                                            <button onClick={() => {
+                                                setSelectedContainerFolder(null);
+                                                loadPhotos();
+                                            }}
+                                                className="flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-100 border border-slate-200 hover:bg-slate-200 text-slate-700 font-black text-xs transition-all cursor-pointer h-[38px]"
+                                                title="이전 폴더 목록으로 뒤로가기">
+                                                <ArrowLeft className="w-3.5 h-3.5" />
+                                                <span>뒤로가기</span>
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                                {isAdmin && (
+                                    <button onClick={() => handleActionWithCheck('GDRIVE_BACKUP')}
+                                        className="flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-sky-600 border border-sky-500 hover:bg-sky-500 text-white font-black text-xs transition-all shadow-lg shadow-sky-600/20 cursor-pointer shrink-0"
+                                        title="선택한 폴더 또는 완료된 사진들을 구글드라이브에 백업하고 로컬 PC 용량을 정리합니다.">
+                                        <Upload className="w-3.5 h-3.5" /> GDrive 백업 & 용량정리
+                                    </button>
+                                )}
+                                <button onClick={loadPhotos}
+                                    className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-500 border border-emerald-600 hover:bg-emerald-400 text-white font-black text-xs transition-all shadow-lg shadow-emerald-500/10 cursor-pointer shrink-0">
+                                    <RefreshCw className="w-3.5 h-3.5" /> 새로고침
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Mobile: Ultra-Clean Layout */}
+                        <div className="flex flex-col gap-1.5 md:hidden text-slate-800">
+                            {/* Row 1: Start Date, End Date, Team Select (Only show if date is set or explicitly in folder list without container search) */}
+                            {(startDate || endDate || !searchCntrNo) && (
+                                <div className="grid grid-cols-[1.15fr_1.15fr_1fr] gap-1.5">
+                                    <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} onClick={(e) => { try { e.currentTarget.showPicker(); } catch (err) {} }}
+                                        className="w-full bg-white border border-slate-300 rounded-lg px-1.5 py-1 text-[11px] font-bold text-slate-800 outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 transition-colors shadow-2xs cursor-pointer h-8 text-center [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-80" />
+                                    <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} onClick={(e) => { try { e.currentTarget.showPicker(); } catch (err) {} }}
+                                        className="w-full bg-white border border-slate-300 rounded-lg px-1.5 py-1 text-[11px] font-bold text-slate-800 outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 transition-colors shadow-2xs cursor-pointer h-8 text-center [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-80" />
+                                    <select value={selectedTeamId} onChange={(e) => setSelectedTeamId(e.target.value)}
+                                        className="w-full bg-white border border-slate-300 rounded-lg px-1.5 py-1 text-[11px] font-black text-slate-800 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-colors cursor-pointer shadow-2xs h-8">
+                                        <option value="">전체 조</option>
+                                        {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                                    </select>
+                                </div>
+                            )}
+
+                            {/* Row 2: Search Input + Action Buttons */}
+                            <div className="flex items-center gap-1.5">
+                                <div className="relative flex-1 min-w-0">
+                                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
+                                    <input type="text" placeholder="컨테이너 번호검색" value={searchCntrNo}
+                                        onChange={(e) => setSearchCntrNo(e.target.value)}
+                                        onKeyDown={(e) => { if (e.key === 'Enter') loadPhotos(); }}
+                                        className="w-full bg-white border border-slate-300 rounded-lg pl-8 pr-2 py-1 text-xs font-bold text-slate-800 outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 transition-colors shadow-2xs h-8" />
+                                </div>
+
+                                <button onClick={handleResetFilters}
+                                    title="필터 초기화"
+                                    className="h-8 px-2.5 rounded-lg bg-slate-100 border border-slate-200 text-slate-700 hover:bg-slate-200 transition-all font-black text-[11px] cursor-pointer shadow-2xs flex items-center justify-center gap-1 shrink-0">
+                                    <RotateCcw className="w-3 h-3" />
+                                    <span>초기화</span>
+                                </button>
+
+                                <button onClick={loadPhotos}
+                                    title="새로고침"
+                                    className="h-8 px-2.5 rounded-lg bg-emerald-600 border border-emerald-600 hover:bg-emerald-500 text-white font-black text-[11px] transition-all shadow-xs cursor-pointer flex items-center justify-center gap-1 shrink-0">
+                                    <RefreshCw className="w-3 h-3" />
+                                    <span>새로고침</span>
+                                </button>
+                            </div>
+                        </div>
+                    </section>
+                )}
 
                 {/* Photo Grid Area */}
                 <main className="flex-1 overflow-y-auto px-4 py-4 md:px-8 md:py-6 pb-20 md:pb-6 custom-scrollbar">
@@ -2931,7 +3000,7 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
                             animate={{ opacity: 1 }} 
                             exit={{ opacity: 0 }}
                             onClick={() => setActivePhotoIdx(null)}
-                            className="fixed inset-0 z-[60] bg-[#07070a]/98 backdrop-blur-xl flex flex-col-reverse md:flex-row"
+                            className="fixed inset-0 z-[180] bg-[#07070a]/98 backdrop-blur-xl flex flex-col-reverse md:flex-row"
                         >
                             {/* Left Info Sidebar */}
                             <div 
@@ -4137,7 +4206,7 @@ export default function PhotoGallery({ isOpen, onClose, user, initialSearchCntrN
                 )}
 
                 {/* Mobile Bottom Tab Bar (Ultra-Compact) */}
-                <div className="flex md:hidden fixed bottom-0 left-0 right-0 z-50 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 shadow-lg px-2 py-1 items-center justify-around gap-1.5 h-9">
+                <div className="flex md:hidden fixed bottom-0 left-0 right-0 z-[160] bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 shadow-lg px-2 py-1 items-center justify-around gap-1.5 h-9">
                     <button
                         onClick={() => { setTabState('ACTIVE'); setSelectedFolders([]); setSelectedContainerFolder(null); }}
                         className={`flex-1 flex items-center justify-center gap-1.5 py-1 px-1.5 rounded-lg transition-all text-xs font-black cursor-pointer ${

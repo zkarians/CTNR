@@ -64,6 +64,22 @@ function getJobCategory(cntr: any): string {
 
 const CATEGORIES = ['식기', '콤프', '오븐', '횡적', '세탁기', 'SK냉장고', '다모델 SK냉장고', '냉장고', '에어컨', '기타'];
 
+function isContainerExcludedOrCancelled(cntr: any): { isExcluded: boolean; isCancelled: boolean } {
+    const textToCheck = [
+        cntr.adminComment,
+        cntr.remark,
+        cntr.lastRemark,
+        cntr.category,
+        cntr.modelSummaryStr,
+        cntr.dbRemark
+    ].filter(Boolean).join(' ');
+
+    const isExcluded = textToCheck.includes('작업제외') || textToCheck.includes('[제외]') || textToCheck.includes('(제외)');
+    const isCancelled = !isExcluded && (cntr.isCancelled || textToCheck.includes('작업취소') || textToCheck.includes('[취소]') || textToCheck.includes('(취소)'));
+
+    return { isExcluded, isCancelled };
+}
+
 export default function TeamSummaryModal({ isOpen, onClose, reportData }: TeamSummaryModalProps) {
     const [dayShiftCount, setDayShiftCount] = React.useState<string>('');
     const [isCopied, setIsCopied] = React.useState(false);
@@ -135,8 +151,7 @@ export default function TeamSummaryModal({ isOpen, onClose, reportData }: TeamSu
 
                 if (!team.containers) return;
                 team.containers.forEach((cntr: any) => {
-                    const isExcluded = cntr.adminComment?.includes('[작업제외]');
-                    const isCancelled = !isExcluded && (cntr.isCancelled || cntr.adminComment?.includes('[취소]') || cntr.adminComment?.includes('[작업취소]'));
+                    const { isExcluded, isCancelled } = isContainerExcludedOrCancelled(cntr);
                     
                     if (!isExcluded && !isCancelled) {
                         const cat = getJobCategory(cntr);
@@ -164,8 +179,7 @@ export default function TeamSummaryModal({ isOpen, onClose, reportData }: TeamSu
             dateGroup.uploaders.forEach((team: any) => {
                 if (!team.containers) return;
                 team.containers.forEach((cntr: any) => {
-                    const isExcluded = cntr.adminComment?.includes('[작업제외]');
-                    const isCancelled = !isExcluded && (cntr.isCancelled || cntr.adminComment?.includes('[취소]') || cntr.adminComment?.includes('[작업취소]'));
+                    const { isExcluded, isCancelled } = isContainerExcludedOrCancelled(cntr);
                     
                     if (!isExcluded && !isCancelled) {
                         let carrier = '기타';
@@ -192,8 +206,7 @@ const emptyBoxSummary = useMemo(() => {
             dateGroup.uploaders.forEach((team: any) => {
                 if (!team.containers) return;
                 team.containers.forEach((cntr: any) => {
-                    const isExcluded = cntr.adminComment?.includes('[작업제외]');
-                    const isCancelled = !isExcluded && (cntr.isCancelled || cntr.adminComment?.includes('[취소]') || cntr.adminComment?.includes('[작업취소]'));
+                    const { isExcluded, isCancelled } = isContainerExcludedOrCancelled(cntr);
                     
                     if (!isExcluded && !isCancelled && cntr.emptyBoxes && Array.isArray(cntr.emptyBoxes)) {
                         cntr.emptyBoxes.forEach((box: any) => {
