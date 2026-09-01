@@ -14,6 +14,11 @@ function isSmallProduct(p: Product): boolean {
     return Math.min(Number(p.width), Number(p.length), Number(p.height)) <= 300;
 }
 
+function isUltraLowHeightProduct(p: Product, orientedH?: number): boolean {
+    const h = orientedH !== undefined ? orientedH : Number(p.height);
+    return h <= 66;
+}
+
 function isLowHeightProduct(p: Product, orientedH?: number): boolean {
     const h = orientedH !== undefined ? orientedH : Number(p.height);
     return h <= 270;
@@ -28,7 +33,7 @@ function getStackedCount(
 ): number {
     let count = 0;
     for (const item of placedItems) {
-        if (!isLowHeightProduct(item.product, item.h)) continue;
+        if (!isLowHeightProduct(item.product, item.h) || isUltraLowHeightProduct(item.product, item.h)) continue;
         const xOverlap = Math.max(x, item.x) < Math.min(x + w, item.x + item.w) - 0.5;
         const yOverlap = Math.max(y, item.y) < Math.min(y + l, item.y + item.l) - 0.5;
         if (xOverlap && yOverlap) {
@@ -47,7 +52,7 @@ function getStackedCountInTemp(
 ): number {
     let count = 0;
     for (const item of tempItems) {
-        if (!isLowHeightProduct(item.product, item.h)) continue;
+        if (!isLowHeightProduct(item.product, item.h) || isUltraLowHeightProduct(item.product, item.h)) continue;
         const xOverlap = Math.max(x, item.x) < Math.min(x + w, item.x + item.w) - 0.5;
         const yOverlap = Math.max(yRel, item.yRel) < Math.min(yRel + l, item.yRel + item.l) - 0.5;
         if (xOverlap && yOverlap) {
@@ -758,10 +763,12 @@ function doTwoPhasePacking(container: any, normalProducts: Product[], smallProdu
                             }
                             if (overlap) continue;
                         
-                            // 2. 10단 누적 제한 체크 (모든 제품에 적용)
-                            const stacked = getStackedCount(targetX, targetY, to.w, to.l, placed);
-                            if (stacked >= 10) {
-                                continue;
+                            // 2. 10단 누적 제한 체크 (높이 66mm 초과 제품에만 10단 제한 적용, 66mm 이하는 제한 해제)
+                            if (!isUltraLowHeightProduct(sp, to.h)) {
+                                const stacked = getStackedCount(targetX, targetY, to.w, to.l, placed);
+                                if (stacked >= 10) {
+                                    continue;
+                                }
                             }
 
                             // 3. 아래 제품의 높이가 500mm 이하일 때, 새로 쌓으려는 제품의 높이가 기존 제품 높이 + 50mm를 초과하면 적재 제한
@@ -1022,10 +1029,12 @@ function doTwoPhasePacking(container: any, normalProducts: Product[], smallProdu
                             
                             const isTopperLow = isLowHeightProduct(sp, to.h);
                             
-                            // 2. 10단 누적 제한 체크 (모든 제품에 적용)
-                            const stacked = getStackedCount(targetX, targetY, to.w, to.l, placed);
-                            if (stacked >= 10) {
-                                continue;
+                            // 2. 10단 누적 제한 체크 (높이 66mm 초과 제품에만 10단 제한 적용, 66mm 이하는 제한 해제)
+                            if (!isUltraLowHeightProduct(sp, to.h)) {
+                                const stacked = getStackedCount(targetX, targetY, to.w, to.l, placed);
+                                if (stacked >= 10) {
+                                    continue;
+                                }
                             }
 
                             // 3. 아래 제품의 높이가 500mm 이하일 때, 새로 쌓으려는 제품의 높이가 기존 제품 높이 + 50mm를 초과하면 적재 제한
@@ -1270,7 +1279,7 @@ function blockPackShelf(
                             // V5.05: If orientation is 'lay', limit height count to 2 to allow stacking laid down items up to 2 high
                             const maxHCount = o.type === 'lay' ? 2 : Math.floor((H + 0.5) / o.h);
                             let limitHCount = Math.min(maxHCount, Math.floor(unpacked.get(p.id)! / (bW * bL)));
-                            if (isLowHeightProduct(p, o.h)) {
+                            if (isLowHeightProduct(p, o.h) && !isUltraLowHeightProduct(p, o.h)) {
                                 limitHCount = Math.min(limitHCount, 10);
                             }
                             if (limitHCount === 0) continue;
@@ -1421,10 +1430,12 @@ function blockPackShelf(
                                                 }
 
 
-                                                // 2. 이 격자 위치에 이 토퍼를 배치할 때 누적 단수가 10단을 넘는지 검사 (모든 제품에 적용)
-                                                const stacked = getStackedCountInTemp(targetX, targetYRel, to.w, to.l, tempItems);
-                                                if (stacked >= 10) {
-                                                    continue; // 10단 초과하므로 이 셀에는 배치하지 않고 건너뜀
+                                                // 2. 이 격자 위치에 이 토퍼를 배치할 때 누적 단수가 10단을 넘는지 검사 (높이 66mm 초과 제품에만 10단 제한 적용, 66mm 이하는 제한 해제)
+                                                if (!isUltraLowHeightProduct(currentItem.p, to.h)) {
+                                                    const stacked = getStackedCountInTemp(targetX, targetYRel, to.w, to.l, tempItems);
+                                                    if (stacked >= 10) {
+                                                        continue; // 10단 초과하므로 이 셀에는 배치하지 않고 건너뜀
+                                                    }
                                                 }
                                                 
                                                  // 3. 기존 wallItems와 겹치는지 검사
@@ -1792,9 +1803,11 @@ function optimizePackResultWithSwaps(container: ContainerDimensions, result: Pac
                         continue;
                     }
 
-                    // 2. 10단 누적 제한 체크 (모든 제품에 적용)
-                    const stacked = getStackedCount(pItem.x, pItem.y, o.w, o.l, otherItems);
-                    if (stacked + 1 > 10) continue;
+                    // 2. 10단 누적 제한 체크 (높이 66mm 초과 제품에만 10단 제한 적용, 66mm 이하는 제한 해제)
+                    if (!isUltraLowHeightProduct(uProd, o.h)) {
+                        const stacked = getStackedCount(pItem.x, pItem.y, o.w, o.l, otherItems);
+                        if (stacked + 1 > 10) continue;
+                    }
 
                     // 3. 아래 제품의 높이가 500mm 이하일 때, 새로 쌓으려는 제품의 높이가 기존 제품 높이 + 50mm를 초과하면 적재 제한
                     if (pItem.z > 0 && !isValidHeightStack(pItem.x, pItem.y, o.w, o.l, otherItems, pItem.z, o.h)) {
@@ -1890,9 +1903,11 @@ function optimizePackResultWithSwaps(container: ContainerDimensions, result: Pac
                                     continue;
                                 }
 
-                                // 2. 10단 누적 제한 체크 (모든 제품에 적용)
-                                const stacked = getStackedCount(x, y, o.w, o.l, tempItems);
-                                if (stacked + 1 > 10) continue;
+                                // 2. 10단 누적 제한 체크 (높이 66mm 초과 제품에만 10단 제한 적용, 66mm 이하는 제한 해제)
+                                if (!isUltraLowHeightProduct(displacedProduct, o.h)) {
+                                    const stacked = getStackedCount(x, y, o.w, o.l, tempItems);
+                                    if (stacked + 1 > 10) continue;
+                                }
 
                                 // 3. 아래 제품의 높이가 500mm 이하일 때, 새로 쌓으려는 제품의 높이가 기존 제품 높이 + 50mm를 초과하면 적재 제한
                                 if (z > 0 && !isValidHeightStack(x, y, o.w, o.l, tempItems, z, o.h)) {

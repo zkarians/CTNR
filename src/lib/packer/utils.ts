@@ -5,6 +5,11 @@ export function isSmallProduct(p: Product): boolean {
     return Math.min(Number(p.width), Number(p.length), Number(p.height)) <= 300;
 }
 
+export function isUltraLowHeightProduct(p: Product, orientedH?: number): boolean {
+    const h = orientedH !== undefined ? orientedH : Number(p.height);
+    return h <= 66;
+}
+
 export function isLowHeightProduct(p: Product, orientedH?: number): boolean {
     const h = orientedH !== undefined ? orientedH : Number(p.height);
     return h <= 270;
@@ -19,7 +24,7 @@ export function getStackedCount(
 ): number {
     let count = 0;
     for (const item of placedItems) {
-        if (!isLowHeightProduct(item.product, item.h)) continue;
+        if (!isLowHeightProduct(item.product, item.h) || isUltraLowHeightProduct(item.product, item.h)) continue;
         const xOverlap = Math.max(x, item.x) < Math.min(x + w, item.x + item.w) - 0.5;
         const yOverlap = Math.max(y, item.y) < Math.min(y + l, item.y + item.l) - 0.5;
         if (xOverlap && yOverlap) {
@@ -38,7 +43,7 @@ export function getStackedCountInTemp(
 ): number {
     let count = 0;
     for (const item of tempItems) {
-        if (!isLowHeightProduct(item.product, item.h)) continue;
+        if (!isLowHeightProduct(item.product, item.h) || isUltraLowHeightProduct(item.product, item.h)) continue;
         const xOverlap = Math.max(x, item.x) < Math.min(x + w, item.x + item.w) - 0.5;
         const yOverlap = Math.max(yRel, item.yRel) < Math.min(yRel + l, item.yRel + item.l) - 0.5;
         if (xOverlap && yOverlap) {
