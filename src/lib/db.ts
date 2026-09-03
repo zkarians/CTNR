@@ -358,6 +358,7 @@ export async function getProductsForJob(jobId: number): Promise<Product[]> {
             const res = await client.query(query, [jobId]);
 
             return res.rows.map(row => {
+                const isDFZ = (row.division || '').toUpperCase().includes('DFZ');
                 const modelName = row.model_name || row.id || '';
                 return {
                     id: row.id || modelName,
@@ -368,7 +369,7 @@ export async function getProductsForJob(jobId: number): Promise<Product[]> {
                     length: Number(row.length),
                     height: Number(row.height),
                     quantity: Number(row.quantity),
-                    allow_rotate: true,
+                    allow_rotate: !isDFZ,
                     allow_lay_down: false,
                     prod_type: row.prod_type
                 };
